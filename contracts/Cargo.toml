@@ -1,0 +1,35 @@
+[package]
+name = "mozartpay-contracts"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "mozartpay_contracts"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+soroban-sdk = { version = "23.5" }
+stellar-access = "0.6"
+stellar-contract-utils = "0.6"
+stellar-macros = "0.6"
+stellar-tokens = "0.6"
+
+[dev-dependencies]
+soroban-sdk = { version = "23.5", features = ["testutils"] }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true

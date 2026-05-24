@@ -1,0 +1,77 @@
+// Noir circuit for ZK payment verification
+// This circuit verifies that a payment is valid without revealing sensitive details
+
+use std::convert::int as u32;
+use std::convert::int as u64;
+
+// Main circuit function
+fn main(
+    // Private inputs (hidden from verifier)
+    private sender_private_key: Field,
+    private receiver_address: Field,
+    private amount: Field,
+    private nonce: Field,
+    private signature_r: Field,
+    private signature_s: Field,
+    
+    // Public inputs (revealed to verifier)
+    public sender_address: Field,
+    public receiver_pubkey_x: Field,
+    public receiver_pubkey_y: Field,
+    public amount_hash: Field,
+    public nonce_hash: Field,
+    public max_amount: Field,
+    public network_id: Field,
+) {
+    // 1. Verify sender's signature
+    // In a real implementation, this would use Ed25519 signature verification
+    // For now, we'll use a simplified constraint
+    let signature_valid = signature_r + signature_s;
+    constrain signature_valid != 0;
+    
+    // 2. Verify amount constraints
+    constrain amount > 0;
+    constrain amount <= max_amount;
+    
+    // 3. Verify amount hash matches
+    let computed_amount_hash = std::hash::pedersen([amount, nonce, network_id]);
+    constrain computed_amount_hash == amount_hash;
+    
+    // 4. Verify nonce hash
+    let computed_nonce_hash = std::hash::pedersen([nonce, sender_address]);
+    constrain computed_nonce_hash == nonce_hash;
+    
+    // 5. Verify receiver address format (simplified)
+    constrain receiver_address != 0;
+    constrain receiver_address < 4294967296; // 2^32
+    
+    // 6. Network-specific constraints
+    constrain network_id == 1; // Stellar testnet = 1
+    
+    // 7. Generate proof hash (public output)
+    let proof_hash = std::hash::pedersen([
+        sender_address,
+        receiver_address,
+        amount,
+        nonce,
+        network_id
+    ]);
+    
+    // Return the proof hash as public output
+    return proof_hash;
+}
+
+// Helper function for address validation
+fn validate_address(address: Field) -> Field {
+    // Simplified Stellar address validation
+    // Real implementation would check G-pubkey format
+    constrain address != 0;
+    constrain address < 115792089237316195423570985008687907853269984665640564039457584007913129639936; // 2^256
+    address
+}
+
+// Helper function for amount range validation
+fn validate_amount_range(amount: Field, min: Field, max: Field) {
+    constrain amount >= min;
+    constrain amount <= max;
+}

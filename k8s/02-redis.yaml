@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mozartpay
+      app.kubernetes.io/component: cache
+      app.kubernetes.io/part-of: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mozartpay
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/part-of: redis
+    spec:
+      serviceAccountName: mozartpay-sa
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "256mb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: redis
+spec:
+  selector:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/part-of: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  type: ClusterIP

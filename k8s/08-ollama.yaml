@@ -1,0 +1,204 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-pvc
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: ollama
+    app.kubernetes.io/part-of: ollama
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: ollama
+    app.kubernetes.io/part-of: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mozartpay
+      app.kubernetes.io/component: ollama
+      app.kubernetes.io/part-of: ollama
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mozartpay
+        app.kubernetes.io/component: ollama
+        app.kubernetes.io/part-of: ollama
+    spec:
+      serviceAccountName: mozartpay-sa
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+          name: http
+        env:
+        - name: OLLAMA_HOST
+          value: "0.0.0.0"
+        - name: OLLAMA_PORT
+          value: "11434"
+        volumeMounts:
+        - name: ollama-storage
+          mountPath: /root/.ollama
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "8Gi"
+            cpu: "4"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 11434
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 11434
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: ollama-storage
+        persistentVolumeClaim:
+          claimName: ollama-pvc
+      securityContext:
+        fsGroup: 0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: ollama
+    app.kubernetes.io/part-of: ollama
+spec:
+  selector:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: ollama
+    app.kubernetes.io/part-of: ollama
+  ports:
+  - port: 11434
+    targetPort: 11434
+    name: http
+  type: ClusterIP
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-pull-models
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: ollama
+    app.kubernetes.io/part-of: ollama
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mozartpay
+        app.kubernetes.io/component: ollama
+        app.kubernetes.io/part-of: ollama
+    spec:
+      serviceAccountName: mozartpay-sa
+      restartPolicy: OnFailure
+      containers:
+      - name: ollama-pull
+        image: ollama/ollama:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          ollama serve &
+          sleep 10
+          ollama pull llama3.2:3b
+          ollama pull qwen2.5:3b
+          ollama pull deepseek-r1:1.5b
+        volumeMounts:
+        - name: ollama-storage
+          mountPath: /root/.ollama
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0
+      volumes:
+      - name: ollama-storage
+        persistentVolumeClaim:
+          claimName: ollama-pvc
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ollama-hpa
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: ollama
+    app.kubernetes.io/part-of: ollama
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ollama
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60

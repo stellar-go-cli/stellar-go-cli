@@ -1,0 +1,274 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    rule_files:
+      - "mozartpay_rules.yml"
+    
+    scrape_configs:
+      - job_name: 'webauthn'
+        static_configs:
+          - targets: ['webauthn:8000']
+        metrics_path: '/metrics'
+        scrape_interval: 10s
+      
+      - job_name: 'mcp-sse'
+        static_configs:
+          - targets: ['mcp-sse:3000']
+        metrics_path: '/metrics'
+        scrape_interval: 10s
+      
+      - job_name: 'horizon-testnet'
+        static_configs:
+          - targets: ['horizon-testnet:8000']
+        metrics_path: '/metrics'
+        scrape_interval: 30s
+      
+      - job_name: 'postgres'
+        static_configs:
+          - targets: ['postgres:5432']
+        metrics_path: '/metrics'
+        scrape_interval: 30s
+      
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis:6379']
+        metrics_path: '/metrics'
+        scrape_interval: 30s
+      
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - mozartpay
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+  
+  mozartpay_rules.yml: |
+    groups:
+    - name: mozartpay.rules
+      rules:
+      - alert: WebAuthnServiceDown
+        expr: up{job="webauthn"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WebAuthn service is down"
+          description: "WebAuthn service has been down for more than 1 minute"
+      
+      - alert: MCPServiceDown
+        expr: up{job="mcp-sse"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP service is down"
+          description: "MCP service has been down for more than 1 minute"
+      
+      - alert: HorizonServiceDown
+        expr: up{job="horizon-testnet"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Horizon service is down"
+          description: "Horizon testnet service has been down for more than 2 minutes"
+      
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 90% for more than 5 minutes"
+      
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for more than 5 minutes"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mozartpay
+      app.kubernetes.io/component: monitoring
+      app.kubernetes.io/part-of: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mozartpay
+        app.kubernetes.io/component: monitoring
+        app.kubernetes.io/part-of: prometheus
+    spec:
+      serviceAccountName: mozartpay-sa
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: prometheus
+spec:
+  selector:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+    name: http
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mozartpay
+      app.kubernetes.io/component: monitoring
+      app.kubernetes.io/part-of: grafana
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mozartpay
+        app.kubernetes.io/component: monitoring
+        app.kubernetes.io/part-of: grafana
+    spec:
+      serviceAccountName: mozartpay-sa
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "mozartpay123"
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-kubernetes-app"
+        volumeMounts:
+        - name: storage
+          mountPath: /var/lib/grafana
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: storage
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: mozartpay
+  labels:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: grafana
+spec:
+  selector:
+    app.kubernetes.io/name: mozartpay
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: http
+  type: ClusterIP
