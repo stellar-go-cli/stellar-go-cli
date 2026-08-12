@@ -300,6 +300,19 @@ func (c *Chat) handleWalletBalance() string {
 		CreatedAt: updatedAccount.CreatedAt,
 	}
 
+	// Fetch all account assets with balance > 0 (excluding native XLM, shown above)
+	var positiveAssets []wallet.AssetInfo
+	if assets, err := c.walletSvc.GetAccountAssets(updatedAccount.Address, updatedAccount.Network); err == nil {
+		for _, a := range assets {
+			if a.Type == "native" {
+				continue
+			}
+			if bal, err := strconv.ParseFloat(a.Balance, 64); err == nil && bal > 0 {
+				positiveAssets = append(positiveAssets, a)
+			}
+		}
+	}
+
 	// Update cache with current wallets
 	wallets, _ := c.getWalletsFromRegistry()
 	c.state.UpdateWalletCache(wallets)
@@ -310,7 +323,7 @@ func (c *Chat) handleWalletBalance() string {
 		"network": activeWallet.Network,
 	})
 
-	return c.formatter.FormatWalletBalance(activeWallet) + c.generateSmartSuggestions()
+	return c.formatter.FormatWalletBalance(activeWallet, positiveAssets) + c.generateSmartSuggestions()
 }
 
 // handleSwitchWallet handles the switch wallet command
@@ -363,9 +376,24 @@ func (c *Chat) handleSwapQuote(params map[string]interface{}) string {
 	from, hasFrom := params["from"].(string)
 	to, hasTo := params["to"].(string)
 	amount, hasAmount := params["amount"].(string)
+	if !hasFrom {
+		from = ""
+	}
+	if !hasTo {
+		to = ""
+	}
+	if !hasAmount {
+		amount = ""
+	}
+
+	// Normalize free-text answers collected conversationally
+	// (e.g. "xlm to usd", "50 xlm to usd")
+	configNetwork := models.Network(c.cfg.Network)
+	supported := supportedSwapAssets(configNetwork)
+	from, to, amount = normalizeSwapParams(from, to, amount, supported)
 
 	// If missing parameters, start parameter collection
-	if !hasFrom || from == "" {
+	if from == "" {
 		c.startParameterCollection("swap_quote", []ParamInfo{
 			{Name: "from", Description: "Source asset", Type: "string", Required: true, Examples: []string{"XLM"}},
 			{Name: "to", Description: "Destination asset", Type: "string", Required: true, Examples: []string{"USDC"}},
@@ -374,7 +402,7 @@ func (c *Chat) handleSwapQuote(params map[string]interface{}) string {
 		return c.formatter.FormatParameterPrompt(ParamInfo{Name: "from", Description: "What asset are you sending from?", Examples: []string{"XLM", "USDC"}}) + c.suggester.GenerateParameterSuggestions("from")
 	}
 
-	if !hasTo || to == "" {
+	if to == "" {
 		c.startParameterCollection("swap_quote", []ParamInfo{
 			{Name: "to", Description: "Destination asset", Type: "string", Required: true, Examples: []string{"USDC"}},
 			{Name: "amount", Description: "Amount to swap", Type: "string", Required: true, Examples: []string{"100"}},
@@ -382,11 +410,19 @@ func (c *Chat) handleSwapQuote(params map[string]interface{}) string {
 		return c.formatter.FormatParameterPrompt(ParamInfo{Name: "to", Description: "What asset are you swapping to?", Examples: []string{"USDC", "EURC"}}) + c.suggester.GenerateParameterSuggestions("to")
 	}
 
-	if !hasAmount || amount == "" {
+	if amount == "" {
 		c.startParameterCollection("swap_quote", []ParamInfo{
 			{Name: "amount", Description: "Amount to swap", Type: "string", Required: true, Examples: []string{"100"}},
 		}, params)
 		return c.formatter.FormatParameterPrompt(ParamInfo{Name: "amount", Description: "How much would you like to swap?", Examples: []string{"100", "50.5"}}) + c.suggester.GenerateParameterSuggestions("amount")
+	}
+
+	// Validate assets before hitting Horizon
+	if _, ok := canonicalSwapAsset(from, supported); !ok {
+		return fmt.Sprintf("❌ Unsupported asset %q. Supported on this network: %s", from, strings.Join(supportedSwapAssetList(configNetwork), ", ")) + c.suggester.GenerateSuggestions(c.state)
+	}
+	if _, ok := canonicalSwapAsset(to, supported); !ok {
+		return fmt.Sprintf("❌ Unsupported asset %q. Supported on this network: %s", to, strings.Join(supportedSwapAssetList(configNetwork), ", ")) + c.suggester.GenerateSuggestions(c.state)
 	}
 
 	// We have all parameters, validate network consistency first
@@ -395,7 +431,6 @@ func (c *Chat) handleSwapQuote(params map[string]interface{}) string {
 	}
 
 	// Use config network as the authoritative source
-	configNetwork := models.Network(c.cfg.Network)
 	swapSvc := swap.NewService(configNetwork)
 
 	// Ensure wallet cache is populated

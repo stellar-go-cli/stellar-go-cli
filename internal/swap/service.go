@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ogtechnologies/mozartpay/internal/config"
@@ -77,6 +78,14 @@ func NewService(net models.Network) *Service {
 func (s *Service) GetQuote(req models.SwapRequest) (*models.SwapQuote, error) {
 	if req.SwapType == "" {
 		req.SwapType = models.SwapStrictSend
+	}
+
+	// Validate assets before querying Horizon to avoid 400s on bad codes
+	if err := s.validateAsset(req.SourceAsset); err != nil {
+		return nil, err
+	}
+	if err := s.validateAsset(req.DestAsset); err != nil {
+		return nil, err
 	}
 
 	// Get paths from Horizon
@@ -407,6 +416,7 @@ func (s *Service) getAssetIssuer(asset txnbuild.Asset) string {
 }
 
 func (s *Service) getAsset(code string) txnbuild.Asset {
+	code = strings.ToUpper(strings.TrimSpace(code))
 	if code == "XLM" || code == "" {
 		return txnbuild.NativeAsset{}
 	}
@@ -417,6 +427,28 @@ func (s *Service) getAsset(code string) txnbuild.Asset {
 		return txnbuild.CreditAsset{Code: code, Issuer: ""}
 	}
 	return txnbuild.CreditAsset{Code: cfg.Code, Issuer: cfg.Issuer}
+}
+
+// validateAsset returns a clear error for assets not in the known-asset registry
+func (s *Service) validateAsset(code string) error {
+	upper := strings.ToUpper(strings.TrimSpace(code))
+	if upper == "" || upper == "XLM" {
+		return nil
+	}
+	if _, ok := s.assets[upper]; !ok {
+		return fmt.Errorf("unsupported asset %q (supported: %s)", code, strings.Join(s.supportedCodes(), ", "))
+	}
+	return nil
+}
+
+// supportedCodes returns the sorted list of known asset codes for this network
+func (s *Service) supportedCodes() []string {
+	codes := make([]string, 0, len(s.assets))
+	for code := range s.assets {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	return codes
 }
 
 func (s *Service) getIssuer(code string) string {

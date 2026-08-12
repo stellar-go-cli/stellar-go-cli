@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ogtechnologies/mozartpay/internal/models"
+	"github.com/ogtechnologies/mozartpay/internal/wallet"
 )
 
 // Formatter handles output formatting with emojis and styling
@@ -100,27 +101,38 @@ func (f *Formatter) FormatWalletShow(wallet *models.WalletEntry) string {
 	)
 }
 
-// FormatWalletBalance formats wallet balance display
-func (f *Formatter) FormatWalletBalance(wallet *models.WalletEntry) string {
-	if wallet == nil {
+// FormatWalletBalance formats wallet balance display, listing all assets with balance > 0
+func (f *Formatter) FormatWalletBalance(walletEntry *models.WalletEntry, assets []wallet.AssetInfo) string {
+	if walletEntry == nil {
 		return "❌ No active wallet found on current network"
 	}
 
 	funded := "❌ Not funded"
-	if wallet.Funded {
+	if walletEntry.Funded {
 		funded = "✅ Funded"
 	}
 
-	return fmt.Sprintf(`💰 **Wallet Balance:**
+	out := fmt.Sprintf(`💰 **Wallet Balance:**
 **Address:** %s
 **Balance:** %s XLM
 **Network:** %s
 **Status:** %s`,
-		wallet.Address,
-		wallet.Balance,
-		strings.Title(strings.TrimPrefix(string(wallet.Network), "stellar-")),
+		walletEntry.Address,
+		walletEntry.Balance,
+		strings.Title(strings.TrimPrefix(string(walletEntry.Network), "stellar-")),
 		funded,
 	)
+
+	if len(assets) > 0 {
+		var sb strings.Builder
+		sb.WriteString("\n**Assets:**")
+		for _, a := range assets {
+			sb.WriteString(fmt.Sprintf("\n• %s: %s", a.Code, a.Balance))
+		}
+		out += sb.String()
+	}
+
+	return out
 }
 
 // FormatNetworkStatus formats current network display
