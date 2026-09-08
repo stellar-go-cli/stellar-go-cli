@@ -2,6 +2,7 @@ package swap
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +50,21 @@ type Service struct {
 	client     *horizonclient.Client
 	passphrase string
 	assets     map[string]AssetConfig
+	baseFee    int64
+}
+
+// SetBaseFee overrides the per-operation fee (stroops) used for submitted transactions.
+func (s *Service) SetBaseFee(stroops int64) {
+	if stroops >= txnbuild.MinBaseFee {
+		s.baseFee = stroops
+	}
+}
+
+func (s *Service) feeStroops() int64 {
+	if s.baseFee > 0 {
+		return s.baseFee
+	}
+	return txnbuild.MinBaseFee
 }
 
 func NewService(net models.Network) *Service {
@@ -71,6 +87,7 @@ func NewService(net models.Network) *Service {
 		client:     client,
 		passphrase: passphrase,
 		assets:     assets,
+		baseFee:    txnbuild.MinBaseFee,
 	}
 }
 
@@ -305,7 +322,7 @@ func (s *Service) ExecuteSwap(quote *models.SwapQuote, maxSlippage float64, dest
 	txParams := txnbuild.TransactionParams{
 		SourceAccount:        &sourceAcct,
 		IncrementSequenceNum: true,
-		BaseFee:              txnbuild.MinBaseFee,
+		BaseFee:              s.feeStroops(),
 		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(60)},
 		Operations:           []txnbuild.Operation{operation},
 	}
@@ -1102,6 +1119,153 @@ func (s *Service) ExecuteRoundTrip(amount, slippage float64, destination string,
 	res.SnapshotAfter = getAccountSnapshot(acctAfter)
 
 	return []*models.Payment{pay1, pay2}, nil
+}
+
+// atomicTxTimeout bounds how long an atomic round-trip tx stays valid for inclusion.
+const atomicTxTimeout = 30 * time.Second
+
+// awaitTransaction polls Horizon for a submitted tx hash until it appears or the wait expires.
+func (s *Service) awaitTransaction(hash string, wait time.Duration) (*horizon.Transaction, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		tx, err := s.client.TransactionDetail(hash)
+		if err == nil {
+			return &tx, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
+// ExecuteRoundTripAtomic submits the round trip as ONE path payment base→…→counter→…→base
+// to the sender's own account. DestMin is set to amount + fee + minProfitXLM, so the ledger
+// either fills the whole cycle at a profit or fails the op (op_under_dest_min) — no stranded
+// inventory and a single base fee.
+func (s *Service) ExecuteRoundTripAtomic(amount float64, destination string, minProfitXLM float64, baseAsset, counterAsset string) (*models.Payment, *models.SwapRoundTripResult, error) {
+	res, err := s.AnalyzeRoundTrip(fmt.Sprintf("%.7f", amount), baseAsset, counterAsset, destination)
+	if err != nil {
+		return nil, nil, err
+	}
+	if res.LegA == nil || res.LegB == nil || len(res.LegA.Paths) == 0 || len(res.LegB.Paths) == 0 {
+		return nil, res, fmt.Errorf("no paths for atomic round trip")
+	}
+	kp, err := s.LoadStellarKeypair()
+	if err != nil {
+		return nil, res, err
+	}
+	if destination == "" {
+		destination = kp.Address()
+	}
+
+	counterCfg, ok := s.assets[counterAsset]
+	if !ok {
+		return nil, res, fmt.Errorf("unsupported counter asset: %s", counterAsset)
+	}
+	hops := append([]models.PathAsset{}, res.LegA.Paths[0].Path...)
+	hops = append(hops, models.PathAsset{Code: counterCfg.Code, Issuer: counterCfg.Issuer})
+	hops = append(hops, res.LegB.Paths[0].Path...)
+	if len(hops) > 5 {
+		return nil, res, fmt.Errorf("combined path has %d hops (max 5)", len(hops))
+	}
+
+	feeXLM := float64(s.feeStroops()) / 1e7
+	destMin := amount + minProfitXLM
+	if baseAsset == "XLM" {
+		destMin += feeXLM
+	}
+	// Round up to 7 decimals so DestMin never undercuts the required profit.
+	destMin = math.Ceil(destMin*1e7) / 1e7
+
+	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()})
+	if err != nil {
+		return nil, res, fmt.Errorf("horizon account: %w", err)
+	}
+	res.SnapshotBefore = getAccountSnapshot(sourceAcct)
+
+	baseTx := s.getAsset(baseAsset)
+	op := &txnbuild.PathPaymentStrictSend{
+		SendAsset:   baseTx,
+		SendAmount:  fmt.Sprintf("%.7f", amount),
+		DestAsset:   baseTx,
+		DestMin:     fmt.Sprintf("%.7f", destMin),
+		Destination: destination,
+		Path:        s.buildPath(hops),
+	}
+	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
+		SourceAccount:        &sourceAcct,
+		IncrementSequenceNum: true,
+		BaseFee:              s.feeStroops(),
+		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(int64(atomicTxTimeout / time.Second))},
+		Operations:           []txnbuild.Operation{op},
+	})
+	if err != nil {
+		return nil, res, fmt.Errorf("build transaction: %w", err)
+	}
+	tx, err = tx.Sign(s.passphrase, kp)
+	if err != nil {
+		return nil, res, fmt.Errorf("sign transaction: %w", err)
+	}
+	txB64, err := tx.Base64()
+	if err != nil {
+		return nil, res, fmt.Errorf("serialize transaction: %w", err)
+	}
+	txHash, err := tx.HashHex(s.passphrase)
+	if err != nil {
+		return nil, res, fmt.Errorf("hash transaction: %w", err)
+	}
+	resp, err := s.client.SubmitTransactionXDR(txB64)
+	if err != nil {
+		if herr, ok := err.(*horizonclient.Error); ok {
+			if rc, _ := herr.ResultCodes(); rc != nil {
+				for _, code := range rc.OperationCodes {
+					if code == "op_under_dest_min" {
+						return nil, res, fmt.Errorf("cycle no longer profitable at execution (op_under_dest_min) — nothing swapped, only the base fee was paid")
+					}
+				}
+				return nil, res, fmt.Errorf("tx failed — code: %s, ops: %v", rc.TransactionCode, rc.OperationCodes)
+			}
+			if herr.Problem.Status == 504 {
+				// Horizon gave up waiting; the tx may still be included before its time bound expires.
+				if landed, perr := s.awaitTransaction(txHash, atomicTxTimeout+10*time.Second); perr == nil {
+					resp = *landed
+					err = nil
+				} else {
+					return nil, res, fmt.Errorf("horizon submission timeout; tx %s not found on ledger (%v)", txHash, perr)
+				}
+			} else {
+				return nil, res, fmt.Errorf("horizon error: %s", herr.Problem.Title)
+			}
+		} else {
+			return nil, res, fmt.Errorf("submit to Horizon: %w", err)
+		}
+	}
+	if !resp.Successful {
+		return nil, res, fmt.Errorf("tx %s included but failed (result: %s)", resp.Hash, resp.ResultXdr)
+	}
+
+	if acctAfter, aerr := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()}); aerr == nil {
+		res.SnapshotAfter = getAccountSnapshot(acctAfter)
+	}
+
+	now := time.Now().UTC()
+	return &models.Payment{
+		ID:          "arb-" + resp.Hash[:12],
+		From:        kp.Address(),
+		To:          destination,
+		Amount:      fmt.Sprintf("%.7f", amount),
+		Asset:       baseAsset,
+		Rail:        models.RailSwap,
+		Status:      models.PaymentConfirmed,
+		Network:     s.getNetwork(),
+		Memo:        fmt.Sprintf("Atomic round trip %s→%s→%s", baseAsset, counterAsset, baseAsset),
+		Fee:         fmt.Sprintf("%.7f XLM", feeXLM),
+		TxHash:      resp.Hash,
+		LedgerSeq:   int64(resp.Ledger),
+		CreatedAt:   now,
+		ConfirmedAt: &now,
+	}, res, nil
 }
 
 // Simulated swap for development/testing without real Horizon calls

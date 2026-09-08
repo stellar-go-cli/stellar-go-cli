@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -943,6 +944,8 @@ func newSwapArbitrageCmd(cfg *config.Config) *Command {
 	maxScans := fs.Uint("max-scans", 0, "Maximum scans before exit (0 = infinite)")
 	autoExecute := fs.Bool("auto-execute", false, "Skip confirmation and execute immediately when profitable")
 	showStats := fs.Bool("stats", true, "Show running statistics in continuous mode")
+	atomic := fs.Bool("atomic", true, "Execute both legs as ONE path payment (base→counter→base) that fails entirely unless it returns ≥ amount + fee + min-profit. --atomic=false submits two separate txs.")
+	baseFee := fs.Int64("base-fee", 1000, "Fee per operation in stroops (min 100). Higher fees avoid Horizon timeouts under surge pricing.")
 
 	return &Command{
 		Name:  "arbitrage",
@@ -1000,29 +1003,44 @@ func newSwapArbitrageCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("unsupported network: %s (use stellar-testnet or stellar-mainnet)", net)
 			}
 
+			if *baseFee < 100 {
+				return fmt.Errorf("--base-fee must be at least 100 stroops")
+			}
+			opts := arbExecOpts{atomic: *atomic, baseFee: *baseFee}
+
 			// Non-continuous mode: run once
 			if !*continuous {
-				return runArbitrageScan(cfg, net, *amount, *baseAsset, determinedCounter, *destination, *slippage, *minProfit, *execute, *simulated, *output, *autoExecute)
+				return runArbitrageScan(cfg, net, *amount, *baseAsset, determinedCounter, *destination, *slippage, *minProfit, *execute, *simulated, *output, *autoExecute, opts)
 			}
 
 			// Continuous mode
-			return runContinuousArbitrage(cfg, net, *amount, *baseAsset, determinedCounter, *destination, *slippage, *minProfit, *execute, *simulated, *output, *autoExecute, *interval, *maxScans, *showStats)
+			return runContinuousArbitrage(cfg, net, *amount, *baseAsset, determinedCounter, *destination, *slippage, *minProfit, *execute, *simulated, *output, *autoExecute, *interval, *maxScans, *showStats, opts)
 		},
 	}
 }
 
 // runArbitrageScan executes a single arbitrage scan
-func runArbitrageScan(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool) error {
+func runArbitrageScan(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool, opts arbExecOpts) error {
 	ui.Header(fmt.Sprintf("Round-trip path strategy (%s ↔ %s)", baseAsset, counterAsset))
-	_, err := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, execute, simulated, output, autoExecute)
+	_, err := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, execute, simulated, output, autoExecute, opts)
+	if errors.Is(err, errNotExecuted) {
+		return nil
+	}
 	return err
 }
 
 // runContinuousArbitrage runs continuous arbitrage scanning
-func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool, interval, maxScans uint, showStats bool) error {
+func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool, interval, maxScans uint, showStats bool, opts arbExecOpts) error {
 	ui.Header("Continuous Arbitrage Scanner")
 	ui.Info(fmt.Sprintf("Network: %s | Interval: %ds | Min profit: %.7f XLM", wallet.NetworkDisplayName(net), interval, minProfit))
 	ui.Info(fmt.Sprintf("Trading pair: %s ↔ %s", baseAsset, counterAsset))
+	if execute {
+		mode := "two separate txs"
+		if opts.atomic {
+			mode = "atomic single tx"
+		}
+		ui.Info(fmt.Sprintf("Execution: %s | Base fee: %d stroops", mode, opts.baseFee))
+	}
 	if execute && autoExecute {
 		ui.Warn("Auto-execute enabled — trades will execute immediately when profitable!")
 	}
@@ -1038,7 +1056,7 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 		stats.totalScans++
 
 		// Perform scan (quote only, don't execute yet)
-		result, err := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, false, simulated, output, autoExecute)
+		result, err := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, false, simulated, output, autoExecute, opts)
 		if err != nil {
 			ui.Error(fmt.Sprintf("Scan %d error: %v", scanNum, err))
 		} else if result != nil && result.EstimatedNetXLM >= minProfit {
@@ -1050,9 +1068,10 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 			} else {
 				ui.Success(fmt.Sprintf("Scan %d: Opportunity found! Net: %+.7f XLM", scanNum, result.EstimatedNetXLM))
 
-				// Count opportunity immediately when found (will be confirmed if executed)
 				stats.opportunities++
-				stats.totalProfitXLM += result.EstimatedNetXLM
+				if !execute {
+					stats.totalProfitXLM += result.EstimatedNetXLM
+				}
 
 				// Execute the profitable opportunity if --execute is enabled
 				if execute {
@@ -1061,7 +1080,7 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 
 					// Re-quote immediately before execution to get fresh prices
 					ui.Info("Re-quoting for execution...")
-					freshResult, freshErr := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, false, simulated, output, autoExecute)
+					freshResult, freshErr := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, false, simulated, output, autoExecute, opts)
 					if freshErr != nil {
 						ui.Error(fmt.Sprintf("Re-quote failed: %v", freshErr))
 					} else if freshResult != nil {
@@ -1073,12 +1092,20 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 							ui.Warn(fmt.Sprintf("Re-quoted profit is negative (%.7f XLM) — aborting execution", freshResult.EstimatedNetXLM))
 						} else {
 							// Execute with fresh quote
-							execResult, execErr := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, true, simulated, output, autoExecute)
-							if execErr != nil {
+							execResult, execErr := performArbitrageScan(cfg, net, amount, baseAsset, counterAsset, destination, slippage, minProfit, true, simulated, output, autoExecute, opts)
+							if errors.Is(execErr, errNotExecuted) {
+								ui.Warn("Quote moved below threshold at execution — skipped")
+							} else if execErr != nil {
+								stats.failed++
 								ui.Error(fmt.Sprintf("Execution failed: %v", execErr))
 							} else if execResult != nil {
-								// Execution succeeded - already counted when opportunity was found
-								ui.Success(fmt.Sprintf("Executed! Profit: %+.7f XLM", execResult.EstimatedNetXLM))
+								stats.executed++
+								realized, ok := realizedBaseDelta(execResult)
+								if !ok {
+									realized = execResult.EstimatedNetXLM
+								}
+								stats.totalProfitXLM += realized
+								ui.Success(fmt.Sprintf("Executed! Realized: %+.7f %s (est. %+.7f)", realized, baseAsset, execResult.EstimatedNetXLM))
 							}
 						}
 					}
@@ -1092,8 +1119,13 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 
 		// Show stats if enabled
 		if showStats {
-			fmt.Printf("\r  Scans: %d | Opportunities: %d | Total profit: +%.7f XLM | Next: %ds   ",
-				stats.totalScans, stats.opportunities, stats.totalProfitXLM, interval)
+			if execute {
+				fmt.Printf("\r  Scans: %d | Opportunities: %d | Executed: %d | Failed: %d | Realized: %+.7f %s | Next: %ds   ",
+					stats.totalScans, stats.opportunities, stats.executed, stats.failed, stats.totalProfitXLM, baseAsset, interval)
+			} else {
+				fmt.Printf("\r  Scans: %d | Opportunities: %d | Est. profit: %+.7f XLM | Next: %ds   ",
+					stats.totalScans, stats.opportunities, stats.totalProfitXLM, interval)
+			}
 		}
 
 		// Check max scans
@@ -1114,12 +1146,53 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 type scanStats struct {
 	totalScans     uint
 	opportunities  uint
+	executed       uint
+	failed         uint
 	totalProfitXLM float64
 }
 
+// errNotExecuted signals that --execute was requested but the quote no longer met the profit threshold.
+var errNotExecuted = errors.New("not executed: quote below profit threshold")
+
+// arbExecOpts controls how a round trip is submitted on-chain.
+type arbExecOpts struct {
+	atomic  bool
+	baseFee int64
+}
+
+// realizedBaseDelta returns the on-ledger change of the base asset balance across an execution.
+func realizedBaseDelta(r *models.SwapRoundTripResult) (float64, bool) {
+	if r == nil || r.SnapshotBefore == nil || r.SnapshotAfter == nil {
+		return 0, false
+	}
+	before, okB := snapshotBalance(r.SnapshotBefore, r.BaseAsset)
+	after, okA := snapshotBalance(r.SnapshotAfter, r.BaseAsset)
+	if !okB || !okA {
+		return 0, false
+	}
+	return after - before, true
+}
+
+func snapshotBalance(s *models.AccountSnapshot, code string) (float64, bool) {
+	if code == "XLM" {
+		v, err := strconv.ParseFloat(s.XLM, 64)
+		return v, err == nil
+	}
+	for _, a := range s.Assets {
+		if a.Code == code {
+			v, err := strconv.ParseFloat(a.Balance, 64)
+			return v, err == nil
+		}
+	}
+	return 0, false
+}
+
 // performArbitrageScan executes a single arbitrage scan and returns result
-func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool) (*models.SwapRoundTripResult, error) {
+func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool, opts arbExecOpts) (*models.SwapRoundTripResult, error) {
 	svc := swap.NewService(net)
+	if opts.baseFee > 0 {
+		svc.SetBaseFee(opts.baseFee)
+	}
 	_, keyErr := svc.LoadStellarKeypair()
 	useSim := simulated || keyErr != nil
 
@@ -1173,7 +1246,7 @@ func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAs
 		if output == "json" {
 			fmt.Println(prettyJSON(result))
 		}
-		return result, nil
+		return result, errNotExecuted
 	}
 
 	// Additional safety check: never execute negative profit trades
@@ -1182,7 +1255,7 @@ func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAs
 		if output == "json" {
 			fmt.Println(prettyJSON(result))
 		}
-		return result, nil
+		return result, errNotExecuted
 	}
 	if useSim {
 		ui.Warn("Execute will simulate swaps only (no ledger txs).")
@@ -1209,6 +1282,16 @@ func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAs
 	if useSim {
 		sim := swap.NewSimulatedService()
 		payments, err = sim.ExecuteRoundTrip(amountFloat, slippage/100, destination, minProfit, baseAsset, counterAsset)
+	} else if opts.atomic {
+		var pay *models.Payment
+		var execRes *models.SwapRoundTripResult
+		pay, execRes, err = svc.ExecuteRoundTripAtomic(amountFloat, destination, minProfit, baseAsset, counterAsset)
+		if execRes != nil {
+			result = execRes
+		}
+		if pay != nil {
+			payments = []*models.Payment{pay}
+		}
 	} else {
 		payments, err = svc.ExecuteRoundTrip(amountFloat, slippage/100, destination, minProfit, baseAsset, counterAsset)
 	}
