@@ -1,26 +1,30 @@
 package commands
 
 import (
+	"context"
 	"crypto/sha256"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/ogtechnologies/mozartpay/internal/models"
+	"github.com/ogtechnologies/mozartpay/internal/soroban"
 	"github.com/ogtechnologies/mozartpay/internal/ui"
 	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar/go/keypair"
+	"github.com/stellar/go/xdr"
 )
 
 func newContractCmd(cfg *config.Config) *Command {
 	cmd := &Command{
 		Name:  "contract",
-		Short: "Interact with Orchestrated Agreement smart contract",
-		Long:  "Create and manage orchestrated agreements on Stellar.",
+		Short: "Interact with Soroban smart contracts on Stellar",
+		Long:  "Deploy and manage smart contracts on Stellar using pure Go Soroban RPC.",
 		cfg:   cfg,
 	}
+	cmd.addSub(newContractDeployCmd(cfg))
 	cmd.addSub(newContractCreateAgreementCmd(cfg))
 	cmd.addSub(newContractShowCmd(cfg))
 	cmd.addSub(newContractListCmd(cfg))
@@ -35,6 +39,117 @@ func newContractCmd(cfg *config.Config) *Command {
 		return nil
 	}
 	return cmd
+}
+
+// ─── contract deploy ───────────────────────────
+
+func newContractDeployCmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
+	wasmPath := fs.String("wasm", "", "Path to the .wasm file to deploy (required)")
+	network := fs.String("network", "", "Stellar network: stellar-testnet or stellar-mainnet (defaults to config)")
+	constructorArgsStr := fs.String("constructor-args", "", "Constructor args as comma-separated XDR ScVal base64 strings (optional)")
+	ownerAddr := fs.String("owner", "", "Owner address for contracts with __constructor(owner: Address). Defaults to deployer address")
+
+	return &Command{
+		Name:  "deploy",
+		Short: "Deploy any .wasm contract to Soroban (pure Go, no stellar CLI)",
+		Long:  "Uploads WASM bytecode and creates a contract instance on the Soroban network.",
+		Flags: fs,
+		Run: func(c *Command, args []string) error {
+			if *wasmPath == "" {
+				ui.Error("WASM file path required (--wasm)")
+				return fmt.Errorf("missing --wasm flag")
+			}
+
+			wasmBytes, err := os.ReadFile(*wasmPath)
+			if err != nil {
+				ui.Error(fmt.Sprintf("Failed to read WASM file: %v", err))
+				return fmt.Errorf("failed to read wasm: %w", err)
+			}
+
+			net := *network
+			if net == "" {
+				net = cfg.Network
+			}
+			if net == "" {
+				net = "stellar-testnet"
+			}
+
+			svc := wallet.NewService()
+			account, err := svc.GetActiveAccount()
+			if err != nil {
+				return fmt.Errorf("no active wallet: %w", err)
+			}
+
+			kp, err := keypair.ParseFull(account.PrivateKey)
+			if err != nil {
+				return fmt.Errorf("invalid private key in wallet: %w", err)
+			}
+
+			ui.Header("Deploy Soroban Contract")
+			ui.Info(fmt.Sprintf("WASM file: %s (%d bytes)", *wasmPath, len(wasmBytes)))
+			ui.Info(fmt.Sprintf("Network: %s", net))
+			ui.Info(fmt.Sprintf("Deployer: %s", account.Address))
+
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			ui.SectionLabel("Uploading WASM bytecode...")
+
+			var constructorArgs []xdr.ScVal
+			if *constructorArgsStr != "" {
+				for _, argB64 := range splitComma(*constructorArgsStr) {
+					var scv xdr.ScVal
+					if err := xdr.SafeUnmarshalBase64(argB64, &scv); err != nil {
+						return fmt.Errorf("invalid constructor arg %q: %w", argB64, err)
+					}
+					constructorArgs = append(constructorArgs, scv)
+				}
+			} else if *ownerAddr != "" {
+				ownerScAddr, err := soroban.AccountToScAddress(*ownerAddr)
+				if err != nil {
+					return fmt.Errorf("invalid owner address: %w", err)
+				}
+				constructorArgs = []xdr.ScVal{soroban.ScvAddress(ownerScAddr)}
+			} else {
+				deployerScAddr, err := soroban.AccountToScAddress(account.Address)
+				if err != nil {
+					return fmt.Errorf("failed to convert deployer address: %w", err)
+				}
+				constructorArgs = []xdr.ScVal{soroban.ScvAddress(deployerScAddr)}
+			}
+
+			result, err := client.DeployWithConstructorArgs(ctx, kp, wasmBytes, constructorArgs)
+			if err != nil {
+				ui.Error(fmt.Sprintf("Deployment failed: %v", err))
+				return fmt.Errorf("deploy failed: %w", err)
+			}
+
+			ui.Success("Contract deployed successfully!")
+			ui.Info(fmt.Sprintf("Contract ID: %s", result.ContractID))
+			ui.Info(fmt.Sprintf("WASM Hash:   %s", result.WasmHash))
+			ui.Info(fmt.Sprintf("Upload TX:   %s", result.UploadTxHash))
+			ui.Info(fmt.Sprintf("Create TX:   %s", result.CreateTxHash))
+
+			explorerURL := "https://stellar.expert/explorer/testnet/contract/" + result.ContractID
+			if net == "stellar-mainnet" {
+				explorerURL = "https://stellar.expert/explorer/public/contract/" + result.ContractID
+			}
+			ui.Info(fmt.Sprintf("Explorer: %s", explorerURL))
+
+			cfg.ContractID = result.ContractID
+			if err := config.Save(cfg); err != nil {
+				ui.Warn("Failed to save contract ID to config")
+			} else {
+				ui.SectionLabel("Contract ID saved to config")
+			}
+
+			return nil
+		},
+	}
 }
 
 // ─── contract set ───────────────────────────
@@ -82,73 +197,51 @@ func newContractCreateAgreementCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("contract ID not set")
 			}
 
-			// Get active wallet
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			kp, net, account, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Create Orchestrated Agreement")
 			ui.Info(fmt.Sprintf("Initiator: %s", account.Address))
 			ui.Info(fmt.Sprintf("Contract: %s", cfg.ContractID))
 
-			// Build stellar contract invoke command
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"create_agreement",
-				"--initiator", account.Address,
-				"--dispute_window", fmt.Sprintf("%d", *disputeWindow),
+			initiatorAddr, err := soroban.AccountToScAddress(account.Address)
+			if err != nil {
+				return fmt.Errorf("failed to convert address: %w", err)
 			}
 
+			invArgs := []xdr.ScVal{
+				soroban.ScvAddress(initiatorAddr),
+				soroban.ScvU64(uint64(*disputeWindow)),
+			}
 			if *counterparty != "" {
-				cmdArgs = append(cmdArgs, "--counterparty", *counterparty)
+				cpAddr, err := soroban.AccountToScAddress(*counterparty)
+				if err != nil {
+					return fmt.Errorf("invalid counterparty address: %w", err)
+				}
+				invArgs = append(invArgs, soroban.ScvAddress(cpAddr))
 			}
 			if *expiresAt > 0 {
-				cmdArgs = append(cmdArgs, "--expires_at", fmt.Sprintf("%d", *expiresAt))
+				invArgs = append(invArgs, soroban.ScvU64(*expiresAt))
 			}
 
 			ui.SectionLabel("Submitting transaction...")
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			result, err := client.Invoke(ctx, kp, cfg.ContractID, "create_agreement", invArgs)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Transaction failed: %s", string(output)))
+				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)
 			}
 
-			// Parse agreement ID from output
-			outputStr := string(output)
-			var agreementID string
-			lines := strings.Split(outputStr, "\n")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if len(line) == 64 && isHexString(line) {
-					agreementID = line
-					break
-				}
-			}
-
-			if agreementID == "" {
-				ui.Warn("Could not parse agreement ID from output")
-				fmt.Println(outputStr)
-				return nil
-			}
-
-			// Store agreement ID
-			cfg.AgreementIDs = append(cfg.AgreementIDs, agreementID)
-			cfg.LastAgreementID = agreementID
-			if err := config.Save(cfg); err != nil {
-				ui.Warn("Failed to save agreement ID to config")
-			}
-
-			ui.Success(fmt.Sprintf("Agreement created: %s", agreementID))
+			ui.Success(fmt.Sprintf("Agreement created. TX: %s", result.TxHash))
+			ui.Info(fmt.Sprintf("Result: %s", result.ResultXDR))
 			ui.Info(fmt.Sprintf("Explorer: https://stellar.expert/explorer/testnet/contract/%s", cfg.ContractID))
 
 			return nil
@@ -181,35 +274,28 @@ func newContractShowCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("agreement ID required")
 			}
 
-			// Get active wallet
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			_, net, _, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Agreement Details")
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"get_agreement",
-				"--agreement_id", id,
-			}
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			result, err := client.SimulateOnly(ctx, cfg.ContractID, "get_agreement", []xdr.ScVal{
+				soroban.ScvString(id),
+			})
 			if err != nil {
-				ui.Error(fmt.Sprintf("Query failed: %s", string(output)))
-				return fmt.Errorf("invoke failed: %w", err)
+				ui.Error(fmt.Sprintf("Query failed: %v", err))
+				return fmt.Errorf("simulate failed: %w", err)
 			}
 
-			fmt.Println(string(output))
+			fmt.Println(result)
 			return nil
 		},
 	}
@@ -227,34 +313,32 @@ func newContractListCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("contract ID not set")
 			}
 
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			_, net, account, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("My Agreements")
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"get_initiator_agreements",
-				"--initiator", account.Address,
-			}
-
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			initiatorAddr, err := soroban.AccountToScAddress(account.Address)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Query failed: %s", string(output)))
-				return fmt.Errorf("invoke failed: %w", err)
+				return fmt.Errorf("failed to convert address: %w", err)
 			}
 
-			// Display stored agreements
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			result, err := client.SimulateOnly(ctx, cfg.ContractID, "get_initiator_agreements", []xdr.ScVal{
+				soroban.ScvAddress(initiatorAddr),
+			})
+			if err != nil {
+				ui.Error(fmt.Sprintf("Query failed: %v", err))
+				return fmt.Errorf("simulate failed: %w", err)
+			}
+
 			if len(cfg.AgreementIDs) > 0 {
 				ui.SectionLabel("Stored Agreement IDs:")
 				for i, id := range cfg.AgreementIDs {
@@ -267,7 +351,7 @@ func newContractListCmd(cfg *config.Config) *Command {
 			}
 
 			ui.SectionLabel("On-chain Result:")
-			fmt.Println(string(output))
+			fmt.Println(result)
 			return nil
 		},
 	}
@@ -306,43 +390,39 @@ func newContractAttestIdentityCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("DID required")
 			}
 
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			kp, net, _, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Attest Identity")
 
-			// Generate attestation hash (simplified - in production this would be a real hash)
 			attestationHash := generateHash(id + *did + time.Now().String())
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"attest_identity",
-				"--agreement_id", id,
-				"--did", *did,
-				"--did_method", *method,
-				"--vc_type", *vcType,
-				"--attestation_hash", attestationHash,
+			invArgs := []xdr.ScVal{
+				soroban.ScvString(id),
+				soroban.ScvString(*did),
+				soroban.ScvString(*method),
+				soroban.ScvString(*vcType),
+				soroban.ScvBytes([]byte(attestationHash)),
 			}
 
 			ui.SectionLabel("Submitting transaction...")
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			result, err := client.Invoke(ctx, kp, cfg.ContractID, "attest_identity", invArgs)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Transaction failed: %s", string(output)))
+				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)
 			}
 
 			ui.Success("Identity attested successfully")
+			ui.Info(fmt.Sprintf("TX: %s", result.TxHash))
 			return nil
 		},
 	}
@@ -375,40 +455,42 @@ func newContractConnectWalletCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("agreement ID required")
 			}
 
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			kp, net, account, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Connect Wallet")
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"connect_wallet",
-				"--agreement_id", id,
-				"--stellar_address", account.Address,
-				"--wallet_type", *walletType,
-				"--passkey_enabled", fmt.Sprintf("%t", *passkey),
-				"--required_signers", "1",
+			stellarAddr, err := soroban.AccountToScAddress(account.Address)
+			if err != nil {
+				return fmt.Errorf("failed to convert address: %w", err)
+			}
+
+			invArgs := []xdr.ScVal{
+				soroban.ScvString(id),
+				soroban.ScvAddress(stellarAddr),
+				soroban.ScvString(*walletType),
+				soroban.ScvBool(*passkey),
+				soroban.ScvU32(1),
 			}
 
 			ui.SectionLabel("Submitting transaction...")
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			result, err := client.Invoke(ctx, kp, cfg.ContractID, "connect_wallet", invArgs)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Transaction failed: %s", string(output)))
+				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)
 			}
 
 			ui.Success("Wallet connected successfully")
+			ui.Info(fmt.Sprintf("TX: %s", result.TxHash))
 			return nil
 		},
 	}
@@ -442,40 +524,37 @@ func newContractFundAssetCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("agreement ID required")
 			}
 
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			kp, net, _, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Fund Asset")
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"fund_and_set_asset",
-				"--agreement_id", id,
-				"--asset_code", *assetCode,
-				"--amount", *amount,
-				"--locked_amount", *locked,
-				"--asset_type", "fungible",
+			invArgs := []xdr.ScVal{
+				soroban.ScvString(id),
+				soroban.ScvString(*assetCode),
+				soroban.ScvString(*amount),
+				soroban.ScvString(*locked),
+				soroban.ScvString("fungible"),
 			}
 
 			ui.SectionLabel("Submitting transaction...")
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			result, err := client.Invoke(ctx, kp, cfg.ContractID, "fund_and_set_asset", invArgs)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Transaction failed: %s", string(output)))
+				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)
 			}
 
 			ui.Success("Asset funded successfully")
+			ui.Info(fmt.Sprintf("TX: %s", result.TxHash))
 			return nil
 		},
 	}
@@ -512,37 +591,34 @@ func newContractExecuteCmd(cfg *config.Config) *Command {
 				finalTxHash = generateHash(id + time.Now().String())
 			}
 
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			kp, net, _, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Execute Agreement")
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"execute_agreement",
-				"--agreement_id", id,
-				"--final_tx_hash", finalTxHash,
+			invArgs := []xdr.ScVal{
+				soroban.ScvString(id),
+				soroban.ScvBytes([]byte(finalTxHash)),
 			}
 
 			ui.SectionLabel("Submitting transaction...")
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			result, err := client.Invoke(ctx, kp, cfg.ContractID, "execute_agreement", invArgs)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Transaction failed: %s", string(output)))
+				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)
 			}
 
 			ui.Success("Agreement executed successfully")
+			ui.Info(fmt.Sprintf("TX: %s", result.TxHash))
 			return nil
 		},
 	}
@@ -573,36 +649,33 @@ func newContractSettleCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("agreement ID required")
 			}
 
-			svc := wallet.NewService()
-			account, err := svc.GetActiveAccount()
+			kp, net, _, err := getKeypairAndNetwork(cfg)
 			if err != nil {
-				return fmt.Errorf("no active wallet: %w", err)
+				return err
 			}
 
 			ui.Header("Settle Agreement")
 
-			cmdArgs := []string{
-				"contract", "invoke",
-				"--id", cfg.ContractID,
-				"--source", account.Address,
-				"--rpc-url", "https://soroban-testnet.stellar.org",
-				"--network-passphrase", "Test SDF Network ; September 2015",
-				"--",
-				"settle_agreement",
-				"--agreement_id", id,
+			invArgs := []xdr.ScVal{
+				soroban.ScvString(id),
 			}
 
 			ui.SectionLabel("Submitting transaction...")
 
-			cmd := exec.Command("stellar", cmdArgs...)
-			cmd.Env = append(os.Environ(), "SSL_CERT_FILE=/opt/homebrew/etc/ca-certificates/cert.pem")
-			output, err := cmd.CombinedOutput()
+			client := soroban.NewClientForNetwork(net)
+			defer client.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			result, err := client.Invoke(ctx, kp, cfg.ContractID, "settle_agreement", invArgs)
 			if err != nil {
-				ui.Error(fmt.Sprintf("Transaction failed: %s", string(output)))
+				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)
 			}
 
 			ui.Success("Agreement settled successfully")
+			ui.Info(fmt.Sprintf("TX: %s", result.TxHash))
 			return nil
 		},
 	}
@@ -610,21 +683,44 @@ func newContractSettleCmd(cfg *config.Config) *Command {
 
 // ─── Helpers ───────────────────────────
 
-func isHexString(s string) bool {
-	if len(s) != 64 {
-		return false
+func getKeypairAndNetwork(cfg *config.Config) (*keypair.Full, string, *models.Account, error) {
+	svc := wallet.NewService()
+	account, err := svc.GetActiveAccount()
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("no active wallet: %w", err)
 	}
-	for _, c := range s {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-			return false
-		}
+
+	kp, err := keypair.ParseFull(account.PrivateKey)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("invalid private key in wallet: %w", err)
 	}
-	return true
+
+	net := cfg.Network
+	if net == "" {
+		net = "stellar-testnet"
+	}
+
+	return kp, net, account, nil
 }
 
 func generateHash(input string) string {
-	// Simplified hash generation - in production use proper SHA256
 	h := sha256.New()
 	h.Write([]byte(input))
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func splitComma(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ',' {
+			result = append(result, s[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
 }
