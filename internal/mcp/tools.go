@@ -538,6 +538,96 @@ func (s *Server) registerSystemTools() {
 	}, s.handleMemorySearch)
 }
 
+// ============================================
+// Tansu Tools
+// ============================================
+
+func (s *Server) registerTansuTools() {
+	// tansu_list_projects - List registered projects
+	s.RegisterTool(Tool{
+		Name:        "tansu_list_projects",
+		Description: "List registered Tansu projects (paginated, read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"page": createNumberSchema("Page number (0-indexed)", false),
+		}, nil),
+	}, s.handleTansuListProjects)
+
+	// tansu_get_project - Get project details
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_project",
+		Description: "Get Tansu project details by project key (hex) or name",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"projectKey": createStringSchema("Project key (hex)", false),
+			"name":       createStringSchema("Project name (computes keccak256 key)", false),
+		}, nil),
+	}, s.handleTansuGetProject)
+
+	// tansu_get_proposals - List proposals
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_proposals",
+		Description: "List Tansu proposals for a project (paginated, read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"projectKey": createStringSchema("Project key (hex)", false),
+			"name":       createStringSchema("Project name (computes keccak256 key)", false),
+			"page":       createNumberSchema("Page number (0-indexed)", false),
+		}, nil),
+	}, s.handleTansuGetProposals)
+
+	// tansu_get_proposal - Get single proposal
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_proposal",
+		Description: "Get a single Tansu proposal by ID (read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"projectKey": createStringSchema("Project key (hex)", false),
+			"name":       createStringSchema("Project name (computes keccak256 key)", false),
+			"proposalId": createNumberSchema("Proposal ID", true),
+		}, []string{"proposalId"}),
+	}, s.handleTansuGetProposal)
+
+	// tansu_get_member - Get member info
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_member",
+		Description: "Get Tansu member information by Stellar address (read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"address": createStringSchema("Member Stellar address (G...)", true),
+		}, []string{"address"}),
+	}, s.handleTansuGetMember)
+
+	// tansu_get_commit - Get latest commit hash
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_commit",
+		Description: "Get the latest commit hash for a Tansu project (read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"projectKey": createStringSchema("Project key (hex)", false),
+			"name":       createStringSchema("Project name (computes keccak256 key)", false),
+		}, nil),
+	}, s.handleTansuGetCommit)
+
+	// tansu_get_evidence - Get evidence history
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_evidence",
+		Description: "Get evidence history for a Tansu project commit (read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"projectKey": createStringSchema("Project key (hex)", false),
+			"name":       createStringSchema("Project name (computes keccak256 key)", false),
+			"commitHash": createStringSchema("Commit hash", true),
+			"kind":       createEnumSchema("Evidence kind", []string{"Sbom", "Cve", "Attestation"}, "Sbom"),
+		}, []string{"commitHash"}),
+	}, s.handleTansuGetEvidence)
+
+	// tansu_get_attestation_finality - Get attestation finality
+	s.RegisterTool(Tool{
+		Name:        "tansu_get_attestation_finality",
+		Description: "Get attestation finality status for a Tansu project commit (read-only)",
+		InputSchema: buildInputSchema(map[string]interface{}{
+			"projectKey": createStringSchema("Project key (hex)", false),
+			"name":       createStringSchema("Project name (computes keccak256 key)", false),
+			"commitHash": createStringSchema("Commit hash", true),
+			"target":     createStringSchema("Attestation target (default: Commit)", false),
+		}, []string{"commitHash"}),
+	}, s.handleTansuGetAttestationFinality)
+}
+
 // Helper function to safely extract string argument
 func getStringArg(args map[string]interface{}, key string) (string, bool) {
 	val, ok := args[key]

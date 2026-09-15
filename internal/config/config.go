@@ -38,6 +38,8 @@ type IntegrationConfig struct {
 	StellarHorizonURL    string `json:"stellarHorizonUrl"`
 	AlphaVantageAPIKey   string `json:"alphaVantageApiKey"`
 	FinnhubAPIKey        string `json:"finnhubApiKey"`
+	TansuEnabled         bool   `json:"tansuEnabled"`
+	TansuContractID      string `json:"tansuContractId"`
 }
 
 // LLMConfig holds configuration for local LLM inference
@@ -78,6 +80,8 @@ func DefaultConfig() *Config {
 			X402Enabled:          true,
 			TempoEnabled:         true,
 			StellarHorizonURL:    "https://horizon-testnet.stellar.org",
+			TansuEnabled:         true,
+			TansuContractID:      "CBXKUSLQPVF35FYURR5C42BPYA5UOVDXX2ELKIM2CAJMCI6HXG2BHGZA",
 		},
 		LLM: LLMConfig{
 			Enabled:         false,

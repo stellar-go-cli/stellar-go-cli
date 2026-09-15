@@ -503,6 +503,13 @@ func ListIntegrations() []Integration {
 			Description: "Real-time market news and financial data",
 			Protocol:    "REST API",
 		},
+		{
+			Name:        "Tansu",
+			Enabled:     true,
+			Status:      "active",
+			Description: "Decentralized project governance & versioning on Stellar",
+			Protocol:    "Soroban RPC",
+		},
 	}
 }
 

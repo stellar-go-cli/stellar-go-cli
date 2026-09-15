@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/ogtechnologies/mozartpay/internal/integrations"
 	"github.com/ogtechnologies/mozartpay/internal/models"
 )
 
@@ -1478,4 +1479,165 @@ func (s *Server) handleMemorySearch(ctx context.Context, args map[string]interfa
 		"fuzzy":         fuzzy,
 		"message":       fmt.Sprintf("Found %d memories matching '%s'", len(results), query),
 	}, nil
+}
+
+// ============================================
+// Tansu Handlers
+// ============================================
+
+func (s *Server) handleTansuListProjects(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	page, _ := getNumberArg(args, "page")
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetProjects(ctx, uint32(page))
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"page": page, "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetProject(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	key, _ := getStringArg(args, "projectKey")
+	name, _ := getStringArg(args, "name")
+	projectKey, err := integrations.ResolveProjectKey(key, name)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetProject(ctx, projectKey)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"projectKey": fmt.Sprintf("%x", projectKey), "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetProposals(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	key, _ := getStringArg(args, "projectKey")
+	name, _ := getStringArg(args, "name")
+	page, _ := getNumberArg(args, "page")
+	projectKey, err := integrations.ResolveProjectKey(key, name)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetDao(ctx, projectKey, uint32(page))
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"projectKey": fmt.Sprintf("%x", projectKey), "page": page, "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetProposal(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	key, _ := getStringArg(args, "projectKey")
+	name, _ := getStringArg(args, "name")
+	proposalID, ok := getNumberArg(args, "proposalId")
+	if !ok {
+		return nil, fmt.Errorf("missing required parameter: proposalId")
+	}
+	projectKey, err := integrations.ResolveProjectKey(key, name)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetProposal(ctx, projectKey, uint32(proposalID))
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"projectKey": fmt.Sprintf("%x", projectKey), "proposalId": proposalID, "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetMember(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	address, ok := getStringArg(args, "address")
+	if !ok || address == "" {
+		return nil, fmt.Errorf("missing required parameter: address")
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetMember(ctx, address)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"address": address, "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetCommit(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	key, _ := getStringArg(args, "projectKey")
+	name, _ := getStringArg(args, "name")
+	projectKey, err := integrations.ResolveProjectKey(key, name)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetCommit(ctx, projectKey)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"projectKey": fmt.Sprintf("%x", projectKey), "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetEvidence(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	key, _ := getStringArg(args, "projectKey")
+	name, _ := getStringArg(args, "name")
+	commitHash, ok := getStringArg(args, "commitHash")
+	if !ok || commitHash == "" {
+		return nil, fmt.Errorf("missing required parameter: commitHash")
+	}
+	kind, _ := getStringArg(args, "kind")
+	if kind == "" {
+		kind = "Sbom"
+	}
+	projectKey, err := integrations.ResolveProjectKey(key, name)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetEvidence(ctx, projectKey, commitHash, kind)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"projectKey": fmt.Sprintf("%x", projectKey), "commitHash": commitHash, "kind": kind, "xdr": result, "status": "ok"}, nil
+}
+
+func (s *Server) handleTansuGetAttestationFinality(ctx context.Context, args map[string]interface{}) (interface{}, error) {
+	key, _ := getStringArg(args, "projectKey")
+	name, _ := getStringArg(args, "name")
+	commitHash, ok := getStringArg(args, "commitHash")
+	if !ok || commitHash == "" {
+		return nil, fmt.Errorf("missing required parameter: commitHash")
+	}
+	target, _ := getStringArg(args, "target")
+	if target == "" {
+		target = "Commit"
+	}
+	projectKey, err := integrations.ResolveProjectKey(key, name)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.tansuQuery(ctx, func(client *integrations.TansuClient, ctx context.Context) (string, error) {
+		return client.GetAttestationFinality(ctx, projectKey, commitHash, target)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"projectKey": fmt.Sprintf("%x", projectKey), "commitHash": commitHash, "target": target, "xdr": result, "status": "ok"}, nil
+}
+
+// tansuQuery is a helper that creates a TansuClient from config and executes a query.
+func (s *Server) tansuQuery(ctx context.Context, fn func(*integrations.TansuClient, context.Context) (string, error)) (string, error) {
+	contractID := s.cfg.Integrations.TansuContractID
+	if contractID == "" {
+		contractID = integrations.TansuTestnetContractID
+	}
+	network := s.cfg.Network
+	if network == "" {
+		network = "stellar-testnet"
+	}
+	client := integrations.NewTansuClientForNetwork(network, contractID)
+	defer client.Close()
+	return fn(client, ctx)
 }

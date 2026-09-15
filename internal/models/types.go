@@ -338,6 +338,106 @@ type ZKSwapVerification struct {
 }
 
 // ─────────────────────────────────────────────
+// Tansu — Project Governance & Versioning
+// ─────────────────────────────────────────────
+
+type TansuEvidenceKind string
+
+const (
+	TansuEvidenceSbom        TansuEvidenceKind = "Sbom"
+	TansuEvidenceCve         TansuEvidenceKind = "Cve"
+	TansuEvidenceAttestation TansuEvidenceKind = "Attestation"
+)
+
+type TansuBadge string
+
+const (
+	TansuBadgeDeveloper TansuBadge = "Developer"
+	TansuBadgeTriage    TansuBadge = "Triage"
+	TansuBadgeCommunity TansuBadge = "Community"
+	TansuBadgeVerified  TansuBadge = "Verified"
+	TansuBadgeDefault   TansuBadge = "Default"
+)
+
+type TansuProject struct {
+	Name        string   `json:"name"`
+	URL         string   `json:"url"`
+	IPFS        string   `json:"ipfs"`
+	Maintainers []string `json:"maintainers"`
+	SubProjects []string `json:"subProjects,omitempty"`
+}
+
+type TansuProposalStatus string
+
+const (
+	TansuProposalActive    TansuProposalStatus = "Active"
+	TansuProposalApproved  TansuProposalStatus = "Approved"
+	TansuProposalRejected  TansuProposalStatus = "Rejected"
+	TansuProposalCancelled TansuProposalStatus = "Cancelled"
+	TansuProposalMalicious TansuProposalStatus = "Malicious"
+)
+
+type TansuProposal struct {
+	ID           uint32              `json:"id"`
+	Title        string              `json:"title"`
+	Proposer     string              `json:"proposer"`
+	IPFS         string              `json:"ipfs"`
+	Status       TansuProposalStatus `json:"status"`
+	VotingEndsAt uint64              `json:"votingEndsAt"`
+	PublicVoting bool                `json:"publicVoting"`
+}
+
+type TansuMember struct {
+	Projects    []TansuProjectBadges `json:"projects"`
+	Meta        string               `json:"meta"`
+	GitIdentity string               `json:"gitIdentity,omitempty"`
+}
+
+type TansuProjectBadges struct {
+	ProjectKey string       `json:"projectKey"`
+	Badges     []TansuBadge `json:"badges"`
+}
+
+type TansuBadges struct {
+	Developer []string `json:"developer"`
+	Triage    []string `json:"triage"`
+	Community []string `json:"community"`
+	Verified  []string `json:"verified"`
+}
+
+type TansuEvidence struct {
+	CID       string `json:"cid"`
+	CreatedAt uint64 `json:"createdAt"`
+}
+
+type TansuFinalityStatus struct {
+	Attested    uint32  `json:"attested"`
+	Total       uint32  `json:"total"`
+	IsFinal     bool    `json:"isFinal"`
+	FinalizedAt *uint64 `json:"finalizedAt,omitempty"`
+}
+
+type TansuAttestation struct {
+	Attester  string  `json:"attester"`
+	Weight    uint32  `json:"weight"`
+	CreatedAt uint64  `json:"createdAt"`
+	Note      *string `json:"note,omitempty"`
+}
+
+type TansuAdminsConfig struct {
+	Threshold uint32   `json:"threshold"`
+	Admins    []string `json:"admins"`
+}
+
+type TansuAnonymousVoteConfig struct {
+	PublicKey string `json:"publicKey"`
+}
+
+type TansuDao struct {
+	Proposals []TansuProposal `json:"proposals"`
+}
+
+// ─────────────────────────────────────────────
 // Swap — Path Payments
 // ─────────────────────────────────────────────
 

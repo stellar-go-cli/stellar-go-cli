@@ -695,4 +695,5 @@ func (s *Server) registerTools() {
 	s.registerAssetTools()
 	s.registerPayTools()
 	s.registerSystemTools()
+	s.registerTansuTools()
 }

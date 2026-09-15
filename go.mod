@@ -1,6 +1,6 @@
 module github.com/ogtechnologies/mozartpay
 
-go 1.24.2
+go 1.26.0
 
 require (
 	github.com/charmbracelet/bubbles v1.0.0
@@ -11,7 +11,8 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.37
 	github.com/prometheus/client_golang v1.19.1
 	github.com/stellar/go v0.0.0-20251210100531-aab2ea4aca88
-	golang.org/x/term v0.37.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/term v0.46.0
 )
 
 require (
@@ -57,9 +58,9 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

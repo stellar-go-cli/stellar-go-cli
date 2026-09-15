@@ -13,7 +13,7 @@ import (
 func newIntegrationsCmd(cfg *config.Config) *Command {
 	cmd := &Command{
 		Name:  "integrations",
-		Short: "Manage StellarCarbon, x402, Tempo, Alpha Vantage, and Finnhub integrations",
+		Short: "Manage StellarCarbon, x402, Tempo, Alpha Vantage, Finnhub, and Tansu integrations",
 		Long:  "List, ping, and configure third-party integrations. Attach carbon credits to assets, configure news feeds from Alpha Vantage or Finnhub.",
 		cfg:   cfg,
 	}
@@ -22,6 +22,7 @@ func newIntegrationsCmd(cfg *config.Config) *Command {
 	cmd.addSub(newIntCarbonCmd(cfg))
 	cmd.addSub(newIntNewsCmd(cfg))
 	cmd.addSub(newIntFinnhubCmd(cfg))
+	cmd.addSub(newIntTansuCmd(cfg))
 	cmd.Run = func(c *Command, args []string) error {
 		c.printHelp()
 		return nil
