@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ogtechnologies/mozartpay/internal/iso20022"
 	"github.com/ogtechnologies/mozartpay/internal/models"
 	mpCrypto "github.com/ogtechnologies/mozartpay/pkg/crypto"
 )
@@ -61,41 +62,47 @@ func (s *Service) FormatJSON(report *models.TransactionReport) (string, error) {
 	return string(b), nil
 }
 
-// FormatISO20022XML renders the ISO 20022 message as XML (pacs.008)
+// FormatISO20022XML renders the ISO 20022 message as XML
 func (s *Service) FormatISO20022XML(report *models.TransactionReport) (string, error) {
 	if report.ISO20022 == nil {
 		return "", fmt.Errorf("no ISO 20022 data in report")
 	}
+	if report.ISO20022.XML != "" {
+		return report.ISO20022.XML, nil
+	}
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data to generate XML")
+	}
+	return iso20022.BuildPacs008(report.Payment, nil)
+}
 
-	iso := report.ISO20022
+// FormatPacs002 generates a pacs.002 payment status report
+func (s *Service) FormatPacs002(report *models.TransactionReport, status iso20022.TransactionStatus, reasonCode string) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildPacs002(report.Payment, &iso20022.Pacs002Options{
+		Status:     status,
+		ReasonCode: reasonCode,
+	})
+}
 
-	// Build ISO 20022 pacs.008.001.08 XML manually for correctness
-	tmpl := `<?xml version="1.0" encoding="UTF-8"?>
-<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08">
-  <FIToFICstmrCdtTrf>
-    <GrpHdr>
-      <MsgId>` + iso.MessageID + `</MsgId>
-      <CreDtTm>` + iso.CreatedAt.Format(time.RFC3339) + `</CreDtTm>
-      <NbOfTxs>1</NbOfTxs>
-      <SttlmInf>
-        <SttlmMtd>CLRG</SttlmMtd>
-      </SttlmInf>
-    </GrpHdr>
-    <CdtTrfTxInf>
-      <PmtId>
-        <EndToEndId>` + iso.PaymentInfo.EndToEndID + `</EndToEndId>
-      </PmtId>
-      <IntrBkSttlmAmt Ccy="` + iso.PaymentInfo.Currency + `">` + iso.PaymentInfo.Amount + `</IntrBkSttlmAmt>
-      <Dbtr>
-        <Nm>` + iso.PaymentInfo.DebtorName + `</Nm>
-      </Dbtr>
-      <Cdtr>
-        <Nm>` + iso.PaymentInfo.CreditorName + `</Nm>
-      </Cdtr>
-    </CdtTrfTxInf>
-  </FIToFICstmrCdtTrf>
-</Document>`
-	return tmpl, nil
+// FormatPacs004 generates a pacs.004 payment reversal
+func (s *Service) FormatPacs004(report *models.TransactionReport, reasonCode string) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildPacs004(report.Payment, &iso20022.Pacs004Options{
+		ReversalReasonCode: reasonCode,
+	})
+}
+
+// FormatPacs009 generates a pacs.009 FI-to-FI direct debit
+func (s *Service) FormatPacs009(report *models.TransactionReport) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildPacs009(report.Payment, nil)
 }
 
 // FormatSummary renders a human-readable text summary
@@ -169,13 +176,19 @@ func (s *Service) FormatSummary(report *models.TransactionReport) string {
 // ─────────────────────────────────────────────
 
 func (s *Service) buildISO20022(p *models.Payment) (*models.ISO20022Message, error) {
-	msgID := "MZTP" + p.ID[:8]
+	msgID := "MZTP" + safeTruncateID(p.ID, 8)
 	currency := p.Asset
 	if currency == "" {
 		currency = "XLM"
 	}
 
+	xmlStr, err := iso20022.BuildPacs008(p, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build pacs.008: %w", err)
+	}
+
 	return &models.ISO20022Message{
+		MessageType:     iso20022.MsgPacs008,
 		MessageID:       msgID,
 		CreatedAt:       p.CreatedAt,
 		InitiatingParty: "MozartPay",
@@ -186,8 +199,9 @@ func (s *Service) buildISO20022(p *models.Payment) (*models.ISO20022Message, err
 			Currency:     currency,
 			CreditorName: truncate(p.To, 16),
 			DebtorName:   truncate(p.From, 16),
-			EndToEndID:   p.TxHash[:16],
+			EndToEndID:   safeTruncateID(p.TxHash, 16),
 		},
+		XML: xmlStr,
 	}, nil
 }
 
@@ -204,6 +218,13 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func safeTruncateID(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
 }
 
 func stellarExplorerURL(address string, network models.Network) string {

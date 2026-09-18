@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/ogtechnologies/mozartpay/internal/iso20022"
 	"github.com/ogtechnologies/mozartpay/internal/models"
 	"github.com/ogtechnologies/mozartpay/internal/reporting"
 	"github.com/ogtechnologies/mozartpay/internal/ui"
@@ -167,15 +168,20 @@ func newReportShowCmd(cfg *config.Config) *Command {
 // ─── report iso20022 ─────────────────────────
 
 func newReportISO20022Cmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("iso20022", flag.ContinueOnError)
+	msgType := fs.String("type", "pacs.008", "Message type: pacs.008 | pacs.002 | pacs.004 | pacs.009")
+	status := fs.String("status", "ACSC", "Transaction status for pacs.002 (ACSC|RJCT|PDNG)")
+	reasonCode := fs.String("reason", "", "Reason code for pacs.002/pacs.004")
+
 	return &Command{
 		Name:  "iso20022",
-		Short: "Export the latest report as ISO 20022 pacs.008 XML",
+		Short: "Export the latest report as ISO 20022 XML",
+		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			ui.Header("ISO 20022 Export")
 
 			var report models.TransactionReport
 			if err := config.LoadState("report_latest", &report); err != nil {
-				// Auto-generate from latest payment
 				ui.Info("No report found. Generating from latest payment...")
 				var payment models.Payment
 				if err2 := config.LoadState("payment_latest", &payment); err2 != nil {
@@ -187,14 +193,35 @@ func newReportISO20022Cmd(cfg *config.Config) *Command {
 			}
 
 			svc := reporting.NewService()
-			xml, err := svc.FormatISO20022XML(&report)
+			var (
+				xmlStr string
+				err    error
+			)
+
+			switch *msgType {
+			case "pacs.008":
+				xmlStr, err = svc.FormatISO20022XML(&report)
+				ui.SectionLabel("pacs.008.001.08")
+			case "pacs.002":
+				xmlStr, err = svc.FormatPacs002(&report, iso20022.TransactionStatus(*status), *reasonCode)
+				ui.SectionLabel("pacs.002.001.12")
+			case "pacs.004":
+				xmlStr, err = svc.FormatPacs004(&report, *reasonCode)
+				ui.SectionLabel("pacs.004.001.12")
+			case "pacs.009":
+				xmlStr, err = svc.FormatPacs009(&report)
+				ui.SectionLabel("pacs.009.001.10")
+			default:
+				ui.Error(fmt.Sprintf("unsupported message type: %s", *msgType))
+				return fmt.Errorf("unsupported message type: %s", *msgType)
+			}
+
 			if err != nil {
 				ui.Error("Export failed: " + err.Error())
 				return err
 			}
 
-			ui.SectionLabel("pacs.008.001.08")
-			fmt.Println(xml)
+			fmt.Println(xmlStr)
 
 			return nil
 		},

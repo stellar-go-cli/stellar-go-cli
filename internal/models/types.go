@@ -260,10 +260,12 @@ type TransactionReport struct {
 }
 
 type ISO20022Message struct {
+	MessageType     string              `json:"messageType"` // "pacs.008", "pacs.002", "pacs.004", "pacs.009"
 	MessageID       string              `json:"msgId"`
 	CreatedAt       time.Time           `json:"creDtTm"`
 	InitiatingParty string              `json:"initgPty"`
 	PaymentInfo     ISO20022PaymentInfo `json:"pmtInf"`
+	XML             string              `json:"xml,omitempty"`
 }
 
 type ISO20022PaymentInfo struct {
