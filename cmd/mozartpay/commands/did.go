@@ -9,6 +9,14 @@ import (
 	"github.com/ogtechnologies/mozartpay/internal/did"
 	"github.com/ogtechnologies/mozartpay/internal/models"
 	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	mpCrypto "github.com/ogtechnologies/mozartpay/pkg/crypto"
+)
+
+// proof type constants for CLI flags
+const (
+	proofTypeEd25519 = "ed25519"
+	proofTypeJWS     = "jws"
 )
 
 func newDIDCmd(cfg *config.Config) *Command {
@@ -108,6 +116,8 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 	name := fs.String("name", "", "Holder full name")
 	country := fs.String("country", "AT", "ISO country code")
 	output := fs.String("output", "pretty", "Output format: pretty | json")
+	useWalletKey := fs.Bool("use-wallet-key", false, "Sign VC with the active wallet's key instead of an ephemeral key")
+	proofType := fs.String("proof-type", proofTypeEd25519, "Proof type: ed25519 | jws")
 
 	return &Command{
 		Name:  "attest",
@@ -126,10 +136,46 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(800 * time.Millisecond)
 
-			svc, err := did.NewService()
-			if err != nil {
-				spin.Stop(false, "Failed")
-				return err
+			var svc *did.Service
+			if *useWalletKey {
+				ws := wallet.NewService()
+				acc, werr := ws.GetActiveWallet()
+				if werr != nil || acc.PrivateKey == "" {
+					spin.Stop(false, "No active wallet with private key found")
+					return fmt.Errorf("no active wallet: %w", werr)
+				}
+				if *proofType == proofTypeJWS {
+					key, kerr := mpCrypto.DeriveKeyFromSeed(acc.PrivateKey)
+					if kerr != nil {
+						spin.Stop(false, "Key derivation failed")
+						return kerr
+					}
+					svc = did.NewServiceWithECDSAKey(key)
+				} else {
+					s, serr := did.NewServiceWithStellarSeed(acc.PrivateKey)
+					if serr != nil {
+						spin.Stop(false, "Stellar seed error: "+serr.Error())
+						return serr
+					}
+					svc = s
+				}
+				ui.Info(fmt.Sprintf("VC signed with wallet key (%s...)", acc.Address[:8]))
+			} else {
+				if *proofType == proofTypeJWS {
+					eckey, eerr := mpCrypto.GenerateKeyPair()
+					if eerr != nil {
+						spin.Stop(false, "Key generation failed")
+						return eerr
+					}
+					svc = did.NewServiceWithECDSAKey(eckey)
+				} else {
+					var err error
+					svc, err = did.NewService()
+					if err != nil {
+						spin.Stop(false, "Failed")
+						return err
+					}
+				}
 			}
 
 			doc, err := svc.CreateDID(m)
@@ -148,6 +194,12 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 
 			spin.Stop(true, "Attestation complete")
 
+			config.SaveState("vc_latest", vc)
+			config.SaveState("did_"+string(m), doc)
+			cfg.ActiveDID = doc.ID
+			cfg.DIDMethod = string(m)
+			config.Save(cfg)
+
 			if *output == "json" {
 				fmt.Println(did.PrettyPrint(vc))
 				return nil
@@ -163,13 +215,17 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			ui.KV("Issued", vc.IssuanceDate.Format(time.RFC3339))
 			ui.KV("Expires", vc.ExpirationDate.Format("2006-01-02"))
 			ui.KV("Proof Type", vc.Proof.Type)
-			ui.KV("JWS (trunc)", safeTrunc(vc.Proof.JWSSignature, 24)+"...")
-
-			config.SaveState("vc_latest", vc)
-			config.SaveState("did_"+string(m), doc)
-			cfg.ActiveDID = doc.ID
-			cfg.DIDMethod = string(m)
-			config.Save(cfg)
+			if vc.Proof.ProofValue != "" {
+				ui.KV("Proof Value (trunc)", safeTrunc(vc.Proof.ProofValue, 24)+"...")
+			}
+			if vc.Proof.JWSSignature != "" {
+				ui.KV("JWS (trunc)", safeTrunc(vc.Proof.JWSSignature, 24)+"...")
+			}
+			if *useWalletKey {
+				ui.KVColor("Signed By", "wallet key", ui.BrightGreen)
+			} else {
+				ui.KV("Signed By", "ephemeral key")
+			}
 
 			ui.Info("Saved to ~/.mozartpay/state/vc_latest.json")
 			ui.KVColor("Active DID", safeTrunc(doc.ID, 50)+"...", ui.Teal)
@@ -213,6 +269,7 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			ui.SectionLabel("Verification Result")
 			ui.KV("VC ID", vc.ID)
 			ui.KV("Issuer", safeTrunc(vc.Issuer, 40)+"...")
+			ui.KV("Proof Type", vc.Proof.Type)
 			ui.KV("Valid", fmt.Sprintf("%v", valid))
 			ui.KV("Expires", vc.ExpirationDate.Format("2006-01-02"))
 			ui.KV("Status", map[bool]string{true: "✓ VERIFIED", false: "✗ INVALID"}[valid])
@@ -233,8 +290,8 @@ func newDIDShowCmd(cfg *config.Config) *Command {
 			fmt.Println()
 
 			methods := []struct {
-				method string
-				spec   string
+				method  string
+				spec    string
 				usecase string
 			}{
 				{"did:web", "W3C DID Core", "Web-hosted DIDs for organizations (TLS-anchored)"},

@@ -42,6 +42,7 @@ func newPaySendCmd(cfg *config.Config) *Command {
 	memo := fs.String("memo", "", "Optional payment memo")
 	network := fs.String("network", cfg.Network, "Network: stellar-testnet | stellar-mainnet")
 	output := fs.String("output", "pretty", "Output format: pretty | json")
+	vcAttach := fs.Bool("vc-attach", false, "Attach latest VC to the payment (includes VC ID in memo)")
 
 	return &Command{
 		Name:  "send",
@@ -69,6 +70,23 @@ func newPaySendCmd(cfg *config.Config) *Command {
 			svc := payments.NewService()
 
 			ui.PrintStep(1, fmt.Sprintf("Rail: %s", payments.RailDescription(r)))
+
+			var attachedVCID string
+			if *vcAttach {
+				var vcData models.VerifiableCredential
+				if err := config.LoadState("vc_latest", &vcData); err == nil {
+					attachedVCID = vcData.ID
+					if *memo == "" {
+						*memo = "vc:" + vcData.ID
+						if len(*memo) > 28 {
+							*memo = (*memo)[:28]
+						}
+					}
+					ui.Info(fmt.Sprintf("VC attached: %s", vcData.ID))
+				} else {
+					ui.Warn("No saved VC found. Run 'mozartpay did attest' first.")
+				}
+			}
 
 			// For Tempo: show FX quote first
 			if r == models.RailTempo {
@@ -135,6 +153,9 @@ func newPaySendCmd(cfg *config.Config) *Command {
 			ui.KV("Ledger Seq", fmt.Sprintf("%d", payment.LedgerSeq))
 			if payment.ConfirmedAt != nil {
 				ui.KV("Confirmed At", payment.ConfirmedAt.Format(time.RFC3339))
+			}
+			if attachedVCID != "" {
+				ui.KVColor("VC Attached", attachedVCID, ui.BrightGreen)
 			}
 			ui.Separator()
 

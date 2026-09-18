@@ -42,12 +42,18 @@ type VerifiableCredential struct {
 	Proof             VCProof                `json:"proof"`
 }
 
+const (
+	ProofTypeEd25519 = "Ed25519Signature2020"
+	ProofTypeJWS     = "JsonWebSignature2020"
+)
+
 type VCProof struct {
 	Type               string    `json:"type"`
 	Created            time.Time `json:"created"`
 	ProofPurpose       string    `json:"proofPurpose"`
 	VerificationMethod string    `json:"verificationMethod"`
-	JWSSignature       string    `json:"jws"`
+	JWSSignature       string    `json:"jws,omitempty"`
+	ProofValue         string    `json:"proofValue,omitempty"`
 }
 
 // ─────────────────────────────────────────────

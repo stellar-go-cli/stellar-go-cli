@@ -55,6 +55,7 @@ func NewRootCmd(cfg *config.Config) *RootCmd {
 	r.register(newTerminalCmd(cfg))
 	r.register(newExchangeCmd(cfg))
 	r.register(newContractCmd(cfg))
+	r.register(newVCApiCmd(cfg))
 
 	return r
 }
@@ -113,7 +114,7 @@ func (r *RootCmd) printHelp() {
 		{"Integrations", []string{"integrations"}},
 		{"Reporting", []string{"report"}},
 		{"AI", []string{"mcp", "chat"}},
-		{"System", []string{"init", "status", "flow", "network", "version"}},
+		{"System", []string{"init", "status", "flow", "network", "version", "vc-api"}},
 	}
 
 	for _, g := range groups {
