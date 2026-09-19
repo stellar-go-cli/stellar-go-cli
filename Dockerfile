@@ -1,5 +1,5 @@
 # Multi-service Dockerfile for building all MozartPay components
-FROM golang:1.24-alpine AS base-builder
+FROM golang:1.26-alpine AS base-builder
 
 WORKDIR /app
 RUN apk add --no-cache git ca-certificates tzdata

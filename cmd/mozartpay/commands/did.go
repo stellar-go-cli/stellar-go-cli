@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ogtechnologies/mozartpay/internal/config"
@@ -115,6 +117,8 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 	vcType := fs.String("vc", "national-id", "VC type: national-id | kyc | accreditation")
 	name := fs.String("name", "", "Holder full name")
 	country := fs.String("country", "AT", "ISO country code")
+	birthYear := fs.String("birth-year", "", "Holder birth year (optional, omitted if empty)")
+	level := fs.String("level", "KYC_LEVEL_2", "KYC level for the credential")
 	output := fs.String("output", "pretty", "Output format: pretty | json")
 	useWalletKey := fs.Bool("use-wallet-key", false, "Sign VC with the active wallet's key instead of an ephemeral key")
 	proofType := fs.String("proof-type", proofTypeEd25519, "Proof type: ed25519 | jws")
@@ -185,7 +189,7 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			}
 
 			vcTypeName := vcTypeToName(*vcType)
-			vc, err := svc.IssueNationalIDVC(doc.ID, doc.ID, *name, *country, "")
+			vc, err := svc.IssueNationalIDVC(doc.ID, doc.ID, *name, *country, "", *birthYear, *level)
 			if err != nil {
 				spin.Stop(false, err.Error())
 				return err
@@ -211,7 +215,7 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			ui.KV("Issuer DID", safeTrunc(vc.Issuer, 40)+"...")
 			ui.KV("Subject", *name)
 			ui.KV("Country", *country)
-			ui.KV("Level", "KYC_LEVEL_2")
+			ui.KV("Level", *level)
 			ui.KV("Issued", vc.IssuanceDate.Format(time.RFC3339))
 			ui.KV("Expires", vc.ExpirationDate.Format("2006-01-02"))
 			ui.KV("Proof Type", vc.Proof.Type)
@@ -239,7 +243,7 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 
 func newDIDVerifyCmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	fs.String("vc-file", "", "Path to VC JSON file (optional, uses saved state if omitted)")
+	vcFile := fs.String("vc-file", "", "Path to VC JSON file (optional, uses saved state if omitted)")
 
 	return &Command{
 		Name:  "verify",
@@ -249,7 +253,15 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			ui.Header("Verify VC")
 
 			var vc models.VerifiableCredential
-			if err := config.LoadState("vc_latest", &vc); err != nil {
+			if *vcFile != "" {
+				data, err := os.ReadFile(*vcFile)
+				if err != nil {
+					return fmt.Errorf("read VC file: %w", err)
+				}
+				if err := json.Unmarshal(data, &vc); err != nil {
+					return fmt.Errorf("parse VC file: %w", err)
+				}
+			} else if err := config.LoadState("vc_latest", &vc); err != nil {
 				ui.Warn("No saved VC found. Run 'mozartpay did attest' first.")
 				return nil
 			}
@@ -262,7 +274,7 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			valid, err := svc.Verify(&vc)
 			if err != nil {
 				spin.Stop(false, "Verification failed: "+err.Error())
-				return nil
+				return fmt.Errorf("verification failed: %w", err)
 			}
 			spin.Stop(valid, map[bool]string{true: "Credential is VALID", false: "Credential is INVALID"}[valid])
 
@@ -274,6 +286,9 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			ui.KV("Expires", vc.ExpirationDate.Format("2006-01-02"))
 			ui.KV("Status", map[bool]string{true: "✓ VERIFIED", false: "✗ INVALID"}[valid])
 
+			if !valid {
+				return fmt.Errorf("credential verification failed")
+			}
 			return nil
 		},
 	}

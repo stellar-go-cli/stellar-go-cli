@@ -211,12 +211,11 @@ func (s *Server) handleInitialized(msg *JSONRPCMessage) error {
 // handleToolsList returns the list of available tools
 func (s *Server) handleToolsList(msg *JSONRPCMessage) error {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	tools := make([]Tool, 0, len(s.tools))
 	for _, tool := range s.tools {
 		tools = append(tools, tool)
 	}
+	s.mu.RUnlock()
 
 	result := map[string]interface{}{
 		"tools": tools,

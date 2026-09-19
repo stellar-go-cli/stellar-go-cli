@@ -163,10 +163,15 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 		}
 	}
 
+	vcTypes := []string{"VerifiableCredential"}
+	if vcType != "" && vcType != "VerifiableCredential" {
+		vcTypes = append(vcTypes, vcType)
+	}
+
 	vc := &models.VerifiableCredential{
 		Context:           contexts,
 		ID:                vcID,
-		Type:              []string{"VerifiableCredential", vcType},
+		Type:              vcTypes,
 		Issuer:            did,
 		IssuanceDate:      now,
 		ExpirationDate:    now.Add(365 * 24 * time.Hour),
@@ -221,16 +226,23 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 	return vc, nil
 }
 
-// IssueNationalIDVC issues a VC representing a verified National ID
-func (s *Service) IssueNationalIDVC(did, holderDID, name, country, idNumber string) (*models.VerifiableCredential, error) {
+// IssueNationalIDVC issues a VC representing a verified National ID.
+// birthYear and level are optional — empty birthYear is omitted from the
+// subject; empty level defaults to KYC_LEVEL_2.
+func (s *Service) IssueNationalIDVC(did, holderDID, name, country, idNumber, birthYear, level string) (*models.VerifiableCredential, error) {
+	if level == "" {
+		level = "KYC_LEVEL_2"
+	}
 	subject := map[string]interface{}{
-		"id":        holderDID,
-		"name":      name,
-		"country":   country,
-		"idNumber":  "[REDACTED-" + mpCrypto.RandomHex(4) + "]",
-		"birthYear": "1985",
-		"verified":  true,
-		"level":     "KYC_LEVEL_2",
+		"id":       holderDID,
+		"name":     name,
+		"country":  country,
+		"idNumber": "[REDACTED-" + mpCrypto.RandomHex(4) + "]",
+		"verified": true,
+		"level":    level,
+	}
+	if birthYear != "" {
+		subject["birthYear"] = birthYear
 	}
 	return s.IssueVC(did, "NationalIdentityCredential", subject)
 }

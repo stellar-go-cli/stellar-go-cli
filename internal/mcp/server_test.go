@@ -113,9 +113,10 @@ func TestMCPServerToolCall(t *testing.T) {
 	// Process
 	server.serveStdio()
 
-	// Check response
+	// Check response — tool results wrap the payload as escaped JSON
+	// inside content[].text, so the field appears as \"version\".
 	output := stdout.String()
-	if !strings.Contains(output, `"version"`) {
+	if !strings.Contains(output, `\"version\"`) {
 		t.Errorf("Expected version in response, got: %s", output)
 	}
 }

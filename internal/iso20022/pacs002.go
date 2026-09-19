@@ -14,59 +14,71 @@ import (
 
 // Pacs002Document is the root XML document for pacs.002
 type Pacs002Document struct {
-	XMLName          xml.Name `xml:"Document"`
-	Xmlns            string   `xml:"xmlns,attr"`
-	FIToFIPmtStsRpt  struct {
-		XMLName       xml.Name                     `xml:"FIToFIPmtStsRpt"`
-		GrpHdr        GroupHeader                   `xml:"GrpHdr"`
-		TxInfAndSts   []PaymentTransactionStatusReport `xml:"TxInfAndSts"`
+	XMLName         xml.Name `xml:"Document"`
+	Xmlns           string   `xml:"xmlns,attr"`
+	FIToFIPmtStsRpt struct {
+		XMLName     xml.Name                `xml:"FIToFIPmtStsRpt"`
+		GrpHdr      GroupHeader91           `xml:"GrpHdr"`
+		OrgnlGrpInf *OriginalGroupHeader17  `xml:"OrgnlGrpInf,omitempty"`
+		TxInfAndSts []PaymentTransaction110 `xml:"TxInfAndSts"`
 	} `xml:"FIToFIPmtStsRpt"`
 }
 
-// PaymentTransactionStatusReport — individual transaction status
-type PaymentTransactionStatusReport struct {
-	XMLName        xml.Name `xml:"TxInfAndSts"`
-	OrgnlInstrId   string   `xml:"OrgnlInstrId,omitempty"`
-	OrgnlEndToEndId string `xml:"OrgnlEndToEndId"`
-	OrgnlTxId      string   `xml:"OrgnlTxId,omitempty"`
-	TxSts          string   `xml:"TxSts,omitempty"`
-	StsRsnInf      []StatusReasonInformation1 `xml:"StsRsnInf,omitempty"`
-	AccptncDtTm   string   `xml:"AccptncDtTm,omitempty"`
-	OrgnlTxRef     *OriginalTransactionReference1 `xml:"OrgnlTxRef,omitempty"`
+// PaymentTransaction110 — pacs.002.001.12 transaction status info.
+// XSD sequence (subset implemented):
+//
+//	StsId?, OrgnlGrpInf?, OrgnlInstrId?, OrgnlEndToEndId?, OrgnlTxId?, OrgnlUETR?,
+//	TxSts?, StsRsnInf*, ChrgsInf*, AccptncDtTm?, FctvIntrBkSttlmDt?, AcctSvcrRef?,
+//	SvrlgAcctSvcr?, SvrlgIntrmyAgt1..3?, InstgAgt?, InstdAgt?, OrgnlTxRef?,
+//	SplmtryData*, NclsdFile?
+type PaymentTransaction110 struct {
+	XMLName         xml.Name                                      `xml:"TxInfAndSts"`
+	StsId           string                                        `xml:"StsId,omitempty"`
+	OrgnlGrpInf     *OriginalGroupHeader17                        `xml:"OrgnlGrpInf,omitempty"`
+	OrgnlInstrId    string                                        `xml:"OrgnlInstrId,omitempty"`
+	OrgnlEndToEndId string                                        `xml:"OrgnlEndToEndId,omitempty"`
+	OrgnlTxId       string                                        `xml:"OrgnlTxId,omitempty"`
+	OrgnlUETR       string                                        `xml:"OrgnlUETR,omitempty"`
+	TxSts           string                                        `xml:"TxSts,omitempty"`
+	StsRsnInf       []StatusReasonInformation12                   `xml:"StsRsnInf,omitempty"`
+	ChrgsInf        []ChargesInformation1                         `xml:"ChrgsInf,omitempty"`
+	AccptncDtTm     string                                        `xml:"AccptncDtTm,omitempty"`
+	InstgAgt        *BranchAndFinancialInstitutionIdentification6 `xml:"InstgAgt,omitempty"`
+	InstdAgt        *BranchAndFinancialInstitutionIdentification6 `xml:"InstdAgt,omitempty"`
+	OrgnlTxRef      *OriginalTransactionReference28               `xml:"OrgnlTxRef,omitempty"`
 }
 
-// StatusReasonInformation1 — reason for status
-type StatusReasonInformation1 struct {
-	XMLName  xml.Name `xml:"StsRsnInf"`
-	RsnnInf  *ReasonInformation1 `xml:"RsnnInf,omitempty"`
+// StatusReasonInformation12 — reason for status.
+// XSD sequence: Orgtr?, Rsn?{Cd|Prtry}, AddtlInf*
+type StatusReasonInformation12 struct {
+	XMLName  xml.Name                `xml:"StsRsnInf"`
+	Orgtr    *PartyIdentification135 `xml:"Orgtr,omitempty"`
+	Rsn      *StatusReason6Choice    `xml:"Rsn,omitempty"`
+	AddtlInf []string                `xml:"AddtlInf,omitempty"`
 }
 
-// ReasonInformation1 — reason code + additional info
-type ReasonInformation1 struct {
-	XMLName xml.Name `xml:"RsnnInf"`
-	Rsn     string   `xml:"Rsn>Cd,omitempty"`
-	AddtlInf string `xml:"AddtlInf,omitempty"`
-}
-
-// OriginalTransactionReference1 — reference to original transaction
-type OriginalTransactionReference1 struct {
-	XMLName         xml.Name `xml:"OrgnlTxRef"`
-	IntrBkSttlmAmt  *ActiveOrHistoricCurrencyAndAmount `xml:"IntrBkSttlmAmt,omitempty"`
-	Dbtr            *PartyIdentification135 `xml:"Dbtr,omitempty"`
-	Cdtr            *PartyIdentification135 `xml:"Cdtr,omitempty"`
-	DbtrAgt         *BranchAndFinancialInstitutionIdentification6 `xml:"DbtrAgt>FinInstnId,omitempty"`
-	CdtrAgt         *BranchAndFinancialInstitutionIdentification6 `xml:"CdtrAgt>FinInstnId,omitempty"`
+// StatusReason6Choice — coded or proprietary status reason
+type StatusReason6Choice struct {
+	Cd    string `xml:"Cd,omitempty"`
+	Prtry string `xml:"Prtry,omitempty"`
 }
 
 // Pacs002Options configures optional fields for pacs.002
 type Pacs002Options struct {
-	Status          TransactionStatus
+	Status         TransactionStatus
 	ReasonCode     string
+	ReasonPrtry    string
 	AdditionalInfo string
 	InstgBIC       string
 	InstdBIC       string
 	OrgnlInstrId   string
 	OrgnlTxId      string
+	OrgnlUETR      string
+	OrgnlMsgId     string // original pacs.008 MsgId for OrgnlGrpInf
+	DbtrBIC        string
+	CdtrBIC        string
+	DbtrAcctIBAN   string
+	CdtrAcctIBAN   string
 }
 
 // BuildPacs002 builds a pacs.002.001.12 payment status report
@@ -95,56 +107,75 @@ func BuildPacs002(p *models.Payment, opts *Pacs002Options) (string, error) {
 		Xmlns: NSPacs002,
 	}
 
-	doc.FIToFIPmtStsRpt.GrpHdr = GroupHeader{
+	doc.FIToFIPmtStsRpt.GrpHdr = GroupHeader91{
 		MsgId:   msgID,
 		CreDtTm: creDtTm,
-		NbOfTxs: "1",
 	}
 
 	if opts.InstgBIC != "" {
-		doc.FIToFIPmtStsRpt.GrpHdr.InstgAgt = &BranchAndFinancialInstitutionIdentification6{
-			BICFI: opts.InstgBIC,
-		}
+		doc.FIToFIPmtStsRpt.GrpHdr.InstgAgt = agentByBIC(opts.InstgBIC)
 	}
 	if opts.InstdBIC != "" {
-		doc.FIToFIPmtStsRpt.GrpHdr.InstdAgt = &BranchAndFinancialInstitutionIdentification6{
-			BICFI: opts.InstdBIC,
-		}
+		doc.FIToFIPmtStsRpt.GrpHdr.InstdAgt = agentByBIC(opts.InstdBIC)
 	}
 
-	doc.FIToFIPmtStsRpt.GrpHdr.InitgPty = &PartyIdentification135{
-		Nm: "MozartPay",
+	// OrgnlGrpInf references the original pacs.008 message
+	orgnlMsgID := opts.OrgnlMsgId
+	if orgnlMsgID == "" {
+		orgnlMsgID = "MZTP" + safeTruncate(p.ID, 8)
+	}
+	doc.FIToFIPmtStsRpt.OrgnlGrpInf = &OriginalGroupHeader17{
+		OrgnlMsgId:   orgnlMsgID,
+		OrgnlMsgNmId: "pacs.008.001.08",
+		OrgnlCreDtTm: p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 
-	txInf := PaymentTransactionStatusReport{
+	txInf := PaymentTransaction110{
 		OrgnlInstrId:    opts.OrgnlInstrId,
 		OrgnlEndToEndId: endToEndID,
 		OrgnlTxId:       opts.OrgnlTxId,
+		OrgnlUETR:       opts.OrgnlUETR,
 		TxSts:           string(opts.Status),
 		AccptncDtTm:     creDtTm,
 	}
 
-	if opts.ReasonCode != "" {
-		txInf.StsRsnInf = []StatusReasonInformation1{
-			{
-				RsnnInf: &ReasonInformation1{
-					Rsn:      opts.ReasonCode,
-					AddtlInf: opts.AdditionalInfo,
-				},
-			},
+	if opts.ReasonCode != "" || opts.ReasonPrtry != "" {
+		rsn := &StatusReason6Choice{Cd: opts.ReasonCode, Prtry: opts.ReasonPrtry}
+		stsRsn := StatusReasonInformation12{Rsn: rsn}
+		if opts.AdditionalInfo != "" {
+			stsRsn.AddtlInf = []string{opts.AdditionalInfo}
 		}
+		txInf.StsRsnInf = []StatusReasonInformation12{stsRsn}
 	}
 
-	txInf.OrgnlTxRef = &OriginalTransactionReference1{
+	txInf.OrgnlTxRef = &OriginalTransactionReference28{
 		IntrBkSttlmAmt: &ActiveOrHistoricCurrencyAndAmount{
 			Ccy:   currency,
 			Value: p.Amount,
 		},
-		Dbtr: &PartyIdentification135{Nm: safeTruncate(p.From, 16)},
-		Cdtr: &PartyIdentification135{Nm: safeTruncate(p.To, 16)},
+		IntrBkSttlmDt: p.CreatedAt.UTC().Format("2006-01-02"),
+		Dbtr:          &Party40Choice{Pty: &PartyIdentification135{Nm: safeTruncate(p.From, 16)}},
+		Cdtr:          &Party40Choice{Pty: &PartyIdentification135{Nm: safeTruncate(p.To, 16)}},
 	}
 
-	doc.FIToFIPmtStsRpt.TxInfAndSts = []PaymentTransactionStatusReport{txInf}
+	if opts.DbtrAcctIBAN != "" {
+		txInf.OrgnlTxRef.DbtrAcct = &CashAccount38{
+			Id: &AccountIdentification4Choice{IBAN: opts.DbtrAcctIBAN},
+		}
+	}
+	if opts.DbtrBIC != "" {
+		txInf.OrgnlTxRef.DbtrAgt = agentByBIC(opts.DbtrBIC)
+	}
+	if opts.CdtrBIC != "" {
+		txInf.OrgnlTxRef.CdtrAgt = agentByBIC(opts.CdtrBIC)
+	}
+	if opts.CdtrAcctIBAN != "" {
+		txInf.OrgnlTxRef.CdtrAcct = &CashAccount38{
+			Id: &AccountIdentification4Choice{IBAN: opts.CdtrAcctIBAN},
+		}
+	}
+
+	doc.FIToFIPmtStsRpt.TxInfAndSts = []PaymentTransaction110{txInf}
 
 	return MarshalXML(doc, NSPacs002)
 }
