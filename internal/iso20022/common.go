@@ -1,14 +1,16 @@
 package iso20022
 
+import "strings"
+
 // ─────────────────────────────────────────────
 // Namespace constants for each pacs message type
 // ─────────────────────────────────────────────
 
 const (
-	NSPacs008 = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.08"
-	NSPacs002 = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.12"
-	NSPacs004 = "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.12"
-	NSPacs009 = "urn:iso:std:iso:20022:tech:xsd:pacs.009.001.10"
+	NSPacs008 = "urn:iso:std:iso:20022:tech:xsd:pacs.008.001.14"
+	NSPacs002 = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.16"
+	NSPacs004 = "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.15"
+	NSPacs009 = "urn:iso:std:iso:20022:tech:xsd:pacs.009.001.13"
 )
 
 // ─────────────────────────────────────────────
@@ -79,8 +81,8 @@ type ActiveOrHistoricCurrencyAndAmountGeneric struct {
 	Value string `xml:",chardata"`
 }
 
-// PostalAddress24 — structured postal address
-type PostalAddress24 struct {
+// PostalAddress27 — structured postal address
+type PostalAddress27 struct {
 	StreetNm    string   `xml:"StrtNm,omitempty"`
 	BldgNb      string   `xml:"BldgNb,omitempty"`
 	BldgNm      string   `xml:"BldgNm,omitempty"`
@@ -94,10 +96,10 @@ type PostalAddress24 struct {
 	AdrLine     []string `xml:"AdrLine,omitempty"`
 }
 
-// PersonIdentification13 — person identification
-type PersonIdentification13 struct {
+// PersonIdentification18 — person identification
+type PersonIdentification18 struct {
 	DtAndPlcOfBirth *DateAndPlaceOfBirth1          `xml:"DtAndPlcOfBirth,omitempty"`
-	Othr            []GenericPersonIdentification1 `xml:"Othr,omitempty"`
+	Othr            []GenericPersonIdentification2 `xml:"Othr,omitempty"`
 }
 
 // DateAndPlaceOfBirth1
@@ -107,58 +109,58 @@ type DateAndPlaceOfBirth1 struct {
 	CtryOfBirth string `xml:"CtryOfBirth,omitempty"`
 }
 
-// GenericPersonIdentification1
-type GenericPersonIdentification1 struct {
+// GenericPersonIdentification2
+type GenericPersonIdentification2 struct {
 	Id      string `xml:"Id"`
 	SchmeNm string `xml:"SchmeNm>Cd,omitempty"`
 	Issr    string `xml:"Issr,omitempty"`
 }
 
-// OrganisationIdentification29 — organisation identification
-type OrganisationIdentification29 struct {
+// OrganisationIdentification39 — organisation identification
+type OrganisationIdentification39 struct {
 	AnyBIC string                               `xml:"AnyBIC,omitempty"`
 	LEI    string                               `xml:"LEI,omitempty"`
-	Othr   []GenericOrganisationIdentification1 `xml:"Othr,omitempty"`
+	Othr   []GenericOrganisationIdentification3 `xml:"Othr,omitempty"`
 }
 
-// GenericOrganisationIdentification1
-type GenericOrganisationIdentification1 struct {
+// GenericOrganisationIdentification3
+type GenericOrganisationIdentification3 struct {
 	Id      string `xml:"Id"`
 	SchmeNm string `xml:"SchmeNm>Cd,omitempty"`
 	Issr    string `xml:"Issr,omitempty"`
 }
 
-// Party38Choice — party as person or organisation
-type Party38Choice struct {
-	PrvtId *PersonIdentification13       `xml:"PrvtId,omitempty"`
-	OrgId  *OrganisationIdentification29 `xml:"OrgId,omitempty"`
+// Party52Choice — party as person or organisation
+type Party52Choice struct {
+	PrvtId *PersonIdentification18       `xml:"PrvtId,omitempty"`
+	OrgId  *OrganisationIdentification39 `xml:"OrgId,omitempty"`
 }
 
-// PartyIdentification135 — name + address + identification
-type PartyIdentification135 struct {
+// PartyIdentification272 — name + address + identification
+type PartyIdentification272 struct {
 	Nm        string           `xml:"Nm,omitempty"`
-	PstlAdr   *PostalAddress24 `xml:"PstlAdr,omitempty"`
-	Id        *Party38Choice   `xml:"Id,omitempty"`
+	PstlAdr   *PostalAddress27 `xml:"PstlAdr,omitempty"`
+	Id        *Party52Choice   `xml:"Id,omitempty"`
 	CtryOfRes string           `xml:"CtryOfRes,omitempty"`
 }
 
-// Party40Choice — party as a party or an agent (used in pacs.004 RtrChain)
-type Party40Choice struct {
-	Pty *PartyIdentification135                       `xml:"Pty,omitempty"`
-	Agt *BranchAndFinancialInstitutionIdentification6 `xml:"Agt,omitempty"`
+// Party50Choice — party as a party or an agent (used in pacs.004 RtrChain)
+type Party50Choice struct {
+	Pty *PartyIdentification272                       `xml:"Pty,omitempty"`
+	Agt *BranchAndFinancialInstitutionIdentification8 `xml:"Agt,omitempty"`
 }
 
 // ─────────────────────────────────────────────
 // Financial institution identification
 // ─────────────────────────────────────────────
 
-// FinancialInstitutionIdentification18 — inner FinInstnId content
-type FinancialInstitutionIdentification18 struct {
+// FinancialInstitutionIdentification23 — inner FinInstnId content
+type FinancialInstitutionIdentification23 struct {
 	BICFI       string                               `xml:"BICFI,omitempty"`
 	ClrSysMmbId *ClearingSystemMemberIdentification2 `xml:"ClrSysMmbId,omitempty"`
 	LEI         string                               `xml:"LEI,omitempty"`
 	Nm          string                               `xml:"Nm,omitempty"`
-	PstlAdr     *PostalAddress24                     `xml:"PstlAdr,omitempty"`
+	PstlAdr     *PostalAddress27                     `xml:"PstlAdr,omitempty"`
 	Othr        *GenericFinancialIdentification1     `xml:"Othr,omitempty"`
 }
 
@@ -175,18 +177,18 @@ type FinancialIdentificationSchemeName1Choice struct {
 	Prtry string `xml:"Prtry,omitempty"`
 }
 
-// BranchAndFinancialInstitutionIdentification6 — agent identification
-type BranchAndFinancialInstitutionIdentification6 struct {
-	FinInstnId *FinancialInstitutionIdentification18 `xml:"FinInstnId"`
-	BrnchId    *BranchData3                          `xml:"BrnchId,omitempty"`
+// BranchAndFinancialInstitutionIdentification8 — agent identification
+type BranchAndFinancialInstitutionIdentification8 struct {
+	FinInstnId *FinancialInstitutionIdentification23 `xml:"FinInstnId"`
+	BrnchId    *BranchData5                          `xml:"BrnchId,omitempty"`
 }
 
-// BranchData3 — branch identification
-type BranchData3 struct {
+// BranchData5 — branch identification
+type BranchData5 struct {
 	Id      string           `xml:"Id,omitempty"`
 	LEI     string           `xml:"LEI,omitempty"`
 	Nm      string           `xml:"Nm,omitempty"`
-	PstlAdr *PostalAddress24 `xml:"PstlAdr,omitempty"`
+	PstlAdr *PostalAddress27 `xml:"PstlAdr,omitempty"`
 }
 
 // ClearingSystemMemberIdentification2 — clearing system member ID
@@ -211,8 +213,8 @@ type ClearingSystemIdentification3Choice struct {
 // Accounts
 // ─────────────────────────────────────────────
 
-// CashAccount38 — account identification
-type CashAccount38 struct {
+// CashAccount40 — account identification
+type CashAccount40 struct {
 	Id   *AccountIdentification4Choice `xml:"Id"`
 	Tp   *CashAccountType2Choice       `xml:"Tp,omitempty"`
 	Ccy  string                        `xml:"Ccy,omitempty"`
@@ -261,8 +263,8 @@ type AccountSchemeName1Choice struct {
 // Purpose / remittance / charges
 // ─────────────────────────────────────────────
 
-// Purpose1Choice — payment purpose
-type Purpose1Choice struct {
+// Purpose2Choice — payment purpose
+type Purpose2Choice struct {
 	Cd    string `xml:"Cd,omitempty"`
 	Prtry string `xml:"Prtry,omitempty"`
 }
@@ -300,61 +302,70 @@ type ReferredDocumentType1 struct {
 	Issr      string `xml:"Issr,omitempty"`
 }
 
-// ChargesInformation1 — charges info
-type ChargesInformation1 struct {
-	Amt    *ActiveOrHistoricCurrencyAndAmountGeneric `xml:"Amt,omitempty"`
-	CdtPty string                                    `xml:"CdtPty,omitempty"`
+// Charges16 — charges info.
+// XSD sequence: Amt, Agt, Tp?
+type Charges16 struct {
+	Amt *ActiveOrHistoricCurrencyAndAmount            `xml:"Amt"`
+	Agt *BranchAndFinancialInstitutionIdentification8 `xml:"Agt"`
+	Tp  *ChargeType3Choice                            `xml:"Tp,omitempty"`
+}
+
+// ChargeType3Choice — charge type as code or proprietary
+type ChargeType3Choice struct {
+	Cd    string `xml:"Cd,omitempty"`
+	Prtry string `xml:"Prtry,omitempty"`
 }
 
 // ─────────────────────────────────────────────
 // Settlement
 // ─────────────────────────────────────────────
 
-// SettlementInstruction7 — settlement info inside GrpHdr (pacs.008/004/009)
+// SettlementInstruction15 — settlement info inside GrpHdr (pacs.008/004/009)
 // XSD sequence: SttlmMtd, SttlmAcct?, ClrSys?, InstgRmbrsmntAgt?, InstgRmbrsmntAgtAcct?,
 // InstdRmbrsmntAgt?, InstdRmbrsmntAgtAcct?, ThrdRmbrsmntAgt?, ThrdRmbrsmntAgtAcct?
 // NOTE: no SttlmDt — settlement date lives at IntrBkSttlmDt (tx level) or GrpHdr/IntrBkSttlmDt.
-type SettlementInstruction7 struct {
+type SettlementInstruction15 struct {
 	SttlmMtd             string                                        `xml:"SttlmMtd"`
-	SttlmAcct            *CashAccount38                                `xml:"SttlmAcct,omitempty"`
+	SttlmAcct            *CashAccount40                                `xml:"SttlmAcct,omitempty"`
 	ClrSys               *ClearingSystemIdentification3Choice          `xml:"ClrSys,omitempty"`
-	InstgRmbrsmntAgt     *BranchAndFinancialInstitutionIdentification6 `xml:"InstgRmbrsmntAgt,omitempty"`
-	InstgRmbrsmntAgtAcct *CashAccount38                                `xml:"InstgRmbrsmntAgtAcct,omitempty"`
-	InstdRmbrsmntAgt     *BranchAndFinancialInstitutionIdentification6 `xml:"InstdRmbrsmntAgt,omitempty"`
-	InstdRmbrsmntAgtAcct *CashAccount38                                `xml:"InstdRmbrsmntAgtAcct,omitempty"`
-	ThrdRmbrsmntAgt      *BranchAndFinancialInstitutionIdentification6 `xml:"ThrdRmbrsmntAgt,omitempty"`
-	ThrdRmbrsmntAgtAcct  *CashAccount38                                `xml:"ThrdRmbrsmntAgtAcct,omitempty"`
+	InstgRmbrsmntAgt     *BranchAndFinancialInstitutionIdentification8 `xml:"InstgRmbrsmntAgt,omitempty"`
+	InstgRmbrsmntAgtAcct *CashAccount40                                `xml:"InstgRmbrsmntAgtAcct,omitempty"`
+	InstdRmbrsmntAgt     *BranchAndFinancialInstitutionIdentification8 `xml:"InstdRmbrsmntAgt,omitempty"`
+	InstdRmbrsmntAgtAcct *CashAccount40                                `xml:"InstdRmbrsmntAgtAcct,omitempty"`
+	ThrdRmbrsmntAgt      *BranchAndFinancialInstitutionIdentification8 `xml:"ThrdRmbrsmntAgt,omitempty"`
+	ThrdRmbrsmntAgtAcct  *CashAccount40                                `xml:"ThrdRmbrsmntAgtAcct,omitempty"`
 }
 
 // ─────────────────────────────────────────────
 // Group headers (per-message — XSD sequences differ)
 // ─────────────────────────────────────────────
 
-// GroupHeader93 — pacs.008.001.08 / pacs.009.001.10
-// XSD sequence: MsgId, CreDtTm, BtchBookg?, NbOfTxs, CtrlSum?, TtlIntrBkSttlmAmt?,
+// GroupHeader131 — pacs.008.001.14 / pacs.009.001.13
+// XSD sequence: MsgId, CreDtTm, XpryDtTm?, BtchBookg?, NbOfTxs, CtrlSum?, TtlIntrBkSttlmAmt?,
 // IntrBkSttlmDt?, SttlmInf, PmtTpInf?, InstgAgt?, InstdAgt?
-type GroupHeader93 struct {
+type GroupHeader131 struct {
 	MsgId             string                                        `xml:"MsgId"`
 	CreDtTm           string                                        `xml:"CreDtTm"`
+	XpryDtTm          string                                        `xml:"XpryDtTm,omitempty"`
 	BtchBookg         *bool                                         `xml:"BtchBookg,omitempty"`
 	NbOfTxs           string                                        `xml:"NbOfTxs"`
 	CtrlSum           string                                        `xml:"CtrlSum,omitempty"`
 	TtlIntrBkSttlmAmt *ActiveOrHistoricCurrencyAndAmount            `xml:"TtlIntrBkSttlmAmt,omitempty"`
 	IntrBkSttlmDt     string                                        `xml:"IntrBkSttlmDt,omitempty"`
-	SttlmInf          *SettlementInstruction7                       `xml:"SttlmInf"`
+	SttlmInf          *SettlementInstruction15                      `xml:"SttlmInf"`
 	PmtTpInf          *PaymentTypeInformation28                     `xml:"PmtTpInf,omitempty"`
-	InstgAgt          *BranchAndFinancialInstitutionIdentification6 `xml:"InstgAgt,omitempty"`
-	InstdAgt          *BranchAndFinancialInstitutionIdentification6 `xml:"InstdAgt,omitempty"`
+	InstgAgt          *BranchAndFinancialInstitutionIdentification8 `xml:"InstgAgt,omitempty"`
+	InstdAgt          *BranchAndFinancialInstitutionIdentification8 `xml:"InstdAgt,omitempty"`
 }
 
-// GroupHeader91 — pacs.002.001.12
+// GroupHeader120 — pacs.002.001.16
 // XSD sequence: MsgId, CreDtTm, InstgAgt?, InstdAgt?, OrgnlBizQry?
 // NOTE: no NbOfTxs, no SttlmInf, no InitgPty
-type GroupHeader91 struct {
+type GroupHeader120 struct {
 	MsgId       string                                        `xml:"MsgId"`
 	CreDtTm     string                                        `xml:"CreDtTm"`
-	InstgAgt    *BranchAndFinancialInstitutionIdentification6 `xml:"InstgAgt,omitempty"`
-	InstdAgt    *BranchAndFinancialInstitutionIdentification6 `xml:"InstdAgt,omitempty"`
+	InstgAgt    *BranchAndFinancialInstitutionIdentification8 `xml:"InstgAgt,omitempty"`
+	InstdAgt    *BranchAndFinancialInstitutionIdentification8 `xml:"InstdAgt,omitempty"`
 	OrgnlBizQry *OriginalBusinessQuery1                       `xml:"OrgnlBizQry,omitempty"`
 }
 
@@ -365,20 +376,22 @@ type OriginalBusinessQuery1 struct {
 	CreDtTm string `xml:"CreDtTm,omitempty"`
 }
 
-// GroupHeader90 — pacs.004.001.12
-// XSD sequence: MsgId, CreDtTm, BtchBookg?, NbOfTxs, CtrlSum?, TtlRtrdIntrBkSttlmAmt?,
-// IntrBkSttlmDt?, SttlmInf, InstgAgt?, InstdAgt?
-type GroupHeader90 struct {
+// GroupHeader123 — pacs.004.001.15
+// XSD sequence: MsgId, CreDtTm, Authstn*, BtchBookg?, NbOfTxs, CtrlSum?, GrpRtr?,
+// TtlRtrdIntrBkSttlmAmt?, IntrBkSttlmDt?, SttlmInf, PmtTpInf?, InstgAgt?, InstdAgt?
+type GroupHeader123 struct {
 	MsgId                 string                                        `xml:"MsgId"`
 	CreDtTm               string                                        `xml:"CreDtTm"`
 	BtchBookg             *bool                                         `xml:"BtchBookg,omitempty"`
 	NbOfTxs               string                                        `xml:"NbOfTxs"`
 	CtrlSum               string                                        `xml:"CtrlSum,omitempty"`
+	GrpRtr                *bool                                         `xml:"GrpRtr,omitempty"`
 	TtlRtrdIntrBkSttlmAmt *ActiveOrHistoricCurrencyAndAmount            `xml:"TtlRtrdIntrBkSttlmAmt,omitempty"`
 	IntrBkSttlmDt         string                                        `xml:"IntrBkSttlmDt,omitempty"`
-	SttlmInf              *SettlementInstruction7                       `xml:"SttlmInf"`
-	InstgAgt              *BranchAndFinancialInstitutionIdentification6 `xml:"InstgAgt,omitempty"`
-	InstdAgt              *BranchAndFinancialInstitutionIdentification6 `xml:"InstdAgt,omitempty"`
+	SttlmInf              *SettlementInstruction15                      `xml:"SttlmInf"`
+	PmtTpInf              *PaymentTypeInformation28                     `xml:"PmtTpInf,omitempty"`
+	InstgAgt              *BranchAndFinancialInstitutionIdentification8 `xml:"InstgAgt,omitempty"`
+	InstdAgt              *BranchAndFinancialInstitutionIdentification8 `xml:"InstdAgt,omitempty"`
 }
 
 // PaymentTypeInformation28 — payment type info (GrpHdr level)
@@ -406,10 +419,10 @@ type LocalInstrument2Choice struct {
 // Payment identification
 // ─────────────────────────────────────────────
 
-// PaymentIdentification7 — payment identification (pacs.008.001.08 / pacs.009.001.10)
-// XSD sequence: InstrId?, EndToEndId, TxId, UETR, ClrSysRef?
-// NOTE: TxId and UETR are mandatory in this version.
-type PaymentIdentification7 struct {
+// PaymentIdentification13 — payment identification
+// XSD sequence: InstrId?, EndToEndId, TxId?, UETR?, ClrSysRef?
+// NOTE: TxId/UETR are optional in the latest versions; we always emit them.
+type PaymentIdentification13 struct {
 	InstrId    string `xml:"InstrId,omitempty"`
 	EndToEndId string `xml:"EndToEndId"`
 	TxId       string `xml:"TxId"`
@@ -421,71 +434,185 @@ type PaymentIdentification7 struct {
 // Original group / transaction references
 // ─────────────────────────────────────────────
 
-// OriginalGroupHeader21 — original group info (pacs.004)
-// XSD sequence: OrgnlMsgId, OrgnlMsgNmId, OrgnlCreDtTm?, OrgnlNbOfTxs?, OrgnlCtrlSum?, RtrRsnInf*
-type OriginalGroupHeader21 struct {
+// OriginalGroupHeader19 — original group info (pacs.004.001.15 document level)
+// XSD sequence: OrgnlMsgId, OrgnlMsgNmId, OrgnlCreDtTm?, RtrRsnInf*
+// NOTE: no OrgnlNbOfTxs/OrgnlCtrlSum in this version.
+type OriginalGroupHeader19 struct {
 	OrgnlMsgId   string `xml:"OrgnlMsgId"`
 	OrgnlMsgNmId string `xml:"OrgnlMsgNmId"`
 	OrgnlCreDtTm string `xml:"OrgnlCreDtTm,omitempty"`
-	OrgnlNbOfTxs string `xml:"OrgnlNbOfTxs,omitempty"`
-	OrgnlCtrlSum string `xml:"OrgnlCtrlSum,omitempty"`
 }
 
-// OriginalGroupHeader17 — original group info (pacs.002 TxInfAndSts level)
+// OriginalGroupHeader22 — original group info and status (pacs.002.001.16
+// document level, element name OrgnlGrpInfAndSts)
+// XSD sequence: OrgnlMsgId, OrgnlMsgNmId, OrgnlCreDtTm?, OrgnlNbOfTxs?,
+// OrgnlCtrlSum?, GrpSts?, StsRsnInf*, NbOfTxsPerSts*
+type OriginalGroupHeader22 struct {
+	OrgnlMsgId   string `xml:"OrgnlMsgId"`
+	OrgnlMsgNmId string `xml:"OrgnlMsgNmId"`
+	OrgnlCreDtTm string `xml:"OrgnlCreDtTm,omitempty"`
+}
+
+// OriginalGroupInformation33 — original group info (transaction level,
+// pacs.002 TxInfAndSts / pacs.004 TxInf)
 // XSD sequence: OrgnlMsgId, OrgnlMsgNmId, OrgnlCreDtTm?
-type OriginalGroupHeader17 struct {
+type OriginalGroupInformation33 struct {
 	OrgnlMsgId   string `xml:"OrgnlMsgId"`
 	OrgnlMsgNmId string `xml:"OrgnlMsgNmId"`
 	OrgnlCreDtTm string `xml:"OrgnlCreDtTm,omitempty"`
 }
 
-// OriginalTransactionReference28 — reference to original transaction (pacs.002/pacs.004)
-// XSD sequence (relevant subset): IntrBkSttlmAmt?, Amt?, IntrBkSttlmDt?, ReqrdColltnDt?,
-// ReqrdExctnDt?, CdtrSchmeId?, SttlmInf?, PmtTpInf?, PmtMtd?, MndtRltdInf?, RmtInf?,
+// OriginalTransactionReference45 — reference to original transaction.
+// Covers pacs.004.001.15 OrgnlTxRef; identical emitted subset to
+// OriginalTransactionReference47 (pacs.002.001.16).
+// XSD sequence (relevant subset): IntrBkSttlmAmt?, Amt?, IntrBkSttlmDt?, ReqdColltnDt?,
+// ReqdExctnDt?, CdtrSchmeId?, SttlmInf?, PmtTpInf?, PmtMtd?, MndtRltdInf?, RmtInf?,
 // UltmtDbtr?, Dbtr?, DbtrAcct?, DbtrAgt?, DbtrAgtAcct?, CdtrAgt?, CdtrAgtAcct?,
 // Cdtr?, CdtrAcct?, UltmtCdtr?, Purp?
-type OriginalTransactionReference28 struct {
+type OriginalTransactionReference45 struct {
 	IntrBkSttlmAmt *ActiveOrHistoricCurrencyAndAmount            `xml:"IntrBkSttlmAmt,omitempty"`
 	IntrBkSttlmDt  string                                        `xml:"IntrBkSttlmDt,omitempty"`
-	SttlmInf       *SettlementInstruction7                       `xml:"SttlmInf,omitempty"`
+	SttlmInf       *SettlementInstruction15                      `xml:"SttlmInf,omitempty"`
 	PmtTpInf       *PaymentTypeInformation28                     `xml:"PmtTpInf,omitempty"`
 	RmtInf         *RemittanceInformation2                       `xml:"RmtInf,omitempty"`
-	UltmtDbtr      *Party40Choice                                `xml:"UltmtDbtr,omitempty"`
-	Dbtr           *Party40Choice                                `xml:"Dbtr,omitempty"`
-	DbtrAcct       *CashAccount38                                `xml:"DbtrAcct,omitempty"`
-	DbtrAgt        *BranchAndFinancialInstitutionIdentification6 `xml:"DbtrAgt,omitempty"`
-	DbtrAgtAcct    *CashAccount38                                `xml:"DbtrAgtAcct,omitempty"`
-	CdtrAgt        *BranchAndFinancialInstitutionIdentification6 `xml:"CdtrAgt,omitempty"`
-	CdtrAgtAcct    *CashAccount38                                `xml:"CdtrAgtAcct,omitempty"`
-	Cdtr           *Party40Choice                                `xml:"Cdtr,omitempty"`
-	CdtrAcct       *CashAccount38                                `xml:"CdtrAcct,omitempty"`
-	UltmtCdtr      *Party40Choice                                `xml:"UltmtCdtr,omitempty"`
-	Purp           *Purpose1Choice                               `xml:"Purp,omitempty"`
+	UltmtDbtr      *Party50Choice                                `xml:"UltmtDbtr,omitempty"`
+	Dbtr           *Party50Choice                                `xml:"Dbtr,omitempty"`
+	DbtrAcct       *CashAccount40                                `xml:"DbtrAcct,omitempty"`
+	DbtrAgt        *BranchAndFinancialInstitutionIdentification8 `xml:"DbtrAgt,omitempty"`
+	DbtrAgtAcct    *CashAccount40                                `xml:"DbtrAgtAcct,omitempty"`
+	CdtrAgt        *BranchAndFinancialInstitutionIdentification8 `xml:"CdtrAgt,omitempty"`
+	CdtrAgtAcct    *CashAccount40                                `xml:"CdtrAgtAcct,omitempty"`
+	Cdtr           *Party50Choice                                `xml:"Cdtr,omitempty"`
+	CdtrAcct       *CashAccount40                                `xml:"CdtrAcct,omitempty"`
+	UltmtCdtr      *Party50Choice                                `xml:"UltmtCdtr,omitempty"`
+	Purp           *Purpose2Choice                               `xml:"Purp,omitempty"`
+}
+
+// ─────────────────────────────────────────────
+// Supplementary data
+// ─────────────────────────────────────────────
+
+// SupplementaryData1 — SplmtryData block (last element in tx sequences)
+type SupplementaryData1 struct {
+	PlcAndNm string                      `xml:"PlcAndNm,omitempty"`
+	Envlp    *SupplementaryDataEnvelope1 `xml:"Envlp"`
+}
+
+// SupplementaryDataEnvelope1 — Envlp content. The XSD allows any XML here;
+// we emit a proprietary Asset element carrying the non-ISO asset details.
+type SupplementaryDataEnvelope1 struct {
+	Asset *SupplementaryAsset `xml:"Asset,omitempty"`
+}
+
+// SupplementaryAsset — proprietary asset identification inside Envlp.
+// Preserves the real asset code/issuer/exact amount when Ccy is XXX.
+type SupplementaryAsset struct {
+	Cd   string `xml:"Cd"`
+	Issr string `xml:"Issr,omitempty"`
+	Amt  string `xml:"Amt,omitempty"`
 }
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
 
+// iso4217Codes — active ISO 4217 alphabetic codes accepted as-is in Ccy
+// attributes. Anything else (crypto asset codes like XLM/USDC) maps to XXX
+// with the real asset preserved in SplmtryData.
+var iso4217Codes = map[string]bool{
+	"AED": true, "AFN": true, "ALL": true, "AMD": true, "ANG": true, "AOA": true,
+	"ARS": true, "AUD": true, "AWG": true, "AZN": true,
+	"BAM": true, "BBD": true, "BDT": true, "BGN": true, "BHD": true, "BIF": true,
+	"BMD": true, "BND": true, "BOB": true, "BOV": true, "BRL": true, "BSD": true,
+	"BTN": true, "BWP": true, "BYN": true, "BZD": true,
+	"CAD": true, "CDF": true, "CHE": true, "CHF": true, "CHW": true, "CLF": true,
+	"CLP": true, "CNY": true, "COP": true, "COU": true, "CRC": true, "CUC": true,
+	"CUP": true, "CVE": true, "CZK": true,
+	"DJF": true, "DKK": true, "DOP": true, "DZD": true,
+	"EGP": true, "ERN": true, "ETB": true, "EUR": true,
+	"FJD": true, "FKP": true,
+	"GBP": true, "GEL": true, "GHS": true, "GIP": true, "GMD": true, "GNF": true,
+	"GTQ": true, "GYD": true,
+	"HKD": true, "HNL": true, "HRK": true, "HTG": true, "HUF": true,
+	"IDR": true, "ILS": true, "INR": true, "IQD": true, "IRR": true, "ISK": true,
+	"JMD": true, "JOD": true, "JPY": true,
+	"KES": true, "KGS": true, "KHR": true, "KMF": true, "KPW": true, "KRW": true,
+	"KWD": true, "KYD": true, "KZT": true,
+	"LAK": true, "LBP": true, "LKR": true, "LRD": true, "LSL": true, "LYD": true,
+	"MAD": true, "MDL": true, "MGA": true, "MKD": true, "MMK": true, "MNT": true,
+	"MOP": true, "MRU": true, "MUR": true, "MVR": true, "MWK": true, "MXN": true,
+	"MXV": true, "MYR": true, "MZN": true,
+	"NAD": true, "NGN": true, "NIO": true, "NOK": true, "NPR": true, "NZD": true,
+	"OMR": true,
+	"PAB": true, "PEN": true, "PGK": true, "PHP": true, "PKR": true, "PLN": true,
+	"PYG": true,
+	"QAR": true,
+	"RON": true, "RSD": true, "RUB": true, "RWF": true,
+	"SAR": true, "SBD": true, "SCR": true, "SDG": true, "SEK": true, "SGD": true,
+	"SHP": true, "SLE": true, "SLL": true, "SOS": true, "SRD": true, "SSP": true,
+	"STN": true, "SVC": true, "SYP": true, "SZL": true,
+	"THB": true, "TJS": true, "TMT": true, "TND": true, "TOP": true, "TRY": true,
+	"TTD": true, "TWD": true, "TZS": true,
+	"UAH": true, "UGX": true, "USD": true, "USN": true, "UYI": true, "UYU": true,
+	"UYW": true, "UZS": true,
+	"VED": true, "VES": true, "VND": true, "VUV": true,
+	"WST": true,
+	"XAF": true, "XAG": true, "XAU": true, "XBA": true, "XBB": true, "XBC": true,
+	"XBD": true, "XCD": true, "XDR": true, "XOF": true, "XPD": true, "XPF": true,
+	"XPT": true, "XSU": true, "XTS": true, "XUA": true, "XXX": true,
+	"YER": true,
+	"ZAR": true, "ZMW": true, "ZWL": true,
+}
+
+// settlementCurrency maps a payment asset to an ISO 4217 Ccy value.
+// asset may be a bare code ("USDC") or Stellar "CODE:ISSUER" form.
+// Non-ISO assets return "XXX" plus a SplmtryData block preserving the real
+// asset code, issuer, and exact amount.
+func settlementCurrency(asset, exactAmount string) (string, *SupplementaryData1) {
+	code, issuer := asset, ""
+	if i := strings.IndexByte(asset, ':'); i >= 0 {
+		code, issuer = asset[:i], asset[i+1:]
+	}
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if iso4217Codes[code] {
+		return code, nil
+	}
+	return "XXX", &SupplementaryData1{
+		Envlp: &SupplementaryDataEnvelope1{
+			Asset: &SupplementaryAsset{Cd: code, Issr: issuer, Amt: exactAmount},
+		},
+	}
+}
+
+// normalizeAmount truncates a decimal string to the 5 fraction digits allowed
+// by ActiveOrHistoricCurrencyAndAmount (fractionDigits=5). Stellar amounts
+// carry 7 decimals; the exact value is preserved in SplmtryData.
+func normalizeAmount(amt string) string {
+	if i := strings.IndexByte(amt, '.'); i >= 0 && len(amt)-i-1 > 5 {
+		return amt[:i+6]
+	}
+	return amt
+}
+
 // agentByBIC builds an agent identified by BICFI
-func agentByBIC(bic string) *BranchAndFinancialInstitutionIdentification6 {
-	return &BranchAndFinancialInstitutionIdentification6{
-		FinInstnId: &FinancialInstitutionIdentification18{BICFI: bic},
+func agentByBIC(bic string) *BranchAndFinancialInstitutionIdentification8 {
+	return &BranchAndFinancialInstitutionIdentification8{
+		FinInstnId: &FinancialInstitutionIdentification23{BICFI: bic},
 	}
 }
 
 // agentByOtherID builds an agent identified by a generic Othr/Id (e.g. "NOTPROVIDED"
 // or a Stellar address) for mandatory agent elements when no BIC is available.
-func agentByOtherID(id string) *BranchAndFinancialInstitutionIdentification6 {
-	return &BranchAndFinancialInstitutionIdentification6{
-		FinInstnId: &FinancialInstitutionIdentification18{
+func agentByOtherID(id string) *BranchAndFinancialInstitutionIdentification8 {
+	return &BranchAndFinancialInstitutionIdentification8{
+		FinInstnId: &FinancialInstitutionIdentification23{
 			Othr: &GenericFinancialIdentification1{Id: id},
 		},
 	}
 }
 
 // agentOrFallback returns agentByBIC(bic) if non-empty, else agentByOtherID(fallbackID)
-func agentOrFallback(bic, fallbackID string) *BranchAndFinancialInstitutionIdentification6 {
+func agentOrFallback(bic, fallbackID string) *BranchAndFinancialInstitutionIdentification8 {
 	if bic != "" {
 		return agentByBIC(bic)
 	}

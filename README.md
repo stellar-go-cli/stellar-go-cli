@@ -329,7 +329,7 @@ See `k8s/README.md` for detailed deployment instructions.
 - **W3C Verifiable Credentials** — VC Data Model 2.0
 - **EBSI v3** — EU Blockchain Services Infrastructure
 - **SEP-41** — Stellar Token Interface
-- **ISO 20022** — Financial messaging (pacs.008.001.08)
+- **ISO 20022** — Financial messaging (pacs.008.001.14)
 - **eIDAS 2.0** — EU Digital Identity Framework
 - **HTTP 402 / x402** — Pay-per-use web protocol
 

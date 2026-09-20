@@ -11,14 +11,14 @@ Expected filenames:
 
 | File                  | Message                          |
 |-----------------------|----------------------------------|
-| `pacs.008.001.08.xsd` | FIToFICustomerCreditTransferV08  |
-| `pacs.002.001.12.xsd` | FIToFIPaymentStatusReportV12     |
-| `pacs.004.001.12.xsd` | PaymentReturnV12                 |
-| `pacs.009.001.10.xsd` | FinancialInstitutionCreditTransferV10 |
+| `pacs.008.001.14.xsd` | FIToFICustomerCreditTransferV14  |
+| `pacs.002.001.16.xsd` | FIToFIPaymentStatusReportV16     |
+| `pacs.004.001.15.xsd` | PaymentReturnV15                 |
+| `pacs.009.001.13.xsd` | FinancialInstitutionCreditTransferV13 |
 
 Manual check:
 
 ```bash
 mozartpay report iso20022 --type pacs.008 > /tmp/pacs008.xml
-xmllint --noout --schema pacs.008.001.08.xsd /tmp/pacs008.xml
+xmllint --noout --schema pacs.008.001.14.xsd /tmp/pacs008.xml
 ```

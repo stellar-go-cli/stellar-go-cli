@@ -10,7 +10,7 @@ import (
 )
 
 // ─────────────────────────────────────────────
-// pacs.008.001.08 — FIToFICstmrCdtTrf
+// pacs.008.001.14 — FIToFICstmrCdtTrf
 // ─────────────────────────────────────────────
 
 // Pacs008Document is the root XML document for pacs.008
@@ -19,44 +19,45 @@ type Pacs008Document struct {
 	Xmlns             string   `xml:"xmlns,attr"`
 	FIToFICstmrCdtTrf struct {
 		XMLName     xml.Name                      `xml:"FIToFICstmrCdtTrf"`
-		GrpHdr      GroupHeader93                 `xml:"GrpHdr"`
-		CdtTrfTxInf []CreditTransferTransaction39 `xml:"CdtTrfTxInf"`
+		GrpHdr      GroupHeader131                `xml:"GrpHdr"`
+		CdtTrfTxInf []CreditTransferTransaction73 `xml:"CdtTrfTxInf"`
 	} `xml:"FIToFICstmrCdtTrf"`
 }
 
-// CreditTransferTransaction39 — pacs.008.001.08 transaction info.
+// CreditTransferTransaction73 — pacs.008.001.14 transaction info.
 // XSD sequence (subset implemented):
 //
 //	PmtId, PmtTpInf?, IntrBkSttlmAmt, IntrBkSttlmDt?, SttlmPrty?, SttlmTmIndctn?,
-//	SttlmTmReq?, AccptncDtTm?, PoolgAdjstmntDt?, InstdAmt?, XchgRate?, ChrgBr,
-//	ChrgsInf*, PrvsInstgAgt1..3(+Acct)?, IntrmyAgt1..3(+Acct)?, UltmtDbtr?,
-//	InitgPty?, InstgAgt?, InstdAgt?, Dbtr, DbtrAcct?, DbtrAgt, DbtrAgtAcct?,
-//	CdtrAgt, CdtrAgtAcct?, Cdtr, CdtrAcct?, UltmtCdtr?, InstrForCdtrAgt*,
-//	InstrForNxtAgt*, Purp?, RgltryRptg*, Tax?, RltdRmtInf*, RmtInf?, NclsdFile?,
-//	SplmtryData*
-type CreditTransferTransaction39 struct {
-	PmtId          *PaymentIdentification7                       `xml:"PmtId"`
+//	SttlmTmReq?, AddtlDtTm?, InstdAmt?, XchgRate?, AgrdRate?, ChrgBr,
+//	ChrgsInf*, MndtRltdInf?, PmtSgntr?, PrvsInstgAgt1..3(+Acct)?, InstgAgt?,
+//	InstdAgt?, IntrmyAgt1..3(+Acct)?, UltmtDbtr?, InitgPty?, Dbtr, DbtrAcct?,
+//	DbtrAgt, DbtrAgtAcct?, CdtrAgt, CdtrAgtAcct?, Cdtr, CdtrAcct?, UltmtCdtr?,
+//	InstrForCdtrAgt*, InstrForNxtAgt*, Purp?, RgltryRptg*, Tax?, RltdRmtInf*,
+//	RmtInf?, SplmtryData*
+type CreditTransferTransaction73 struct {
+	PmtId          *PaymentIdentification13                      `xml:"PmtId"`
 	PmtTpInf       *PaymentTypeInformation28                     `xml:"PmtTpInf,omitempty"`
 	IntrBkSttlmAmt *ActiveOrHistoricCurrencyAndAmount            `xml:"IntrBkSttlmAmt"`
 	IntrBkSttlmDt  string                                        `xml:"IntrBkSttlmDt,omitempty"`
 	InstdAmt       *ActiveOrHistoricCurrencyAndAmount            `xml:"InstdAmt,omitempty"`
 	ChrgBr         string                                        `xml:"ChrgBr"`
-	ChrgsInf       []ChargesInformation1                         `xml:"ChrgsInf,omitempty"`
-	UltmtDbtr      *PartyIdentification135                       `xml:"UltmtDbtr,omitempty"`
-	InitgPty       *PartyIdentification135                       `xml:"InitgPty,omitempty"`
-	InstgAgt       *BranchAndFinancialInstitutionIdentification6 `xml:"InstgAgt,omitempty"`
-	InstdAgt       *BranchAndFinancialInstitutionIdentification6 `xml:"InstdAgt,omitempty"`
-	Dbtr           *PartyIdentification135                       `xml:"Dbtr"`
-	DbtrAcct       *CashAccount38                                `xml:"DbtrAcct,omitempty"`
-	DbtrAgt        *BranchAndFinancialInstitutionIdentification6 `xml:"DbtrAgt"`
-	DbtrAgtAcct    *CashAccount38                                `xml:"DbtrAgtAcct,omitempty"`
-	CdtrAgt        *BranchAndFinancialInstitutionIdentification6 `xml:"CdtrAgt"`
-	CdtrAgtAcct    *CashAccount38                                `xml:"CdtrAgtAcct,omitempty"`
-	Cdtr           *PartyIdentification135                       `xml:"Cdtr"`
-	CdtrAcct       *CashAccount38                                `xml:"CdtrAcct,omitempty"`
-	UltmtCdtr      *PartyIdentification135                       `xml:"UltmtCdtr,omitempty"`
-	Purp           *Purpose1Choice                               `xml:"Purp,omitempty"`
+	ChrgsInf       []Charges16                                   `xml:"ChrgsInf,omitempty"`
+	InstgAgt       *BranchAndFinancialInstitutionIdentification8 `xml:"InstgAgt,omitempty"`
+	InstdAgt       *BranchAndFinancialInstitutionIdentification8 `xml:"InstdAgt,omitempty"`
+	UltmtDbtr      *PartyIdentification272                       `xml:"UltmtDbtr,omitempty"`
+	InitgPty       *PartyIdentification272                       `xml:"InitgPty,omitempty"`
+	Dbtr           *PartyIdentification272                       `xml:"Dbtr"`
+	DbtrAcct       *CashAccount40                                `xml:"DbtrAcct,omitempty"`
+	DbtrAgt        *BranchAndFinancialInstitutionIdentification8 `xml:"DbtrAgt"`
+	DbtrAgtAcct    *CashAccount40                                `xml:"DbtrAgtAcct,omitempty"`
+	CdtrAgt        *BranchAndFinancialInstitutionIdentification8 `xml:"CdtrAgt"`
+	CdtrAgtAcct    *CashAccount40                                `xml:"CdtrAgtAcct,omitempty"`
+	Cdtr           *PartyIdentification272                       `xml:"Cdtr"`
+	CdtrAcct       *CashAccount40                                `xml:"CdtrAcct,omitempty"`
+	UltmtCdtr      *PartyIdentification272                       `xml:"UltmtCdtr,omitempty"`
+	Purp           *Purpose2Choice                               `xml:"Purp,omitempty"`
 	RmtInf         *RemittanceInformation2                       `xml:"RmtInf,omitempty"`
+	SplmtryData    []SupplementaryData1                          `xml:"SplmtryData,omitempty"`
 }
 
 // Pacs008Options configures optional fields for pacs.008
@@ -66,9 +67,9 @@ type Pacs008Options struct {
 	DbtrBIC        string
 	CdtrBIC        string
 	DbtrName       string
-	DbtrAddress    *PostalAddress24
+	DbtrAddress    *PostalAddress27
 	CdtrName       string
-	CdtrAddress    *PostalAddress24
+	CdtrAddress    *PostalAddress27
 	DbtrAcctIBAN   string
 	CdtrAcctIBAN   string
 	ChargeBearer   string
@@ -79,7 +80,7 @@ type Pacs008Options struct {
 	InstrID        string
 }
 
-// BuildPacs008 builds a complete pacs.008.001.08 XML from a Payment model
+// BuildPacs008 builds a complete pacs.008.001.14 XML from a Payment model
 func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 	if p == nil {
 		return "", fmt.Errorf("payment is nil")
@@ -88,10 +89,11 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 		opts = &Pacs008Options{}
 	}
 
-	currency := p.Asset
-	if currency == "" {
-		currency = "XLM"
+	asset := p.Asset
+	if asset == "" {
+		asset = "XLM"
 	}
+	ccy, assetSuppl := settlementCurrency(asset, p.Amount)
 
 	msgID := "MZTP" + safeTruncate(p.ID, 8)
 	creDtTm := p.CreatedAt.UTC().Format(time.RFC3339)
@@ -116,11 +118,11 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 		Xmlns: NSPacs008,
 	}
 
-	doc.FIToFICstmrCdtTrf.GrpHdr = GroupHeader93{
+	doc.FIToFICstmrCdtTrf.GrpHdr = GroupHeader131{
 		MsgId:   msgID,
 		CreDtTm: creDtTm,
 		NbOfTxs: "1",
-		SttlmInf: &SettlementInstruction7{
+		SttlmInf: &SettlementInstruction15{
 			SttlmMtd: "CLRG",
 		},
 	}
@@ -132,18 +134,21 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 		doc.FIToFICstmrCdtTrf.GrpHdr.InstdAgt = agentByBIC(opts.InstdBIC)
 	}
 
-	txInf := CreditTransferTransaction39{
-		PmtId: &PaymentIdentification7{
+	txInf := CreditTransferTransaction73{
+		PmtId: &PaymentIdentification13{
 			InstrId:    opts.InstrID,
 			EndToEndId: endToEndID,
 			TxId:       txID,
 			UETR:       uetr,
 		},
 		IntrBkSttlmAmt: &ActiveOrHistoricCurrencyAndAmount{
-			Ccy:   currency,
-			Value: p.Amount,
+			Ccy:   ccy,
+			Value: normalizeAmount(p.Amount),
 		},
 		IntrBkSttlmDt: sttlmDt,
+	}
+	if assetSuppl != nil {
+		txInf.SplmtryData = []SupplementaryData1{*assetSuppl}
 	}
 
 	if opts.ChargeBearer != "" {
@@ -153,19 +158,19 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 	}
 
 	// InitgPty lives at transaction level in pacs.008 (not in GrpHdr)
-	txInf.InitgPty = &PartyIdentification135{Nm: "MozartPay"}
+	txInf.InitgPty = &PartyIdentification272{Nm: "MozartPay"}
 
 	dbtrName := opts.DbtrName
 	if dbtrName == "" {
 		dbtrName = safeTruncate(p.From, 16)
 	}
-	txInf.Dbtr = &PartyIdentification135{
+	txInf.Dbtr = &PartyIdentification272{
 		Nm:      dbtrName,
 		PstlAdr: opts.DbtrAddress,
 	}
 
 	if opts.DbtrAcctIBAN != "" {
-		txInf.DbtrAcct = &CashAccount38{
+		txInf.DbtrAcct = &CashAccount40{
 			Id: &AccountIdentification4Choice{IBAN: opts.DbtrAcctIBAN},
 		}
 	}
@@ -180,19 +185,19 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 	if cdtrName == "" {
 		cdtrName = safeTruncate(p.To, 16)
 	}
-	txInf.Cdtr = &PartyIdentification135{
+	txInf.Cdtr = &PartyIdentification272{
 		Nm:      cdtrName,
 		PstlAdr: opts.CdtrAddress,
 	}
 
 	if opts.CdtrAcctIBAN != "" {
-		txInf.CdtrAcct = &CashAccount38{
+		txInf.CdtrAcct = &CashAccount40{
 			Id: &AccountIdentification4Choice{IBAN: opts.CdtrAcctIBAN},
 		}
 	}
 
 	if opts.PurposeCode != "" {
-		txInf.Purp = &Purpose1Choice{Cd: opts.PurposeCode}
+		txInf.Purp = &Purpose2Choice{Cd: opts.PurposeCode}
 	}
 
 	if len(opts.RemittanceInfo) > 0 {
@@ -205,7 +210,7 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 		}
 	}
 
-	doc.FIToFICstmrCdtTrf.CdtTrfTxInf = []CreditTransferTransaction39{txInf}
+	doc.FIToFICstmrCdtTrf.CdtTrfTxInf = []CreditTransferTransaction73{txInf}
 
 	return MarshalXML(doc, NSPacs008)
 }

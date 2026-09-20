@@ -151,9 +151,10 @@ func TestBuildPacs008(t *testing.T) {
 		t.Fatalf("BuildPacs008 failed: %v", err)
 	}
 	for _, want := range []string{
-		"pacs.008.001.08", "FIToFICstmrCdtTrf", "GrpHdr", "CdtTrfTxInf",
+		"pacs.008.001.14", "FIToFICstmrCdtTrf", "GrpHdr", "CdtTrfTxInf",
 		"EndToEndId", "IntrBkSttlmAmt", "Dbtr", "Cdtr", "DbtrAgt", "CdtrAgt",
-		"ChrgBr", "UETR", "RmtInf", "USDC",
+		"ChrgBr", "UETR", "RmtInf",
+		`Ccy="XXX"`, "SplmtryData", "<Cd>USDC</Cd>",
 	} {
 		if !strings.Contains(xmlStr, want) {
 			t.Errorf("XML does not contain %s", want)
@@ -173,7 +174,7 @@ func TestBuildPacs008GrpHdrOrder(t *testing.T) {
 		t.Fatalf("BuildPacs008 failed: %v", err)
 	}
 	assertChildOrder(t, xmlStr, "Document/FIToFICstmrCdtTrf/GrpHdr", []string{
-		"MsgId", "CreDtTm", "BtchBookg", "NbOfTxs", "CtrlSum",
+		"MsgId", "CreDtTm", "XpryDtTm", "BtchBookg", "NbOfTxs", "CtrlSum",
 		"TtlIntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmInf", "PmtTpInf",
 		"InstgAgt", "InstdAgt",
 	})
@@ -192,17 +193,19 @@ func TestBuildPacs008TxOrder(t *testing.T) {
 	}
 	assertChildOrder(t, xmlStr, "Document/FIToFICstmrCdtTrf/CdtTrfTxInf", []string{
 		"PmtId", "PmtTpInf", "IntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmPrty",
-		"SttlmTmIndctn", "SttlmTmReq", "AccptncDtTm", "PoolgAdjstmntDt",
-		"InstdAmt", "XchgRate", "ChrgBr", "ChrgsInf",
+		"SttlmTmIndctn", "SttlmTmReq", "AddtlDtTm",
+		"InstdAmt", "XchgRate", "AgrdRate", "ChrgBr", "ChrgsInf",
+		"MndtRltdInf", "PmtSgntr",
 		"PrvsInstgAgt1", "PrvsInstgAgt1Acct", "PrvsInstgAgt2", "PrvsInstgAgt2Acct",
 		"PrvsInstgAgt3", "PrvsInstgAgt3Acct",
+		"InstgAgt", "InstdAgt",
 		"IntrmyAgt1", "IntrmyAgt1Acct", "IntrmyAgt2", "IntrmyAgt2Acct",
 		"IntrmyAgt3", "IntrmyAgt3Acct",
-		"UltmtDbtr", "InitgPty", "InstgAgt", "InstdAgt",
+		"UltmtDbtr", "InitgPty",
 		"Dbtr", "DbtrAcct", "DbtrAgt", "DbtrAgtAcct",
 		"CdtrAgt", "CdtrAgtAcct", "Cdtr", "CdtrAcct", "UltmtCdtr",
 		"InstrForCdtrAgt", "InstrForNxtAgt", "Purp", "RgltryRptg", "Tax",
-		"RltdRmtInf", "RmtInf", "NclsdFile", "SplmtryData",
+		"RltdRmtInf", "RmtInf", "SplmtryData",
 	})
 }
 
@@ -211,7 +214,7 @@ func TestBuildPacs008ForbiddenElements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPacs008 failed: %v", err)
 	}
-	// SttlmDt is not part of SettlementInstruction7
+	// SttlmDt is not part of SettlementInstruction15
 	assertAbsent(t, xmlStr, "SttlmDt")
 	// InitgPty must not appear inside GrpHdr
 	grpHdrChildren := childElements(t, xmlStr, "Document/FIToFICstmrCdtTrf/GrpHdr")
@@ -272,11 +275,17 @@ func TestBuildPacs008RoundTrip(t *testing.T) {
 	if tx.IntrBkSttlmAmt == nil {
 		t.Fatal("IntrBkSttlmAmt is nil")
 	}
-	if tx.IntrBkSttlmAmt.Ccy != "USDC" {
-		t.Errorf("currency mismatch: got %s, want USDC", tx.IntrBkSttlmAmt.Ccy)
+	// USDC is not ISO 4217 — Ccy must be XXX with the real asset in SplmtryData
+	if tx.IntrBkSttlmAmt.Ccy != "XXX" {
+		t.Errorf("currency mismatch: got %s, want XXX", tx.IntrBkSttlmAmt.Ccy)
 	}
-	if tx.IntrBkSttlmAmt.Value != "100.0000000" {
-		t.Errorf("amount mismatch: got %s, want 100.0000000", tx.IntrBkSttlmAmt.Value)
+	// ActiveOrHistoricCurrencyAndAmount allows max 5 fraction digits
+	if tx.IntrBkSttlmAmt.Value != "100.00000" {
+		t.Errorf("amount mismatch: got %s, want 100.00000", tx.IntrBkSttlmAmt.Value)
+	}
+	if len(tx.SplmtryData) != 1 || tx.SplmtryData[0].Envlp == nil ||
+		tx.SplmtryData[0].Envlp.Asset == nil || tx.SplmtryData[0].Envlp.Asset.Cd != "USDC" {
+		t.Error("SplmtryData must preserve the original asset code USDC")
 	}
 	if tx.DbtrAgt == nil || tx.DbtrAgt.FinInstnId == nil {
 		t.Error("DbtrAgt/FinInstnId missing after round-trip")
@@ -322,7 +331,7 @@ func TestXSDValidationPacs008(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPacs008 failed: %v", err)
 	}
-	validateWithXSD(t, xmlStr, "pacs.008.001.08.xsd")
+	validateWithXSD(t, xmlStr, "pacs.008.001.14.xsd")
 }
 
 // ─────────────────────────────────────────────
@@ -338,8 +347,8 @@ func TestBuildPacs002(t *testing.T) {
 		t.Fatalf("BuildPacs002 failed: %v", err)
 	}
 	for _, want := range []string{
-		"pacs.002.001.12", "FIToFIPmtStsRpt", "TxSts", "ACSC",
-		"OrgnlEndToEndId", "OrgnlTxRef", "OrgnlGrpInf",
+		"pacs.002.001.16", "FIToFIPmtStsRpt", "TxSts", "ACSC",
+		"OrgnlEndToEndId", "OrgnlTxRef", "OrgnlGrpInfAndSts",
 	} {
 		if !strings.Contains(xmlStr, want) {
 			t.Errorf("XML does not contain %s", want)
@@ -375,9 +384,8 @@ func TestBuildPacs002TxOrder(t *testing.T) {
 	assertChildOrder(t, xmlStr, "Document/FIToFIPmtStsRpt/TxInfAndSts", []string{
 		"StsId", "OrgnlGrpInf", "OrgnlInstrId", "OrgnlEndToEndId", "OrgnlTxId",
 		"OrgnlUETR", "TxSts", "StsRsnInf", "ChrgsInf", "AccptncDtTm",
-		"FctvIntrBkSttlmDt", "AcctSvcrRef", "SvrlgAcctSvcr",
-		"SvrlgIntrmyAgt1", "SvrlgIntrmyAgt2", "SvrlgIntrmyAgt3",
-		"InstgAgt", "InstdAgt", "OrgnlTxRef", "SplmtryData", "NclsdFile",
+		"PrcgDt", "FctvIntrBkSttlmDt", "AcctSvcrRef", "ClrSysRef",
+		"CdtSttlmKey", "InstgAgt", "InstdAgt", "OrgnlTxRef", "SplmtryData",
 	})
 }
 
@@ -389,7 +397,7 @@ func TestBuildPacs002ForbiddenElements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPacs002 failed: %v", err)
 	}
-	// GroupHeader91 has no NbOfTxs / SttlmInf / InitgPty
+	// GroupHeader120 has no NbOfTxs / SttlmInf / InitgPty
 	grpHdrChildren := childElements(t, xmlStr, "Document/FIToFIPmtStsRpt/GrpHdr")
 	for _, c := range grpHdrChildren {
 		switch c {
@@ -422,7 +430,7 @@ func TestBuildPacs002OrgnlTxRefOrder(t *testing.T) {
 		t.Fatalf("BuildPacs002 failed: %v", err)
 	}
 	assertChildOrder(t, xmlStr, "Document/FIToFIPmtStsRpt/TxInfAndSts/OrgnlTxRef", []string{
-		"IntrBkSttlmAmt", "Amt", "IntrBkSttlmDt", "ReqrdColltnDt", "ReqrdExctnDt",
+		"IntrBkSttlmAmt", "Amt", "IntrBkSttlmDt", "ReqdColltnDt", "ReqdExctnDt",
 		"CdtrSchmeId", "SttlmInf", "PmtTpInf", "PmtMtd", "MndtRltdInf", "RmtInf",
 		"UltmtDbtr", "Dbtr", "DbtrAcct", "DbtrAgt", "DbtrAgtAcct",
 		"CdtrAgt", "CdtrAgtAcct", "Cdtr", "CdtrAcct", "UltmtCdtr", "Purp",
@@ -462,7 +470,7 @@ func TestXSDValidationPacs002(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPacs002 failed: %v", err)
 	}
-	validateWithXSD(t, xmlStr, "pacs.002.001.12.xsd")
+	validateWithXSD(t, xmlStr, "pacs.002.001.16.xsd")
 }
 
 // ─────────────────────────────────────────────
@@ -477,7 +485,7 @@ func TestBuildPacs004(t *testing.T) {
 		t.Fatalf("BuildPacs004 failed: %v", err)
 	}
 	for _, want := range []string{
-		"pacs.004.001.12", "PmtRtr", "RtrId", "OrgnlEndToEndId",
+		"pacs.004.001.15", "PmtRtr", "RtrId", "OrgnlEndToEndId",
 		"OrgnlGrpInf", "RtrChain", "FRAD",
 	} {
 		if !strings.Contains(xmlStr, want) {
@@ -509,8 +517,9 @@ func TestBuildPacs004GrpHdrOrder(t *testing.T) {
 		t.Fatalf("BuildPacs004 failed: %v", err)
 	}
 	assertChildOrder(t, xmlStr, "Document/PmtRtr/GrpHdr", []string{
-		"MsgId", "CreDtTm", "BtchBookg", "NbOfTxs", "CtrlSum",
-		"TtlRtrdIntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmInf", "InstgAgt", "InstdAgt",
+		"MsgId", "CreDtTm", "Authstn", "BtchBookg", "NbOfTxs", "CtrlSum",
+		"GrpRtr", "TtlRtrdIntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmInf",
+		"PmtTpInf", "InstgAgt", "InstdAgt",
 	})
 }
 
@@ -524,10 +533,10 @@ func TestBuildPacs004TxOrder(t *testing.T) {
 	assertChildOrder(t, xmlStr, "Document/PmtRtr/TxInf", []string{
 		"RtrId", "OrgnlGrpInf", "OrgnlInstrId", "OrgnlEndToEndId", "OrgnlTxId",
 		"OrgnlUETR", "OrgnlClrSysRef", "OrgnlIntrBkSttlmAmt", "OrgnlIntrBkSttlmDt",
-		"RtrdIntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmPrty", "SttlmTmIndctn",
-		"SttlmTmReq", "RtrdInstdAmt", "XchgRate", "CmpstnAmt", "ChrgBr",
-		"ChrgsInf", "InstgAgt", "InstdAgt", "RtrChain", "RtrRsnInf",
-		"OrgnlTxRef", "SplmtryData",
+		"PmtTpInf", "RtrdIntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmPrty",
+		"SttlmTmIndctn", "SttlmTmReq", "RtrdInstdAmt", "XchgRate", "AgrdRate",
+		"CompstnAmt", "ChrgBr", "ChrgsInf", "ClrSysRef", "InstgAgt", "InstdAgt",
+		"RtrChain", "RtrRsnInf", "OrgnlTxRef", "SplmtryData",
 	})
 }
 
@@ -585,7 +594,7 @@ func TestXSDValidationPacs004(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPacs004 failed: %v", err)
 	}
-	validateWithXSD(t, xmlStr, "pacs.004.001.12.xsd")
+	validateWithXSD(t, xmlStr, "pacs.004.001.15.xsd")
 }
 
 // ─────────────────────────────────────────────
@@ -598,8 +607,8 @@ func TestBuildPacs009(t *testing.T) {
 		t.Fatalf("BuildPacs009 failed: %v", err)
 	}
 	for _, want := range []string{
-		"pacs.009.001.10", "FICdtTrf", "CdtTrfTxInf", "EndToEndId",
-		"IntrBkSttlmAmt", "DEBT", "Dbtr", "Cdtr",
+		"pacs.009.001.13", "FICdtTrf", "CdtTrfTxInf", "EndToEndId",
+		"IntrBkSttlmAmt", "Dbtr", "Cdtr",
 	} {
 		if !strings.Contains(xmlStr, want) {
 			t.Errorf("XML does not contain %s", want)
@@ -636,18 +645,17 @@ func TestBuildPacs009TxOrder(t *testing.T) {
 	}
 	assertChildOrder(t, xmlStr, "Document/FICdtTrf/CdtTrfTxInf", []string{
 		"PmtId", "PmtTpInf", "IntrBkSttlmAmt", "IntrBkSttlmDt", "SttlmPrty",
-		"SttlmTmIndctn", "SttlmTmReq", "AccptncDtTm", "PoolgAdjstmntDt",
-		"InstdAmt", "XchgRate", "XchgRateInf", "ChrgBr", "ChrgsInf",
-		"MndtRltdInf",
+		"SttlmTmIndctn", "SttlmTmReq", "XpryDtTm", "PmtSgntr",
 		"PrvsInstgAgt1", "PrvsInstgAgt1Acct", "PrvsInstgAgt2", "PrvsInstgAgt2Acct",
 		"PrvsInstgAgt3", "PrvsInstgAgt3Acct",
+		"InstgAgt", "InstdAgt",
 		"IntrmyAgt1", "IntrmyAgt1Acct", "IntrmyAgt2", "IntrmyAgt2Acct",
 		"IntrmyAgt3", "IntrmyAgt3Acct",
-		"InstgAgt", "InstdAgt",
-		"Dbtr", "DbtrAcct", "DbtrAgt", "DbtrAgtAcct",
-		"CdtrAgt", "CdtrAgtAcct", "Cdtr", "CdtrAcct",
-		"UltmtDbtr", "UltmtCdtr", "InstrForCdtrAgt", "InstrForNxtAgt",
-		"Purp", "RgltryRptg", "RltdRmtInf", "RmtInf", "NclsdFile", "SplmtryData",
+		"UltmtDbtr", "Dbtr", "DbtrAcct", "DbtrAgt", "DbtrAgtAcct",
+		"CdtrAgt", "CdtrAgtAcct", "Cdtr", "CdtrAcct", "UltmtCdtr",
+		"InstrForCdtrAgt", "InstrForNxtAgt",
+		"Purp", "RgltryRptg", "RmtInf",
+		"UndrlygAllcn", "UndrlygCstmrCdtTrf", "UndrlygFICdtTrf", "SplmtryData",
 	})
 }
 
@@ -673,6 +681,8 @@ func TestBuildPacs009ForbiddenElements(t *testing.T) {
 		t.Fatalf("BuildPacs009 failed: %v", err)
 	}
 	assertAbsent(t, xmlStr, "SttlmDt")
+	// ChrgBr is not part of pacs.009.001.13 CdtTrfTxInf
+	assertAbsent(t, xmlStr, "ChrgBr")
 	grpHdrChildren := childElements(t, xmlStr, "Document/FICdtTrf/GrpHdr")
 	for _, c := range grpHdrChildren {
 		if c == "InitgPty" {
@@ -714,7 +724,7 @@ func TestXSDValidationPacs009(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPacs009 failed: %v", err)
 	}
-	validateWithXSD(t, xmlStr, "pacs.009.001.10.xsd")
+	validateWithXSD(t, xmlStr, "pacs.009.001.13.xsd")
 }
 
 // ─────────────────────────────────────────────
