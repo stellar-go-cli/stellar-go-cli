@@ -1,13 +1,15 @@
-# MozartPay CLI — Orchestrated Agreements
+# Stellar Go CLI
 
-> **v0.1.0-mvp** · Built in Go · Pure-Go Soroban RPC · OG Technologies EU
+> Open-source Go CLI for Stellar: wallets, payments, swaps, SEP-41 assets, W3C DIDs/Verifiable Credentials, ISO 20022 (pacs) reporting, Soroban RPC and an MCP server for AI assistants. Apache 2.0.
 
-A command-line interface for the MozartPay Orchestrated Agreements platform — enabling
-DID-attested, VC-linked payments and asset issuance on Stellar with OA scoring,
-StellarCarbon offset integration, x402 micropayments, and ISO 20022 compliance reporting.
+Extracted from [MozartPay Orchestrated Agreements](https://github.com/mozartpay/OAs), which is now a downstream consumer of this repository. Maintained by Olvis E. Gil Ríos (OG Technologies EU) and contributors.
 
-Includes a pure-Go Soroban RPC client for smart contract deployment and invocation,
-a built-in MCP server for AI assistant integration, and WebAuthn/FIDO2 passkey support.
+```bash
+go install github.com/stellar-go-cli/stellar-go-cli/cmd/stellar-go-cli@latest
+stellar-go-cli --help
+```
+
+Status: wallet/payments/swaps run on mainnet; DID/VC (Ed25519Signature2020, cryptographic verification) and ISO 20022 pacs.008/002/004/009 (validates against official XSDs) are working prototypes — VCs are self-issued unless an external issuer is configured. Not a Stellar Development Foundation project.
 
 ---
 

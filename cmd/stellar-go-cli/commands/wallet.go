@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"golang.org/x/term"
 )
 

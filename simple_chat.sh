@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ ! -f "$SCRIPT_DIR/mozartpay" ]; then
     echo "🔨 Building mozartpay..."
     cd "$SCRIPT_DIR"
-    go build ./cmd/mozartpay
+    go build ./cmd/stellar-go-cli
     if [ $? -ne 0 ]; then
         echo "❌ Failed to build mozartpay"
         exit 1

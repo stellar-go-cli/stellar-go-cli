@@ -14,12 +14,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o webauthn-server .
 # MCP Server Builder  
 FROM base-builder AS mcp-builder
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mozartpay ./cmd/mozartpay
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o stellar-go-cli ./cmd/stellar-go-cli
 
 # CLI Builder
 FROM base-builder AS cli-builder
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mozartpay-cli ./cmd/mozartpay
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o stellar-go-cli-bin ./cmd/stellar-go-cli
 
 # WebAuthn Server Final Image
 FROM alpine:latest AS webauthn
@@ -35,28 +35,28 @@ CMD ["./webauthn-server"]
 FROM alpine:latest AS mcp
 RUN apk --no-cache add ca-certificates tzdata wget
 WORKDIR /root/
-COPY --from=mcp-builder /app/mozartpay .
+COPY --from=mcp-builder /app/stellar-go-cli .
 RUN mkdir -p /root/.mozartpay
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
-CMD ["./mozartpay", "mcp", "--transport", "sse", "--port", "3000"]
+CMD ["./stellar-go-cli", "mcp", "--transport", "sse", "--port", "3000"]
 
 # CLI Final Image
 FROM alpine:latest AS cli
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /root/
-COPY --from=cli-builder /app/mozartpay-cli .
+COPY --from=cli-builder /app/stellar-go-cli-bin .
 RUN mkdir -p /root/.mozartpay
-CMD ["./mozartpay-cli"]
+CMD ["./stellar-go-cli-bin"]
 
 # VC API Server Final Image
 FROM alpine:latest AS vc-api
 RUN apk --no-cache add ca-certificates tzdata wget
 WORKDIR /root/
-COPY --from=cli-builder /app/mozartpay-cli .
+COPY --from=cli-builder /app/stellar-go-cli-bin .
 RUN mkdir -p /root/.mozartpay
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1
-CMD ["./mozartpay-cli", "vc-api", "--port", "4000"]
+CMD ["./stellar-go-cli-bin", "vc-api", "--port", "4000"]

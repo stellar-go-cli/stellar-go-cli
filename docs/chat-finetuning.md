@@ -322,7 +322,7 @@ See the following source files for implementation details:
 - `internal/chat/finetune/` - LoRA/QLoRA training
 - `internal/chat/gguf/` - GGUF export
 - `internal/chat/models/` - Model registry
-- `cmd/mozartpay/commands/chat_finetune.go` - CLI commands
+- `cmd/stellar-go-cli/commands/chat_finetune.go` - CLI commands
 
 ## Contributing
 

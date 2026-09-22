@@ -7,12 +7,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/did"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
-	mpCrypto "github.com/ogtechnologies/mozartpay/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/did"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 )
 
 // proof type constants for CLI flags

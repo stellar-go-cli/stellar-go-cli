@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/scanner"
-	"github.com/ogtechnologies/mozartpay/internal/swap"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 )
 
 func newSwapCmd(cfg *config.Config) *Command {

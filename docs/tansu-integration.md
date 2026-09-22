@@ -325,7 +325,7 @@ MozartPay must compute this client-side to query specific projects by name.
 **Scope**:
 - Add `TansuConfig` to `internal/config/config.go` (contract ID, network, enabled flag)
 - Create `internal/integrations/tansu.go` client wrapping `internal/soroban/` `SimulateOnly()` calls
-- Add CLI commands under `cmd/mozartpay/commands/tansu.go`
+- Add CLI commands under `cmd/stellar-go-cli/commands/tansu.go`
 - Expose MCP tools in `internal/mcp/tools.go` for AI assistant access
 
 **CLI Commands**:
@@ -361,7 +361,7 @@ mozartpay tansu admins
 - `internal/config/config.go` — Add `TansuConfig` struct to `IntegrationConfig`
 - `internal/integrations/tansu.go` — Tansu client with `SimulateOnly()` wrappers
 - `internal/models/types.go` — Go structs mirroring Tansu Rust types
-- `cmd/mozartpay/commands/tansu.go` — CLI command definitions
+- `cmd/stellar-go-cli/commands/tansu.go` — CLI command definitions
 - `internal/mcp/tools.go` — MCP tool definitions
 - `internal/mcp/handlers.go` — MCP tool handlers
 

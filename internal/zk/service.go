@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	mpCrypto "github.com/ogtechnologies/mozartpay/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 )
 
 // Service handles ZK proof generation and verification

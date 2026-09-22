@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 )
 
 // LLMClient provides an interface for local LLM inference

@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 )
 
 const (

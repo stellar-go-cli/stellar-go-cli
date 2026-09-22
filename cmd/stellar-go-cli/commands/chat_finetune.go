@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ogtechnologies/mozartpay/internal/chat/finetune"
-	"github.com/ogtechnologies/mozartpay/internal/chat/gguf"
-	"github.com/ogtechnologies/mozartpay/internal/chat/models"
-	"github.com/ogtechnologies/mozartpay/internal/chat/training"
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/chat/finetune"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/chat/gguf"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/chat/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/chat/training"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 // newChatTrainCmd creates the chat training data subcommand

@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/ogtechnologies/mozartpay/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 )
 
 // executeArbitrageStrategy checks for XLM↔USDC arbitrage opportunities

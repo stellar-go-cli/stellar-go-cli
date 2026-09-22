@@ -1,6 +1,6 @@
 package scanner
 
-import "github.com/ogtechnologies/mozartpay/internal/models"
+import "github.com/stellar-go-cli/stellar-go-cli/internal/models"
 
 // AssetPair represents a liquid trading pair for arbitrage scanning
 type AssetPair struct {

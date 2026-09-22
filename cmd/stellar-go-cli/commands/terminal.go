@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/terminal"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/terminal"
 )
 
 func newTerminalCmd(cfg *config.Config) *Command {

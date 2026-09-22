@@ -26,7 +26,7 @@ python3 mcp_assistant.py
 ### Option 3: Build and run manually
 ```bash
 cd mozartpay
-go build ./cmd/mozartpay
+go build ./cmd/stellar-go-cli
 cd ..
 python3 mcp_assistant.py
 ```
@@ -134,7 +134,7 @@ To extend the assistant:
 ## Troubleshooting
 
 **"mozartpay binary not found"**
-- Run `go build ./cmd/mozartpay` in the mozartpay directory
+- Run `go build ./cmd/stellar-go-cli` in the mozartpay directory
 
 **"Failed to initialize MCP server"**
 - Check if mozartpay binary exists and is executable

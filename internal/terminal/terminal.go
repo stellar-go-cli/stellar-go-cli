@@ -15,9 +15,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/integrations"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/integrations"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 )
 
 // Bloomberg-style colors

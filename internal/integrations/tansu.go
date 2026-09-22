@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/ogtechnologies/mozartpay/internal/soroban"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/soroban"
 	"github.com/stellar/go/xdr"
 	"golang.org/x/crypto/sha3"
 )

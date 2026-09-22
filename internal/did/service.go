@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	mpCrypto "github.com/ogtechnologies/mozartpay/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/strkey"
 )

@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 )
 
 func newExchangeCmd(cfg *config.Config) *Command {

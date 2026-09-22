@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/iso20022"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	mpCrypto "github.com/ogtechnologies/mozartpay/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/iso20022"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 )
 
 // Service generates post-transaction reports

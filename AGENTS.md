@@ -1,4 +1,4 @@
-# AGENTS.md — MozartPay CLI
+# AGENTS.md — Stellar Go CLI
 
 Guidelines for AI coding agents and documentation of the built-in MCP server for AI assistant integration.
 
@@ -13,7 +13,7 @@ MozartPay CLI is a Go command-line interface for the MozartPay Orchestrated Agre
 ## Build & Test Commands
 
 ```bash
-make build              # Build CLI binary → dist/mozartpay
+make build              # Build CLI binary → dist/stellar-go-cli
 make install            # Install to $GOPATH/bin
 make test               # Run all tests
 make lint               # go vet + golangci-lint
@@ -29,8 +29,8 @@ go mod tidy             # Tidy modules
 
 | Path | Description |
 |------|-------------|
-| `cmd/mozartpay/` | CLI entrypoint and command definitions |
-| `cmd/mozartpay/commands/` | All CLI commands (one file per command group) |
+| `cmd/stellar-go-cli/` | CLI entrypoint and command definitions |
+| `cmd/stellar-go-cli/commands/` | All CLI commands (one file per command group) |
 | `cmd/webauthn-server/` | WebAuthn/FIDO2 server for passkey authentication |
 | `internal/soroban/` | Pure-Go Soroban RPC client (deploy, invoke, simulate) |
 | `internal/mcp/` | MCP server, tools, handlers, and skills |
@@ -58,9 +58,9 @@ go mod tidy             # Tidy modules
 
 ### Command Pattern
 
-All CLI commands follow the `Command` struct pattern defined in `cmd/mozartpay/commands/root.go`:
+All CLI commands follow the `Command` struct pattern defined in `cmd/stellar-go-cli/commands/root.go`:
 
-- Each command group is a file in `cmd/mozartpay/commands/` (e.g., `wallet.go`, `contract.go`)
+- Each command group is a file in `cmd/stellar-go-cli/commands/` (e.g., `wallet.go`, `contract.go`)
 - Each file defines a `newXxxCmd(cfg *config.Config) *Command` function
 - Subcommands are added via `cmd.addSub(newXxxSubCmd(cfg))`
 - Commands are registered in `NewRootCmd()` in `root.go`
@@ -163,7 +163,7 @@ curl -s -X POST https://soroban-testnet.stellar.org \
   -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}'
 
 # Deploy a contract
-mozartpay contract deploy --wasm contracts/dist/mozartpay_contracts.wasm --network stellar-testnet
+mozartpay contract deploy --wasm contracts/dist/stellar-go-cli_contracts.wasm --network stellar-testnet
 
 # Simulate a read-only query (no transaction submitted)
 mozartpay contract list
@@ -197,7 +197,7 @@ The Soroban smart contracts are written in Rust and located in `contracts/`.
 ## Module Path
 
 ```
-github.com/ogtechnologies/mozartpay
+github.com/stellar-go-cli/stellar-go-cli
 ```
 
 Go 1.24+. Primary external dependency: `github.com/stellar/go` (Stellar Go SDK with Soroban RPC support).

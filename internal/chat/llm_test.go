@@ -3,7 +3,7 @@ package chat
 import (
 	"testing"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 )
 
 func TestLLMClientIsAvailable(t *testing.T) {

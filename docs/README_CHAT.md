@@ -177,7 +177,7 @@ elif intent == 'wallet_create':
 ## Troubleshooting
 
 **"mozartpay binary not found"**
-- Run `go build ./cmd/mozartpay` first
+- Run `go build ./cmd/stellar-go-cli` first
 
 **"Failed to initialize MCP server"**
 - Check if mozartpay is running properly

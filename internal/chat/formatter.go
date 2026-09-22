@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 )
 
 // Formatter handles output formatting with emojis and styling

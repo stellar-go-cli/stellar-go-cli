@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/payments"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/payments"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 func newPayCmd(cfg *config.Config) *Command {

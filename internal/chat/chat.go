@@ -10,13 +10,13 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/ogtechnologies/mozartpay/internal/assets"
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/scanner"
-	"github.com/ogtechnologies/mozartpay/internal/swap"
-	"github.com/ogtechnologies/mozartpay/internal/triangular"
-	"github.com/ogtechnologies/mozartpay/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/assets"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 )
 
 // Chat represents the interactive chat session

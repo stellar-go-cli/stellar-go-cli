@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/iso20022"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/reporting"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/iso20022"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/reporting"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 func newReportCmd(cfg *config.Config) *Command {

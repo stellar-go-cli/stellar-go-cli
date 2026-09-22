@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 )
 
 func TestMCPServerInitialize(t *testing.T) {

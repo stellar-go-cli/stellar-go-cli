@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/integrations"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/integrations"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 func newIntegrationsCmd(cfg *config.Config) *Command {

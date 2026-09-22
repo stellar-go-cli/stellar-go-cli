@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build MCP server CLI with memory optimizations
-RUN CGO_ENABLED=0 GOOS=linux GOGC=off go build -p 1 -ldflags="-s -w" -o mozartpay ./cmd/mozartpay
+RUN CGO_ENABLED=0 GOOS=linux GOGC=off go build -p 1 -ldflags="-s -w" -o stellar-go-cli ./cmd/stellar-go-cli
 
 # Final stage
 FROM alpine:latest
@@ -24,7 +24,7 @@ RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /root/
 
 # Copy binary from builder
-COPY --from=builder /app/mozartpay .
+COPY --from=builder /app/stellar-go-cli .
 
 # Create config directory
 RUN mkdir -p /root/.mozartpay
@@ -37,4 +37,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
 # Default command for MCP server
-CMD ["./mozartpay", "mcp", "--transport", "sse", "--port", "3000"]
+CMD ["./stellar-go-cli", "mcp", "--transport", "sse", "--port", "3000"]

@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
 )
 
 // Service handles trading strategy execution and management

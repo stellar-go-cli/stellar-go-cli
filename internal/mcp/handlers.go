@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/integrations"
-	"github.com/ogtechnologies/mozartpay/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/integrations"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 )
 
 // ============================================

@@ -1,4 +1,4 @@
-module github.com/ogtechnologies/mozartpay
+module github.com/stellar-go-cli/stellar-go-cli
 
 go 1.26.0
 

@@ -7,8 +7,8 @@ RUN apk --no-cache add ca-certificates tzdata wget
 
 WORKDIR /root/
 
-# Copy pre-built binary (build locally first with: go build -o mozartpay ./cmd/mozartpay)
-COPY mozartpay .
+# Copy pre-built binary (build locally first with: go build -o stellar-go-cli ./cmd/stellar-go-cli)
+COPY stellar-go-cli .
 
 # Create config directory
 RUN mkdir -p /root/.mozartpay
@@ -21,4 +21,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
 # Default command
-CMD ["./mozartpay", "mcp", "--transport", "sse", "--port", "3000"]
+CMD ["./stellar-go-cli", "mcp", "--transport", "sse", "--port", "3000"]

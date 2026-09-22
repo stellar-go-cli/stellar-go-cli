@@ -1,6 +1,6 @@
-BINARY     = mozartpay
-MODULE     = github.com/ogtechnologies/mozartpay
-CMD        = ./cmd/mozartpay
+BINARY     = stellar-go-cli
+MODULE     = github.com/stellar-go-cli/stellar-go-cli
+CMD        = ./cmd/stellar-go-cli
 VERSION    = 0.1.0-mvp
 BUILD_DIR  = ./dist
 GOFLAGS    =

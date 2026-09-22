@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 )
 
 // LLMIntentRecognizer uses local LLM for intent classification

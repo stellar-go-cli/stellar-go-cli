@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 // Command represents a CLI command
@@ -76,7 +76,7 @@ func (r *RootCmd) Execute() error {
 
 	// Global flags
 	if args[0] == "--version" || args[0] == "-v" {
-		fmt.Printf("mozartpay %s\n", config.Version)
+		fmt.Printf("stellar-go-cli %s\n", config.Version)
 		return nil
 	}
 	if args[0] == "--help" || args[0] == "-h" {
@@ -98,7 +98,7 @@ func (r *RootCmd) Execute() error {
 }
 
 func (r *RootCmd) printHelp() {
-	fmt.Printf("  %s\n\n", ui.Dim_("Usage: mozartpay <command> [flags]"))
+	fmt.Printf("  %s\n\n", ui.Dim_("Usage: stellar-go-cli <command> [flags]"))
 
 	fmt.Printf("  %s\n\n", ui.Bold_("Commands:"))
 
@@ -130,7 +130,7 @@ func (r *RootCmd) printHelp() {
 		fmt.Println()
 	}
 
-	fmt.Printf("  %s\n", ui.Dim_("Run 'mozartpay <command> --help' for command-specific help."))
+	fmt.Printf("  %s\n", ui.Dim_("Run 'stellar-go-cli <command> --help' for command-specific help."))
 	fmt.Println()
 }
 

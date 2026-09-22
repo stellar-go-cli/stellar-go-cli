@@ -4,10 +4,10 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/ogtechnologies/mozartpay/internal/config"
-	"github.com/ogtechnologies/mozartpay/internal/models"
-	"github.com/ogtechnologies/mozartpay/internal/triangular"
-	"github.com/ogtechnologies/mozartpay/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 func newTriangularCmd(cfg *config.Config) *Command {
