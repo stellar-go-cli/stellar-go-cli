@@ -66,7 +66,7 @@ func White_(s string) string   { return colorize(BrightWhite, s) }
 // Banner
 // ─────────────────────────────────────────────
 
-func PrintBanner() {
+func PrintBanner(version string) {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, Teal_("  ███████╗████████╗███████╗██╗     ██╗      █████╗ ██████╗"))
 	fmt.Fprintln(os.Stderr, Teal_("  ██╔════╝╚══██╔══╝██╔════╝██║     ██║     ██╔══██╗██╔══██╗"))
@@ -78,7 +78,7 @@ func PrintBanner() {
 	fmt.Fprintf(os.Stderr, "  %s %s  %s\n",
 		Bold_("Stellar Go CLI"),
 		Dim_("|"),
-		Dim_("v0.1.0-mvp"),
+		Dim_("v"+version),
 	)
 	fmt.Fprintln(os.Stderr, Dim_("  ─────────────────────────────────────────────────────"))
 	fmt.Fprintln(os.Stderr)

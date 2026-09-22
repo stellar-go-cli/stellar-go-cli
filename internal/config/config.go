@@ -18,7 +18,7 @@ const (
 	DefaultConfigDir   = ".stellar-go-cli"
 	LegacyConfigDir    = ".mozartpay" // pre-rename directory; migrated on first run
 	DefaultConfigFile  = "config.json"
-	Version            = "0.1.0-mvp"
+	Version            = "0.1.0"
 	AppName            = "Stellar Go CLI"
 	DefaultHTTPTimeout = 30 * time.Second
 )

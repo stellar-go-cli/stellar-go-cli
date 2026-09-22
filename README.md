@@ -99,10 +99,27 @@ Reusable packages are public under `pkg/` and render on [pkg.go.dev](https://pkg
 | `pkg/crypto` | Key generation, hashing, and encoding helpers |
 
 ```go
-import "github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
+import (
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/iso20022"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
+)
 
+// Soroban RPC client — deploy/invoke contracts without the stellar CLI
 client := soroban.NewClientForNetwork("stellar-testnet")
 defer client.Close()
+
+result, err := client.Deploy(ctx, keypair, wasmBytes) // *DeployResult{ContractID, TxHash, …}
+
+// ISO 20022 pacs.008 XML from a payment
+xmlDoc, err := iso20022.BuildPacs008(&models.Payment{
+	ID:     "pay-001",
+	From:   "GDEBTOR…",
+	To:     "GCREDITOR…",
+	Amount: "10.0000000",
+	Asset:  "USDC",
+	TxHash: "abc123…",
+}, nil)
 ```
 
 ## MCP Server
@@ -132,6 +149,15 @@ Config is stored at `~/.stellar-go-cli/config.json`; state files under `~/.stell
 - **SEP-41** Stellar token interface (SAC)
 - **ISO 20022** — pacs.008.001.14, pacs.002.001.16, pacs.004.001.15, pacs.009.001.13
 - **x402 / HTTP 402** payment flow
+
+## Downstream users
+
+- [MozartPay Orchestrated Agreements](https://github.com/mozartpay/OAs) — orchestrated-agreement payments on Stellar; consumes the `pkg/` libraries and wraps the CLI.
+
+## Known limitations
+
+- **Self-issued VCs are not KYC** — credentials are self-issued (they prove key control, not verified identity) unless an external issuer is configured.
+- **Identity trust anchor is off-chain** — DID/VC issuance and verification resolve off-chain; nothing is anchored to the Stellar ledger.
 
 ## Contributing
 

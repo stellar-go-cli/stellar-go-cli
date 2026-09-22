@@ -20,7 +20,7 @@ func newVersionCmd(cfg *config.Config) *Command {
 		Name:  "version",
 		Short: "Show Stellar Go CLI version and build info",
 		Run: func(c *Command, args []string) error {
-			ui.PrintBanner()
+			ui.PrintBanner(config.Version)
 			ui.KV("Version", config.Version)
 			ui.KV("Build", "go1.22.2 · linux/amd64")
 			ui.KV("Standards", "SEP-41 · W3C DID Core · ISO 20022 · eIDAS 2.0")
@@ -39,7 +39,7 @@ func newInitCmd(cfg *config.Config) *Command {
 		Name:  "init",
 		Short: "Initialize Stellar Go CLI configuration",
 		Run: func(c *Command, args []string) error {
-			ui.PrintBanner()
+			ui.PrintBanner(config.Version)
 			ui.Header("Initializing Stellar Go CLI")
 
 			steps := []struct {
@@ -188,7 +188,7 @@ func newFlowCmd(cfg *config.Config) *Command {
 		Name:  "flow",
 		Short: "Print the Stellar Go CLI component flow diagram",
 		Run: func(c *Command, args []string) error {
-			ui.PrintBanner()
+			ui.PrintBanner(config.Version)
 			printFlow()
 			return nil
 		},

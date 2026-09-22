@@ -67,7 +67,7 @@ func (r *RootCmd) Execute() error {
 
 	// Show banner + help if no args
 	if len(args) == 0 {
-		ui.PrintBanner()
+		ui.PrintBanner(config.Version)
 		r.printHelp()
 		return nil
 	}
@@ -78,7 +78,7 @@ func (r *RootCmd) Execute() error {
 		return nil
 	}
 	if args[0] == "--help" || args[0] == "-h" {
-		ui.PrintBanner()
+		ui.PrintBanner(config.Version)
 		r.printHelp()
 		return nil
 	}
@@ -110,20 +110,27 @@ func (r *RootCmd) printHelp() {
 		{"Contracts", []string{"contract"}},
 		{"Integrations", []string{"integrations"}},
 		{"Reporting", []string{"report"}},
-		{"AI", []string{"mcp", "chat"}},
-		{"Extras", []string{"terminal", "exchange"}},
+		{"AI", []string{"mcp"}},
+		{"Extras", []string{"chat", "terminal", "exchange"}},
 		{"System", []string{"init", "status", "flow", "network", "version", "vc-api"}},
 	}
 
 	for _, g := range groups {
-		fmt.Printf("  %s\n", ui.Dim_(g.label))
+		var registered []*Command
 		for _, name := range g.commands {
 			if cmd, ok := r.commands[name]; ok {
-				fmt.Printf("    %-20s %s\n",
-					ui.Teal_(cmd.Name),
-					ui.Dim_(cmd.Short),
-				)
+				registered = append(registered, cmd)
 			}
+		}
+		if len(registered) == 0 {
+			continue
+		}
+		fmt.Printf("  %s\n", ui.Dim_(g.label))
+		for _, cmd := range registered {
+			fmt.Printf("    %-20s %s\n",
+				ui.Teal_(cmd.Name),
+				ui.Dim_(cmd.Short),
+			)
 		}
 		fmt.Println()
 	}
