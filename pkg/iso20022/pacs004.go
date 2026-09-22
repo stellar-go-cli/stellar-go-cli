@@ -131,7 +131,7 @@ func BuildPacs004(p *models.Payment, opts *Pacs004Options) (string, error) {
 	if asset == "" {
 		asset = "XLM"
 	}
-	ccy, assetSuppl := settlementCurrency(asset, p.Amount)
+	ccy, assetSuppl := settlementCurrency(asset, p.AssetIssuer, p.Amount)
 
 	doc := &Pacs004Document{
 		Xmlns: NSPacs004,

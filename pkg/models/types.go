@@ -185,10 +185,12 @@ type Payment struct {
 	To          string        `json:"to"`
 	Amount      string        `json:"amount"`
 	Asset       string        `json:"asset"`
+	AssetIssuer string        `json:"assetIssuer,omitempty"`
 	Rail        PaymentRail   `json:"rail"`
 	Status      PaymentStatus `json:"status"`
 	Network     Network       `json:"network"`
 	Memo        string        `json:"memo,omitempty"`
+	MemoType    string        `json:"memoType,omitempty"` // Stellar memo type: text | id | hash | return
 	FXRate      string        `json:"fxRate,omitempty"`
 	Fee         string        `json:"fee"`
 	TxHash      string        `json:"txHash"`

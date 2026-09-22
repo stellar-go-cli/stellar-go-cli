@@ -1,6 +1,10 @@
 package iso20022
 
-import "strings"
+import (
+	"fmt"
+	"math/big"
+	"strings"
+)
 
 // ─────────────────────────────────────────────
 // Namespace constants for each pacs message type
@@ -11,6 +15,8 @@ const (
 	NSPacs002 = "urn:iso:std:iso:20022:tech:xsd:pacs.002.001.16"
 	NSPacs004 = "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.15"
 	NSPacs009 = "urn:iso:std:iso:20022:tech:xsd:pacs.009.001.13"
+	NSPain001 = "urn:iso:std:iso:20022:tech:xsd:pain.001.001.13"
+	NSCamt054 = "urn:iso:std:iso:20022:tech:xsd:camt.054.001.14"
 )
 
 // ─────────────────────────────────────────────
@@ -111,9 +117,15 @@ type DateAndPlaceOfBirth1 struct {
 
 // GenericPersonIdentification2
 type GenericPersonIdentification2 struct {
-	Id      string `xml:"Id"`
-	SchmeNm string `xml:"SchmeNm>Cd,omitempty"`
-	Issr    string `xml:"Issr,omitempty"`
+	Id      string                                 `xml:"Id"`
+	SchmeNm *PersonIdentificationSchemeName1Choice `xml:"SchmeNm,omitempty"`
+	Issr    string                                 `xml:"Issr,omitempty"`
+}
+
+// PersonIdentificationSchemeName1Choice
+type PersonIdentificationSchemeName1Choice struct {
+	Cd    string `xml:"Cd,omitempty"`
+	Prtry string `xml:"Prtry,omitempty"`
 }
 
 // OrganisationIdentification39 — organisation identification
@@ -125,9 +137,15 @@ type OrganisationIdentification39 struct {
 
 // GenericOrganisationIdentification3
 type GenericOrganisationIdentification3 struct {
-	Id      string `xml:"Id"`
-	SchmeNm string `xml:"SchmeNm>Cd,omitempty"`
-	Issr    string `xml:"Issr,omitempty"`
+	Id      string                                       `xml:"Id"`
+	SchmeNm *OrganisationIdentificationSchemeName1Choice `xml:"SchmeNm,omitempty"`
+	Issr    string                                       `xml:"Issr,omitempty"`
+}
+
+// OrganisationIdentificationSchemeName1Choice
+type OrganisationIdentificationSchemeName1Choice struct {
+	Cd    string `xml:"Cd,omitempty"`
+	Prtry string `xml:"Prtry,omitempty"`
 }
 
 // Party52Choice — party as person or organisation
@@ -136,12 +154,22 @@ type Party52Choice struct {
 	OrgId  *OrganisationIdentification39 `xml:"OrgId,omitempty"`
 }
 
-// PartyIdentification272 — name + address + identification
+// PartyIdentification272 — name + address + identification.
+// XSD sequence: Nm?, PstlAdr?, Id?, CtryOfRes?, CtctDtls?
 type PartyIdentification272 struct {
 	Nm        string           `xml:"Nm,omitempty"`
 	PstlAdr   *PostalAddress27 `xml:"PstlAdr,omitempty"`
 	Id        *Party52Choice   `xml:"Id,omitempty"`
 	CtryOfRes string           `xml:"CtryOfRes,omitempty"`
+	CtctDtls  *Contact13       `xml:"CtctDtls,omitempty"`
+}
+
+// Contact13 — contact details (CtctDtls). Subset of the XSD sequence.
+type Contact13 struct {
+	Nm       string `xml:"Nm,omitempty"`
+	PhneNb   string `xml:"PhneNb,omitempty"`
+	MobNb    string `xml:"MobNb,omitempty"`
+	EmailAdr string `xml:"EmailAdr,omitempty"`
 }
 
 // Party50Choice — party as a party or an agent (used in pacs.004 RtrChain)
@@ -565,11 +593,13 @@ var iso4217Codes = map[string]bool{
 }
 
 // settlementCurrency maps a payment asset to an ISO 4217 Ccy value.
-// asset may be a bare code ("USDC") or Stellar "CODE:ISSUER" form.
+// asset may be a bare code ("USDC") or Stellar "CODE:ISSUER" form; an
+// explicit issuer argument (models.Payment.AssetIssuer) is used when the
+// bare-code form is given.
 // Non-ISO assets return "XXX" plus a SplmtryData block preserving the real
 // asset code, issuer, and exact amount.
-func settlementCurrency(asset, exactAmount string) (string, *SupplementaryData1) {
-	code, issuer := asset, ""
+func settlementCurrency(asset, issuer, exactAmount string) (string, *SupplementaryData1) {
+	code := asset
 	if i := strings.IndexByte(asset, ':'); i >= 0 {
 		code, issuer = asset[:i], asset[i+1:]
 	}
@@ -582,6 +612,31 @@ func settlementCurrency(asset, exactAmount string) (string, *SupplementaryData1)
 			Asset: &SupplementaryAsset{Cd: code, Issr: issuer, Amt: exactAmount},
 		},
 	}
+}
+
+// sumAmounts returns the decimal sum of amount strings, for CtrlSum and
+// total-amount elements in batch messages.
+func sumAmounts(amounts []string) (string, error) {
+	total := new(big.Rat)
+	for _, a := range amounts {
+		v, ok := new(big.Rat).SetString(strings.TrimSpace(a))
+		if !ok {
+			return "", fmt.Errorf("invalid amount %q", a)
+		}
+		total.Add(total, v)
+	}
+	return ratDecimalString(total), nil
+}
+
+// ratDecimalString renders a big.Rat as a plain decimal (no exponent),
+// truncated to 18 fraction digits (the DecimalNumber limit).
+func ratDecimalString(r *big.Rat) string {
+	if r.IsInt() {
+		return r.Num().String()
+	}
+	s := r.FloatString(18)
+	s = strings.TrimRight(s, "0")
+	return strings.TrimRight(s, ".")
 }
 
 // normalizeAmount truncates a decimal string to the 5 fraction digits allowed

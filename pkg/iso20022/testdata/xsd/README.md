@@ -15,12 +15,14 @@ and the `NOTICE` file at the repository root for the attribution statement.
 
 Expected filenames:
 
-| File                  | Message                          |
-|-----------------------|----------------------------------|
-| `pacs.008.001.14.xsd` | FIToFICustomerCreditTransferV14  |
-| `pacs.002.001.16.xsd` | FIToFIPaymentStatusReportV16     |
-| `pacs.004.001.15.xsd` | PaymentReturnV15                 |
-| `pacs.009.001.13.xsd` | FinancialInstitutionCreditTransferV13 |
+| File                     | Message                              |
+|--------------------------|--------------------------------------|
+| `pacs.008.001.14.xsd`    | FIToFICustomerCreditTransferV14      |
+| `pacs.002.001.16.xsd`    | FIToFIPaymentStatusReportV16         |
+| `pacs.004.001.15.xsd`    | PaymentReturnV15                     |
+| `pacs.009.001.13.xsd`    | FinancialInstitutionCreditTransferV13|
+| `pain.001.001.13.xsd`    | CustomerCreditTransferInitiationV13  |
+| `camt.054.001.14.xsd`    | BankToCustomerDebitCreditNotificationV14 |
 
 Manual check:
 

@@ -70,6 +70,7 @@ xsd:
 	@mkdir -p pkg/iso20022/testdata/xsd
 	@cp messages/pacs.008.001.14.xsd messages/pacs.002.001.16.xsd \
 		messages/pacs.004.001.15.xsd messages/pacs.009.001.13.xsd \
+		messages/pain.001.001.13.xsd messages/camt.054.001.14.xsd \
 		pkg/iso20022/testdata/xsd/
 	@echo "✓ XSDs copied to pkg/iso20022/testdata/xsd/"
 

@@ -87,28 +87,32 @@ func BuildPacs002(p *models.Payment, opts *Pacs002Options) (string, error) {
 	if p == nil {
 		return "", fmt.Errorf("payment is nil")
 	}
+	return buildPacs002([]*CreditTransferInstruction{{Payment: p}}, opts)
+}
+
+// BuildPacs002Batch builds a pacs.002.001.16 with one TxInfAndSts per
+// instruction. Per-transaction status comes from each instruction's
+// TxStatus/TxReason, falling back to opts.Status/opts.ReasonCode.
+func BuildPacs002Batch(instrs []*CreditTransferInstruction, opts *Pacs002Options) (string, error) {
+	if err := requireInstructions(instrs, "BuildPacs002Batch"); err != nil {
+		return "", err
+	}
+	return buildPacs002(instrs, opts)
+}
+
+func buildPacs002(instrs []*CreditTransferInstruction, opts *Pacs002Options) (string, error) {
 	if opts == nil {
 		opts = &Pacs002Options{Status: TxStsACSC}
 	}
+	if opts.Status == "" {
+		opts.Status = TxStsACSC
+	}
 
-	msgID := "SGC1" + safeTruncate(p.ID, 8) + "S"
+	first := instrs[0].Payment
+	msgID := "SGC1" + safeTruncate(first.ID, 8) + "S"
 	creDtTm := time.Now().UTC().Format(time.RFC3339)
 
-	endToEndID := safeTruncate(p.TxHash, 16)
-	if endToEndID == "" {
-		endToEndID = p.ID
-	}
-
-	asset := p.Asset
-	if asset == "" {
-		asset = "XLM"
-	}
-	ccy, assetSuppl := settlementCurrency(asset, p.Amount)
-
-	doc := &Pacs002Document{
-		Xmlns: NSPacs002,
-	}
-
+	doc := &Pacs002Document{Xmlns: NSPacs002}
 	doc.FIToFIPmtStsRpt.GrpHdr = GroupHeader120{
 		MsgId:   msgID,
 		CreDtTm: creDtTm,
@@ -124,25 +128,48 @@ func BuildPacs002(p *models.Payment, opts *Pacs002Options) (string, error) {
 	// OrgnlGrpInf references the original pacs.008 message
 	orgnlMsgID := opts.OrgnlMsgId
 	if orgnlMsgID == "" {
-		orgnlMsgID = "SGC1" + safeTruncate(p.ID, 8)
+		orgnlMsgID = "SGC1" + safeTruncate(first.ID, 8)
 	}
 	doc.FIToFIPmtStsRpt.OrgnlGrpInfAndSts = &OriginalGroupHeader22{
 		OrgnlMsgId:   orgnlMsgID,
 		OrgnlMsgNmId: "pacs.008.001.14",
-		OrgnlCreDtTm: p.CreatedAt.UTC().Format(time.RFC3339),
+		OrgnlCreDtTm: first.CreatedAt.UTC().Format(time.RFC3339),
 	}
 
-	txInf := PaymentTransaction177{
+	txns := make([]PaymentTransaction177, 0, len(instrs))
+	for _, instr := range instrs {
+		txns = append(txns, *pacs002TxInf(instr, opts, creDtTm))
+	}
+	doc.FIToFIPmtStsRpt.TxInfAndSts = txns
+
+	return MarshalXML(doc, NSPacs002)
+}
+
+func pacs002TxInf(instr *CreditTransferInstruction, opts *Pacs002Options, creDtTm string) *PaymentTransaction177 {
+	p := instr.Payment
+	asset := paymentAsset(p)
+	ccy, assetSuppl := settlementCurrency(asset, p.AssetIssuer, p.Amount)
+
+	status := opts.Status
+	if instr.TxStatus != "" {
+		status = instr.TxStatus
+	}
+	reason := opts.ReasonCode
+	if instr.TxReason != "" {
+		reason = instr.TxReason
+	}
+
+	txInf := &PaymentTransaction177{
 		OrgnlInstrId:    opts.OrgnlInstrId,
-		OrgnlEndToEndId: endToEndID,
+		OrgnlEndToEndId: endToEndID(p),
 		OrgnlTxId:       opts.OrgnlTxId,
 		OrgnlUETR:       opts.OrgnlUETR,
-		TxSts:           string(opts.Status),
+		TxSts:           string(status),
 		AccptncDtTm:     creDtTm,
 	}
 
-	if opts.ReasonCode != "" || opts.ReasonPrtry != "" {
-		rsn := &StatusReason6Choice{Cd: opts.ReasonCode, Prtry: opts.ReasonPrtry}
+	if reason != "" || opts.ReasonPrtry != "" {
+		rsn := &StatusReason6Choice{Cd: reason, Prtry: opts.ReasonPrtry}
 		stsRsn := StatusReasonInformation14{Rsn: rsn}
 		if opts.AdditionalInfo != "" {
 			stsRsn.AddtlInf = []string{opts.AdditionalInfo}
@@ -181,7 +208,5 @@ func BuildPacs002(p *models.Payment, opts *Pacs002Options) (string, error) {
 		}
 	}
 
-	doc.FIToFIPmtStsRpt.TxInfAndSts = []PaymentTransaction177{txInf}
-
-	return MarshalXML(doc, NSPacs002)
+	return txInf
 }

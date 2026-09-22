@@ -86,7 +86,7 @@ func BuildPacs009(p *models.Payment, opts *Pacs009Options) (string, error) {
 	if asset == "" {
 		asset = "XLM"
 	}
-	ccy, assetSuppl := settlementCurrency(asset, p.Amount)
+	ccy, assetSuppl := settlementCurrency(asset, p.AssetIssuer, p.Amount)
 
 	msgID := "SGC1" + safeTruncate(p.ID, 8) + "D"
 	creDtTm := p.CreatedAt.UTC().Format(time.RFC3339)

@@ -80,7 +80,17 @@ type Pacs008Options struct {
 	InstrID        string
 }
 
-// BuildPacs008 builds a complete pacs.008.001.14 XML from a Payment model
+// Pacs008BatchOptions configures a batch pacs.008. Per-payment overrides come
+// from each CreditTransferInstruction; this struct carries message-level and
+// default values.
+type Pacs008BatchOptions struct {
+	Pacs008Options
+	MsgID        string
+	BatchBooking *bool
+	Debtor       *Party
+}
+
+// BuildPacs008 builds a pacs.008.001.14 XML from a single Payment model.
 func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 	if p == nil {
 		return "", fmt.Errorf("payment is nil")
@@ -88,43 +98,44 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 	if opts == nil {
 		opts = &Pacs008Options{}
 	}
-
-	asset := p.Asset
-	if asset == "" {
-		asset = "XLM"
+	instr := &CreditTransferInstruction{
+		Payment:        p,
+		RemittanceInfo: opts.RemittanceInfo,
 	}
-	ccy, assetSuppl := settlementCurrency(asset, p.Amount)
+	return buildPacs008([]*CreditTransferInstruction{instr}, &Pacs008BatchOptions{Pacs008Options: *opts})
+}
 
-	msgID := "SGC1" + safeTruncate(p.ID, 8)
-	creDtTm := p.CreatedAt.UTC().Format(time.RFC3339)
-	sttlmDt := p.CreatedAt.UTC().Format("2006-01-02")
+// BuildPacs008Batch builds a pacs.008.001.14 with one CdtTrfTxInf per
+// instruction: NbOfTxs, CtrlSum, and (when every transaction settles in the
+// same currency) TtlIntrBkSttlmAmt are computed from the batch.
+func BuildPacs008Batch(instrs []*CreditTransferInstruction, opts *Pacs008BatchOptions) (string, error) {
+	if err := requireInstructions(instrs, "BuildPacs008Batch"); err != nil {
+		return "", err
+	}
+	if opts == nil {
+		opts = &Pacs008BatchOptions{}
+	}
+	return buildPacs008(instrs, opts)
+}
 
-	endToEndID := safeTruncate(p.TxHash, 16)
-	if endToEndID == "" {
-		endToEndID = p.ID
+func buildPacs008(instrs []*CreditTransferInstruction, opts *Pacs008BatchOptions) (string, error) {
+	first := instrs[0].Payment
+	creDtTm := first.CreatedAt.UTC().Format(time.RFC3339)
+	sttlmDt := first.CreatedAt.UTC().Format("2006-01-02")
+
+	msgID := opts.MsgID
+	if msgID == "" {
+		msgID = "SGC1" + safeTruncate(first.ID, 8)
 	}
 
-	uetr := opts.UETR
-	if uetr == "" {
-		uetr = generateUUIDv4()
-	}
-
-	txID := opts.TxID
-	if txID == "" {
-		txID = p.ID
-	}
-
-	doc := &Pacs008Document{
-		Xmlns: NSPacs008,
-	}
-
+	doc := &Pacs008Document{Xmlns: NSPacs008}
 	doc.FIToFICstmrCdtTrf.GrpHdr = GroupHeader131{
 		MsgId:   msgID,
 		CreDtTm: creDtTm,
-		NbOfTxs: "1",
 		SttlmInf: &SettlementInstruction15{
 			SttlmMtd: "CLRG",
 		},
+		BtchBookg: opts.BatchBooking,
 	}
 
 	if opts.InstgBIC != "" {
@@ -134,10 +145,50 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 		doc.FIToFICstmrCdtTrf.GrpHdr.InstdAgt = agentByBIC(opts.InstdBIC)
 	}
 
-	txInf := CreditTransferTransaction73{
+	txns := make([]CreditTransferTransaction73, 0, len(instrs))
+	amounts := make([]string, 0, len(instrs))
+	ccys := map[string]bool{}
+	for _, instr := range instrs {
+		p := instr.Payment
+		txID := opts.TxID
+		if txID == "" {
+			txID = p.ID
+		}
+		uetr := opts.UETR
+		if uetr == "" {
+			uetr = generateUUIDv4()
+		}
+		txInf := pacs008TxInf(instr, &opts.Pacs008Options, opts.Debtor, txID, uetr, sttlmDt)
+		txns = append(txns, *txInf)
+		amounts = append(amounts, normalizeAmount(p.Amount))
+		ccys[txInf.IntrBkSttlmAmt.Ccy] = true
+	}
+	doc.FIToFICstmrCdtTrf.CdtTrfTxInf = txns
+
+	hdr := &doc.FIToFICstmrCdtTrf.GrpHdr
+	hdr.NbOfTxs = fmt.Sprintf("%d", len(txns))
+	if sum, err := sumAmounts(amounts); err == nil {
+		hdr.CtrlSum = sum
+		if len(ccys) == 1 {
+			for ccy := range ccys {
+				hdr.TtlIntrBkSttlmAmt = &ActiveOrHistoricCurrencyAndAmount{Ccy: ccy, Value: sum}
+			}
+		}
+	}
+
+	return MarshalXML(doc, NSPacs008)
+}
+
+// pacs008TxInf builds one CdtTrfTxInf for an instruction.
+func pacs008TxInf(instr *CreditTransferInstruction, opts *Pacs008Options, debtor *Party, txID, uetr, sttlmDt string) *CreditTransferTransaction73 {
+	p := instr.Payment
+	asset := paymentAsset(p)
+	ccy, assetSuppl := settlementCurrency(asset, p.AssetIssuer, p.Amount)
+
+	txInf := &CreditTransferTransaction73{
 		PmtId: &PaymentIdentification13{
 			InstrId:    opts.InstrID,
-			EndToEndId: endToEndID,
+			EndToEndId: endToEndID(p),
 			TxId:       txID,
 			UETR:       uetr,
 		},
@@ -160,37 +211,49 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 	// InitgPty lives at transaction level in pacs.008 (not in GrpHdr)
 	txInf.InitgPty = &PartyIdentification272{Nm: "Stellar Go CLI"}
 
-	dbtrName := opts.DbtrName
-	if dbtrName == "" {
-		dbtrName = safeTruncate(p.From, 16)
+	// Debtor side — instruction party wins, then the batch-level debtor,
+	// then opts, then payment-derived defaults.
+	dbtr := instr.Debtor
+	if dbtr == nil {
+		dbtr = debtor
 	}
-	txInf.Dbtr = &PartyIdentification272{
-		Nm:      dbtrName,
-		PstlAdr: opts.DbtrAddress,
+	dbtrNm := opts.DbtrName
+	if dbtrNm == "" {
+		dbtrNm = safeTruncate(p.From, 16)
 	}
-
-	if opts.DbtrAcctIBAN != "" {
+	txInf.Dbtr = partyIdentification(dbtr, dbtrNm)
+	if acct := partyAccount(dbtr); acct != nil {
+		txInf.DbtrAcct = acct
+	} else if opts.DbtrAcctIBAN != "" {
 		txInf.DbtrAcct = &CashAccount40{
 			Id: &AccountIdentification4Choice{IBAN: opts.DbtrAcctIBAN},
 		}
 	}
 
 	// DbtrAgt is mandatory — fall back to Othr/Id when no BIC is available
-	txInf.DbtrAgt = agentOrFallback(opts.DbtrBIC, safeTruncate(p.From, 35))
-
-	// Creditor side order: CdtrAgt → Cdtr → CdtrAcct
-	txInf.CdtrAgt = agentOrFallback(opts.CdtrBIC, safeTruncate(p.To, 35))
-
-	cdtrName := opts.CdtrName
-	if cdtrName == "" {
-		cdtrName = safeTruncate(p.To, 16)
-	}
-	txInf.Cdtr = &PartyIdentification272{
-		Nm:      cdtrName,
-		PstlAdr: opts.CdtrAddress,
+	switch {
+	case dbtr != nil && dbtr.AgentBIC != "":
+		txInf.DbtrAgt = agentByBIC(dbtr.AgentBIC)
+	default:
+		txInf.DbtrAgt = agentOrFallback(opts.DbtrBIC, safeTruncate(p.From, 35))
 	}
 
-	if opts.CdtrAcctIBAN != "" {
+	// Creditor side
+	cdtr := instr.Creditor
+	cdtrNm := opts.CdtrName
+	if cdtrNm == "" {
+		cdtrNm = safeTruncate(p.To, 16)
+	}
+	switch {
+	case cdtr != nil && cdtr.AgentBIC != "":
+		txInf.CdtrAgt = agentByBIC(cdtr.AgentBIC)
+	default:
+		txInf.CdtrAgt = agentOrFallback(opts.CdtrBIC, safeTruncate(p.To, 35))
+	}
+	txInf.Cdtr = partyIdentification(cdtr, cdtrNm)
+	if acct := partyAccount(cdtr); acct != nil {
+		txInf.CdtrAcct = acct
+	} else if opts.CdtrAcctIBAN != "" {
 		txInf.CdtrAcct = &CashAccount40{
 			Id: &AccountIdentification4Choice{IBAN: opts.CdtrAcctIBAN},
 		}
@@ -200,19 +263,13 @@ func BuildPacs008(p *models.Payment, opts *Pacs008Options) (string, error) {
 		txInf.Purp = &Purpose2Choice{Cd: opts.PurposeCode}
 	}
 
-	if len(opts.RemittanceInfo) > 0 {
-		txInf.RmtInf = &RemittanceInformation2{
-			Ustrd: opts.RemittanceInfo,
-		}
-	} else if p.Memo != "" {
-		txInf.RmtInf = &RemittanceInformation2{
-			Ustrd: []string{p.Memo},
-		}
+	lines := instr.RemittanceInfo
+	if len(lines) == 0 {
+		lines = opts.RemittanceInfo
 	}
+	txInf.RmtInf = remittanceInfo(lines, p)
 
-	doc.FIToFICstmrCdtTrf.CdtTrfTxInf = []CreditTransferTransaction73{txInf}
-
-	return MarshalXML(doc, NSPacs008)
+	return txInf
 }
 
 // safeTruncate truncates a string to n chars

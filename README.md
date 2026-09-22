@@ -1,6 +1,6 @@
 # Stellar Go CLI
 
-> Open-source Go CLI for Stellar: wallets, payments, swaps, SEP-41 assets, W3C DIDs/Verifiable Credentials, ISO 20022 (pacs) reporting, a pure-Go Soroban RPC client, and an MCP server for AI assistants. Apache 2.0.
+> Open-source Go CLI for Stellar: wallets, payments, swaps, SEP-41 assets, W3C DIDs/Verifiable Credentials, ISO 20022 (pacs/pain/camt) reporting, a pure-Go Soroban RPC client, and an MCP server for AI assistants. Apache 2.0.
 
 ```bash
 go install github.com/stellar-go-cli/stellar-go-cli/cmd/stellar-go-cli@latest
@@ -19,7 +19,7 @@ The codebase was originally developed as part of a downstream commercial product
 - **Assets** — SEP-41 fungible tokens and non-fungible assets (SAC), trustlines, claimable balances, liquidity pools
 - **DIDs & VCs** — Create `did:web`/`did:key`/`did:ethr`/`did:ebsi` documents; issue and verify W3C Verifiable Credentials
 - **Soroban contracts** — Deploy any `.wasm` contract and invoke methods — pure Go, no `stellar` CLI required
-- **ISO 20022 reporting** — Export transactions as `pacs.008`/`pacs.002`/`pacs.004`/`pacs.009` XML
+- **ISO 20022 reporting** — Export transactions as `pacs.008`/`pacs.002`/`pacs.004`/`pacs.009` XML; `pkg/iso20022` also builds batch `pain.001` disbursement initiations and `camt.054` settlement notifications
 - **MCP server** — Expose CLI functionality as tools for AI assistants over stdio or SSE
 - **WebAuthn server** — Standalone FIDO2/passkey server (`cmd/webauthn-server`)
 
@@ -92,7 +92,7 @@ Reusable packages are public under `pkg/` and render on [pkg.go.dev](https://pkg
 | Package | Description |
 |---------|-------------|
 | `pkg/soroban` | Pure-Go Soroban RPC client: upload WASM, deploy, invoke, simulate |
-| `pkg/iso20022` | ISO 20022 pacs.008/002/004/009 XML generation from payment data |
+| `pkg/iso20022` | ISO 20022 XML generation — pacs.008/002/004/009, batch pacs.008/002, pain.001, camt.054 |
 | `pkg/vc` | W3C DID creation and Verifiable Credential issuance/verification |
 | `pkg/swap` | Stellar DEX path-payment quoting and execution |
 | `pkg/models` | Shared types (Payment, Asset, DIDDocument, VerifiableCredential, …) |
@@ -120,6 +120,19 @@ xmlDoc, err := iso20022.BuildPacs008(&models.Payment{
 	Asset:  "USDC",
 	TxHash: "abc123…",
 }, nil)
+
+// ISO 20022 pain.001 disbursement initiation — one PmtInf, N receivers.
+// Creditor carries receiver identity (name, phone/email, wallet proxy);
+// NbOfTxs/CtrlSum are computed and asset issuers are preserved.
+batch, err := iso20022.BuildPain001([]*iso20022.CreditTransferInstruction{
+	{Payment: &models.Payment{ID: "pay-001", To: "GRCVR1…", Amount: "10", Asset: "USDC"},
+		Creditor: &iso20022.Party{Name: "Receiver One", Phone: "+221-771234567"}},
+	{Payment: &models.Payment{ID: "pay-002", To: "GRCVR2…", Amount: "20", Asset: "USDC"},
+		Creditor: &iso20022.Party{AcctProxyID: "wallet.handle", AcctProxyTp: "WALLET"}},
+}, &iso20022.Pain001Options{
+	InitiatingParty: &iso20022.Party{Name: "Relief Org"},
+	Debtor:          &iso20022.Party{AcctID: "GORG…", AgentBIC: "DEUTDEFF"},
+})
 ```
 
 ## MCP Server
@@ -147,7 +160,7 @@ Config is stored at `~/.stellar-go-cli/config.json`; state files under `~/.stell
 - **W3C DID Core 1.0** / **VC Data Model 2.0** (Ed25519Signature2020, JWS)
 - **EBSI v3** DID method support
 - **SEP-41** Stellar token interface (SAC)
-- **ISO 20022** — pacs.008.001.14, pacs.002.001.16, pacs.004.001.15, pacs.009.001.13
+- **ISO 20022** — pacs.008.001.14, pacs.002.001.16, pacs.004.001.15, pacs.009.001.13, pain.001.001.13, camt.054.001.14
 - **x402 / HTTP 402** payment flow
 
 ## Downstream users
