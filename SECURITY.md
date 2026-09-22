@@ -9,11 +9,11 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in MozartPay CLI, please report it responsibly:
+If you discover a security vulnerability in Stellar Go CLI, please report it responsibly:
 
 1. **Do not** open a public GitHub issue
 2. Email **hi@ogtechnologies.co** with a description of the vulnerability, reproduction steps, and potential impact
-3. Include the relevant component (CLI, Soroban client, MCP server, WebAuthn server, Docker, k8s)
+3. Include the relevant component (CLI, Soroban client, MCP server, WebAuthn server, Docker)
 4. You will receive an acknowledgment within 48 hours
 5. A fix or mitigation will be prioritized based on severity
 
@@ -25,15 +25,15 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 
 ### Local Storage
 
-- Private keys (Stellar seeds, `S...`) are stored locally in `~/.mozartpay/config.json`
+- Private keys (Stellar seeds, `S...`) are stored locally in `~/.stellar-go-cli/config.json`
 - Keys are **never** transmitted to external services unless explicitly signing a transaction
 - The `keypair.Full` type is used for in-memory signing — private key material is never logged or printed
-- Config file permissions should be restricted to the owner (`chmod 600 ~/.mozartpay/config.json`)
+- Config file permissions should be restricted to the owner (`chmod 600 ~/.stellar-go-cli/config.json`)
 
 ### Wallet Operations
 
 - `keypair.ParseFull(account.PrivateKey)` loads the keypair for signing — the seed is not exposed beyond this point
-- Testnet faucet funding (`mozartpay wallet fund`) only works on `stellar-testnet`
+- Testnet faucet funding (`stellar-go-cli wallet fund`) only works on `stellar-testnet`
 - Mainnet operations require an explicitly connected wallet with a funded account
 - The active wallet address (`G...`) is safe to display; the private seed (`S...`) is never shown
 
@@ -62,7 +62,7 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 - The WebAuthn server (`cmd/webauthn-server/`) provides FIDO2/WebAuthn credential registration and verification
 - Passkeys are device-bound and require user presence (touch/biometric) for authentication
 - The server runs as a separate Docker service (`Dockerfile.webauthn`) on port 8000
-- Health checks are configured for Docker and Kubernetes deployments
+- Health checks are configured for Docker deployments
 
 ### Credential Storage
 
@@ -72,25 +72,13 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 
 ---
 
-## Docker & Kubernetes Security
+## Docker Security
 
-### Docker
-
-- **Multi-stage builds** — Build stage uses `golang:1.24-alpine`, final images use `alpine:latest` (minimal attack surface)
+- **Multi-stage builds** — Build stage uses `golang:1.26-alpine`, final images use `alpine:latest` (minimal attack surface)
 - **CGO disabled** — `CGO_ENABLED=0` ensures static binaries with no C dependency vulnerabilities
 - **Health checks** — All services include health check endpoints
-- **Network isolation** — Docker Compose uses a dedicated `mozartpay` bridge network
+- **Network isolation** — Docker Compose uses a dedicated `stellar-go-cli` bridge network
 - **No secrets in images** — Secrets are passed via environment variables at runtime, never baked into images
-- **Non-root containers** — Alpine images run with default non-root user where possible
-
-### Kubernetes
-
-- **Namespace isolation** — Dedicated `mozartpay` namespace (`k8s/00-namespace.yaml`)
-- **Resource limits** — CPU and memory limits configured for all deployments
-- **Health probes** — Liveness and readiness probes on all deployments
-- **Network policies** — Network policies restrict pod-to-pod communication (`k8s/06-networking.yaml`)
-- **Monitoring** — Prometheus and Grafana for observability (`k8s/07-monitoring.yaml`)
-- **Secrets** — Kubernetes secrets for sensitive data (database credentials, API keys)
 
 ### Services
 
@@ -98,8 +86,7 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 |---------|------|---------|
 | WebAuthn | 8000 | FIDO2/passkey authentication |
 | MCP | 3000 | AI assistant integration (SSE) |
-| PostgreSQL | 5432 | Database (internal only) |
-| Redis | 6379 | Cache (internal only) |
+| VC API | 4000 | W3C VC API test endpoints |
 
 ---
 
@@ -207,11 +194,11 @@ If a security incident occurs:
 ### Key Rotation
 
 If a Stellar private key is compromised:
-1. Create a new wallet: `mozartpay wallet connect --provider stellar --network stellar-testnet`
-2. Fund the new account: `mozartpay wallet fund --network stellar-testnet`
+1. Create a new wallet: `stellar-go-cli wallet connect --provider stellar --network stellar-testnet`
+2. Fund the new account: `stellar-go-cli wallet fund --network stellar-testnet`
 3. Transfer assets from the compromised account to the new account
-4. Remove the compromised key from `~/.mozartpay/config.json`
+4. Remove the compromised key from `~/.stellar-go-cli/config.json`
 
 ---
 
-*Security is a shared responsibility. Report issues responsibly and help keep MozartPay secure.*
+*Security is a shared responsibility. Report issues responsibly and help keep Stellar Go CLI secure.*

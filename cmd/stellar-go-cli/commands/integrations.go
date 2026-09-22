@@ -37,7 +37,7 @@ func newIntListCmd(cfg *config.Config) *Command {
 		Name:  "list",
 		Short: "List all available integrations and their status",
 		Run: func(c *Command, args []string) error {
-			ui.Header("MozartPay Integrations")
+			ui.Header("Stellar Go CLI Integrations")
 			fmt.Println()
 
 			t := ui.NewTable("Integration", "Status", "Protocol", "Description")

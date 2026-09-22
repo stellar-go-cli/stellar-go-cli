@@ -1,7 +1,7 @@
 # Success Response Templates
 
 ## Overview
-Standardized response templates for successful operations, providing clear confirmation, relevant details, and helpful next steps for users of the MozartPay platform.
+Standardized response templates for successful operations, providing clear confirmation, relevant details, and helpful next steps for users of the Stellar Go CLI platform.
 
 ## Transaction Success Templates
 
@@ -191,7 +191,7 @@ Standardized response templates for successful operations, providing clear confi
 
 **Response Template**:
 ```markdown
-📊 **MozartPay System Status**
+📊 **Stellar Go CLI System Status**
 
 **Overall Health:** ✅ Healthy
 
@@ -559,7 +559,7 @@ Standardized response templates for successful operations, providing clear confi
 • [next_concept_3]
 
 **Keep Going!**
-You're building strong skills with MozartPay. Each concept mastered makes you more capable!
+You're building strong skills with Stellar Go CLI. Each concept mastered makes you more capable!
 
 **Want to continue learning or practice what you've learned?**
 ```
@@ -640,4 +640,4 @@ Templates should support:
 - Cultural considerations
 - Local terminology
 
-These templates provide consistent, helpful, and contextually appropriate responses for successful operations across the MozartPay platform.
+These templates provide consistent, helpful, and contextually appropriate responses for successful operations across the Stellar Go CLI platform.

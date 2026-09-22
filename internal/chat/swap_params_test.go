@@ -3,7 +3,7 @@ package chat
 import (
 	"testing"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func TestNormalizeSwapParams(t *testing.T) {

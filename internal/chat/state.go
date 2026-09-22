@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 // State manages the chat session state including pending operations,

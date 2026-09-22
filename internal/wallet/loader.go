@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go/keypair"
 )
 
@@ -24,13 +24,13 @@ func LoadStellarKeypair() (*keypair.Full, error) {
 	}
 
 	// Try to load from wallet registry first
-	registryPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets.json")
+	registryPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets.json")
 	if data, err := os.ReadFile(registryPath); err == nil {
 		var registry struct {
 			ActiveWallet string `json:"activeWallet"`
 		}
 		if json.Unmarshal(data, &registry) == nil && registry.ActiveWallet != "" {
-			walletPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets", registry.ActiveWallet+".json")
+			walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", registry.ActiveWallet+".json")
 			if wdata, err := os.ReadFile(walletPath); err == nil {
 				var account models.Account
 				if json.Unmarshal(wdata, &account) == nil && account.PrivateKey != "" {
@@ -42,14 +42,14 @@ func LoadStellarKeypair() (*keypair.Full, error) {
 
 	// Fall back to legacy paths for compatibility
 	var account models.Account
-	stellarAccountPath := filepath.Join(stateDir, ".mozartpay", "state", "account_stellar.json")
+	stellarAccountPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account_stellar.json")
 	if data, err := os.ReadFile(stellarAccountPath); err == nil {
 		if json.Unmarshal(data, &account) == nil && account.PrivateKey != "" {
 			return keypair.ParseFull(account.PrivateKey)
 		}
 	}
 
-	defaultAccountPath := filepath.Join(stateDir, ".mozartpay", "state", "account.json")
+	defaultAccountPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account.json")
 	if data, err := os.ReadFile(defaultAccountPath); err == nil {
 		if json.Unmarshal(data, &account) == nil && account.PrivateKey != "" && account.Type == models.WalletStellar {
 			return keypair.ParseFull(account.PrivateKey)
@@ -76,13 +76,13 @@ func LoadStellarKeypairForSwap() (*keypair.Full, error) {
 	}
 
 	// Load registry to get active wallet
-	registryPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets.json")
+	registryPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets.json")
 	if data, err := os.ReadFile(registryPath); err == nil {
 		var registry struct {
 			ActiveWallet string `json:"activeWallet"`
 		}
 		if json.Unmarshal(data, &registry) == nil && registry.ActiveWallet != "" {
-			walletPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets", registry.ActiveWallet+".json")
+			walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", registry.ActiveWallet+".json")
 			if wdata, err := os.ReadFile(walletPath); err == nil {
 				var account models.Account
 				if json.Unmarshal(wdata, &account) == nil {
@@ -100,7 +100,7 @@ func LoadStellarKeypairForSwap() (*keypair.Full, error) {
 
 	// Fall back to legacy paths for compatibility
 	var account models.Account
-	stellarAccountPath := filepath.Join(stateDir, ".mozartpay", "state", "account_stellar.json")
+	stellarAccountPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account_stellar.json")
 	if data, err := os.ReadFile(stellarAccountPath); err == nil {
 		if json.Unmarshal(data, &account) == nil && account.PrivateKey != "" {
 			return keypair.ParseFull(account.PrivateKey)
@@ -119,7 +119,7 @@ func LoadStellarKeypairForAddress(address string) (*keypair.Full, error) {
 	}
 
 	// Try to load the specific wallet from registry
-	walletPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets", address+".json")
+	walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", address+".json")
 	if wdata, err := os.ReadFile(walletPath); err == nil {
 		var account models.Account
 		if json.Unmarshal(wdata, &account) == nil && account.PrivateKey != "" {

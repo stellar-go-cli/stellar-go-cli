@@ -1,4 +1,4 @@
-# Multi-service Dockerfile for building all MozartPay components
+# Multi-service Dockerfile for building all Stellar Go CLI components
 FROM golang:1.26-alpine AS base-builder
 
 WORKDIR /app
@@ -36,7 +36,7 @@ FROM alpine:latest AS mcp
 RUN apk --no-cache add ca-certificates tzdata wget
 WORKDIR /root/
 COPY --from=mcp-builder /app/stellar-go-cli .
-RUN mkdir -p /root/.mozartpay
+RUN mkdir -p /root/.stellar-go-cli
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
@@ -47,7 +47,7 @@ FROM alpine:latest AS cli
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /root/
 COPY --from=cli-builder /app/stellar-go-cli-bin .
-RUN mkdir -p /root/.mozartpay
+RUN mkdir -p /root/.stellar-go-cli
 CMD ["./stellar-go-cli-bin"]
 
 # VC API Server Final Image
@@ -55,7 +55,7 @@ FROM alpine:latest AS vc-api
 RUN apk --no-cache add ca-certificates tzdata wget
 WORKDIR /root/
 COPY --from=cli-builder /app/stellar-go-cli-bin .
-RUN mkdir -p /root/.mozartpay
+RUN mkdir -p /root/.stellar-go-cli
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1

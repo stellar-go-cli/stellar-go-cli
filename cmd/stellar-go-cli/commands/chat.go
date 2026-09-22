@@ -1,3 +1,5 @@
+//go:build extras
+
 package commands
 
 import (
@@ -7,12 +9,12 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/assets"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/chat"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 func newChatCmd(cfg *config.Config) *Command {
@@ -21,7 +23,7 @@ func newChatCmd(cfg *config.Config) *Command {
 	cmd := &Command{
 		Name:  "chat",
 		Short: "Start interactive chat interface",
-		Long: `Start an interactive chat session for MozartPay CLI.
+		Long: `Start an interactive chat session for Stellar Go CLI.
 
 The chat interface provides a conversational way to interact with your wallets,
 execute swaps, check balances, and manage your assets.
@@ -35,7 +37,7 @@ Features:
   • Unified wallet display
 
 Example usage:
-  mozartpay chat                    # Start interactive chat
+  stellar-go-cli chat                    # Start interactive chat
   
 Chat commands:
   balance, wallet, swap, send, network, help, quit

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/pool"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newPoolCmd(cfg *config.Config) *Command {
@@ -102,8 +102,8 @@ func newPoolListCmd(cfg *config.Config) *Command {
 					ui.KV("Reserve B", fmt.Sprintf("%s %s", p.Reserves[1].Amount, formatAssetName(p.Reserves[1].Asset)))
 
 					// Calculate price
-					reserveAAmt, _ := parseFloat(p.Reserves[0].Amount)
-					reserveBAmt, _ := parseFloat(p.Reserves[1].Amount)
+					reserveAAmt, _ := parseFloat(p.Reserves[0].Amount) //nolint:errcheck // parse failure yields 0, guarded below
+					reserveBAmt, _ := parseFloat(p.Reserves[1].Amount) //nolint:errcheck // parse failure yields 0
 					if reserveAAmt > 0 {
 						price := reserveBAmt / reserveAAmt
 						ui.KV("Price", fmt.Sprintf("1 %s = %.7f %s",
@@ -196,8 +196,8 @@ func newPoolInfoCmd(cfg *config.Config) *Command {
 
 			if len(pool.Reserves) == 2 {
 				ui.SectionLabel("Prices")
-				reserveAAmt, _ := parseFloat(pool.Reserves[0].Amount)
-				reserveBAmt, _ := parseFloat(pool.Reserves[1].Amount)
+				reserveAAmt, _ := parseFloat(pool.Reserves[0].Amount) //nolint:errcheck // parse failure yields 0, guarded below
+				reserveBAmt, _ := parseFloat(pool.Reserves[1].Amount) //nolint:errcheck // parse failure yields 0
 				assetA := formatAssetName(pool.Reserves[0].Asset)
 				assetB := formatAssetName(pool.Reserves[1].Asset)
 
@@ -254,4 +254,10 @@ func parseFloat(s string) (float64, error) {
 	var f float64
 	_, err := fmt.Sscanf(s, "%f", &f)
 	return f, err
+}
+
+// parseFloatOr parses s as a float64, returning 0 when s is not a number.
+func parseFloatOr(s string) float64 {
+	f, _ := parseFloat(s) //nolint:errcheck // 0 is the intended fallback
+	return f
 }

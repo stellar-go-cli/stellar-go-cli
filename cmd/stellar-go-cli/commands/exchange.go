@@ -1,3 +1,5 @@
+//go:build extras
+
 package commands
 
 import (

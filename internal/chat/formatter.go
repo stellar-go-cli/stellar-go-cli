@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -6,8 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Formatter handles output formatting with emojis and styling
@@ -21,24 +23,24 @@ func NewFormatter() *Formatter {
 // FormatGreeting returns a greeting message
 func (f *Formatter) FormatGreeting(network string) string {
 	networkDisplay := strings.TrimPrefix(network, "stellar-")
-	return fmt.Sprintf(`👋 Hello! I'm your MozartPay assistant on %s.
+	return fmt.Sprintf(`👋 Hello! I'm your Stellar Go CLI assistant on %s.
 Try asking:
 • 'what's my balance'
 • 'swap XLM to USDC'
 • 'network' to check current network
-• 'help' for more commands`, strings.Title(networkDisplay))
+• 'help' for more commands`, cases.Title(language.English).String(networkDisplay))
 }
 
 // FormatWalletList formats wallet list for display
 func (f *Formatter) FormatWalletList(wallets []models.WalletEntry, network string) string {
 	if len(wallets) == 0 {
 		networkDisplay := strings.TrimPrefix(network, "stellar-")
-		return fmt.Sprintf("📋 **No wallets found on %s**\n💡 Use 'use testnet' or 'use mainnet' to switch networks", strings.Title(networkDisplay))
+		return fmt.Sprintf("📋 **No wallets found on %s**\n💡 Use 'use testnet' or 'use mainnet' to switch networks", cases.Title(language.English).String(networkDisplay))
 	}
 
 	networkDisplay := strings.TrimPrefix(network, "stellar-")
 	lines := []string{
-		fmt.Sprintf("📋 **Wallets on %s** (%d found)", strings.Title(networkDisplay), len(wallets)),
+		fmt.Sprintf("📋 **Wallets on %s** (%d found)", cases.Title(language.English).String(networkDisplay), len(wallets)),
 		"",
 	}
 
@@ -51,7 +53,7 @@ func (f *Formatter) FormatWalletList(wallets []models.WalletEntry, network strin
 		lines = append(lines, fmt.Sprintf("%s**%s**", activeMarker, name))
 		lines = append(lines, fmt.Sprintf("📍 Address: `%s...`", f.truncateAddress(wallet.Address, 20)))
 		lines = append(lines, fmt.Sprintf("💰 Balance: %s XLM", wallet.Balance))
-		lines = append(lines, fmt.Sprintf("🌐 Network: %s", strings.Title(strings.TrimPrefix(string(wallet.Network), "stellar-"))))
+		lines = append(lines, fmt.Sprintf("🌐 Network: %s", cases.Title(language.English).String(strings.TrimPrefix(string(wallet.Network), "stellar-"))))
 
 		status := "❌ Not funded"
 		if wallet.Funded {
@@ -94,7 +96,7 @@ func (f *Formatter) FormatWalletShow(wallet *models.WalletEntry) string {
 **Funded:** %s`,
 		name,
 		wallet.Address,
-		strings.Title(strings.TrimPrefix(string(wallet.Network), "stellar-")),
+		cases.Title(language.English).String(strings.TrimPrefix(string(wallet.Network), "stellar-")),
 		wallet.Type,
 		wallet.Balance,
 		funded,
@@ -119,7 +121,7 @@ func (f *Formatter) FormatWalletBalance(walletEntry *models.WalletEntry, assets 
 **Status:** %s`,
 		walletEntry.Address,
 		walletEntry.Balance,
-		strings.Title(strings.TrimPrefix(string(walletEntry.Network), "stellar-")),
+		cases.Title(language.English).String(strings.TrimPrefix(string(walletEntry.Network), "stellar-")),
 		funded,
 	)
 
@@ -127,7 +129,7 @@ func (f *Formatter) FormatWalletBalance(walletEntry *models.WalletEntry, assets 
 		var sb strings.Builder
 		sb.WriteString("\n**Assets:**")
 		for _, a := range assets {
-			sb.WriteString(fmt.Sprintf("\n• %s: %s", a.Code, a.Balance))
+			fmt.Fprintf(&sb, "\n• %s: %s", a.Code, a.Balance)
 		}
 		out += sb.String()
 	}
@@ -138,13 +140,13 @@ func (f *Formatter) FormatWalletBalance(walletEntry *models.WalletEntry, assets 
 // FormatNetworkStatus formats current network display
 func (f *Formatter) FormatNetworkStatus(network string) string {
 	networkDisplay := strings.TrimPrefix(network, "stellar-")
-	return fmt.Sprintf("🌐 **Current Network:** %s\n💡 Use 'use testnet' or 'use mainnet' to switch networks", strings.Title(networkDisplay))
+	return fmt.Sprintf("🌐 **Current Network:** %s\n💡 Use 'use testnet' or 'use mainnet' to switch networks", cases.Title(language.English).String(networkDisplay))
 }
 
 // FormatNetworkSwitched formats network switch confirmation
 func (f *Formatter) FormatNetworkSwitched(network string) string {
 	networkDisplay := strings.TrimPrefix(network, "stellar-")
-	return fmt.Sprintf("🌐 Network switched to %s", strings.Title(networkDisplay))
+	return fmt.Sprintf("🌐 Network switched to %s", cases.Title(language.English).String(networkDisplay))
 }
 
 // FormatSwapQuote formats swap quote for display
@@ -273,7 +275,7 @@ func (f *Formatter) FormatHelp(currentNetwork string) string {
 • Switch networks anytime with 'use testnet' or 'change to mainnet'
 • Type 'cancel' anytime to stop a multi-step operation
 
-🌐 **Current Network:** %s`, strings.Title(networkDisplay))
+🌐 **Current Network:** %s`, cases.Title(language.English).String(networkDisplay))
 }
 
 // FormatParameterPrompt generates a prompt for collecting a parameter
@@ -343,12 +345,12 @@ func (f *Formatter) truncateAddress(address string, length int) string {
 func (f *Formatter) FormatPoolList(pools []models.LiquidityPool, network string) string {
 	if len(pools) == 0 {
 		networkDisplay := strings.TrimPrefix(network, "stellar-")
-		return fmt.Sprintf("🏊 **No liquidity pools found on %s**\n💡 Pools are created when users deposit assets into the AMM", strings.Title(networkDisplay))
+		return fmt.Sprintf("🏊 **No liquidity pools found on %s**\n💡 Pools are created when users deposit assets into the AMM", cases.Title(language.English).String(networkDisplay))
 	}
 
 	networkDisplay := strings.TrimPrefix(network, "stellar-")
 	lines := []string{
-		fmt.Sprintf("🏊 **Liquidity Pools on %s** (%d found)", strings.Title(networkDisplay), len(pools)),
+		fmt.Sprintf("🏊 **Liquidity Pools on %s** (%d found)", cases.Title(language.English).String(networkDisplay), len(pools)),
 		"",
 	}
 
@@ -421,8 +423,8 @@ func (f *Formatter) FormatPoolDetail(pool *models.LiquidityPool, network string)
 		assetA := f.formatAssetName(pool.Reserves[0].Asset)
 		assetB := f.formatAssetName(pool.Reserves[1].Asset)
 
-		reserveAAmount, _ := strconv.ParseFloat(pool.Reserves[0].Amount, 64)
-		reserveBAmount, _ := strconv.ParseFloat(pool.Reserves[1].Amount, 64)
+		reserveAAmount, _ := strconv.ParseFloat(pool.Reserves[0].Amount, 64) //nolint:errcheck // parse failure yields 0, guarded below
+		reserveBAmount, _ := strconv.ParseFloat(pool.Reserves[1].Amount, 64) //nolint:errcheck // parse failure yields 0
 
 		if reserveAAmount > 0 {
 			priceAtoB := reserveBAmount / reserveAAmount

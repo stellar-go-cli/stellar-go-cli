@@ -89,7 +89,7 @@ func (fc *FinnhubClient) FetchNews(assets []string, limit int) ([]NewsArticle, e
 		if err != nil {
 			continue // Skip this asset on error
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort close
 
 		if resp.StatusCode != http.StatusOK {
 			continue // Skip this asset on HTTP error

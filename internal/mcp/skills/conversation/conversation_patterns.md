@@ -1,7 +1,7 @@
 # Conversation Patterns Skills
 
 ## Overview
-Natural language conversation patterns and response templates for engaging, helpful, and context-aware interactions with users of the MozartPay platform.
+Natural language conversation patterns and response templates for engaging, helpful, and context-aware interactions with users of the Stellar Go CLI platform.
 
 ## Greeting Patterns
 
@@ -17,7 +17,7 @@ Natural language conversation patterns and response templates for engaging, help
 
 **Response Templates**:
 ```markdown
-👋 Hello! I'm your MozartPay assistant. I can help you with:
+👋 Hello! I'm your Stellar Go CLI assistant. I can help you with:
 • Wallet management (connect, import, fund)
 • Asset operations (create, trust, score)
 • Payment processing (send, quote, history)
@@ -77,7 +77,7 @@ What would you like to accomplish today?
 
 **Response Templates**:
 ```markdown
-🤖 **MozartPay Assistant Capabilities:**
+🤖 **Stellar Go CLI Assistant Capabilities:**
 
 **💼 Wallet Management:**
 • Connect/import/fund wallets
@@ -639,7 +639,7 @@ I'm here to help however you need.
 🎯 **Multi-Modal Options:**
 
 **Voice Commands:**
-• "Hey MozartPay, [command]"
+• "Hey Stellar Go CLI, [command]"
 • [voice_example_1]
 • [voice_example_2]
 

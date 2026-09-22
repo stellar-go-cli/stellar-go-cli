@@ -37,10 +37,10 @@ type Model struct {
 type ModelType string
 
 const (
-	TypeBaseModel     ModelType = "base"
-	TypeLoRAAdapter   ModelType = "lora_adapter"
-	TypeMergedModel   ModelType = "merged"
-	TypeGGUFModel     ModelType = "gguf"
+	TypeBaseModel   ModelType = "base"
+	TypeLoRAAdapter ModelType = "lora_adapter"
+	TypeMergedModel ModelType = "merged"
+	TypeGGUFModel   ModelType = "gguf"
 )
 
 // ModelFormat represents the storage format
@@ -55,19 +55,19 @@ const (
 
 // ModelMetrics contains performance metrics for the model
 type ModelMetrics struct {
-	TrainingLoss     float64 `json:"trainingLoss,omitempty"`
-	ValidationLoss   float64 `json:"validationLoss,omitempty"`
-	Perplexity       float64 `json:"perplexity,omitempty"`
-	Accuracy         float64 `json:"accuracy,omitempty"`
-	InferenceTimeMs  int64   `json:"inferenceTimeMs,omitempty"`
-	MemoryUsageMB    int64   `json:"memoryUsageMB,omitempty"`
+	TrainingLoss    float64 `json:"trainingLoss,omitempty"`
+	ValidationLoss  float64 `json:"validationLoss,omitempty"`
+	Perplexity      float64 `json:"perplexity,omitempty"`
+	Accuracy        float64 `json:"accuracy,omitempty"`
+	InferenceTimeMs int64   `json:"inferenceTimeMs,omitempty"`
+	MemoryUsageMB   int64   `json:"memoryUsageMB,omitempty"`
 }
 
 // Registry manages the model repository
 type Registry struct {
-	rootDir    string
-	indexPath  string
-	models     map[string]*Model
+	rootDir     string
+	indexPath   string
+	models      map[string]*Model
 	activeModel string
 }
 
@@ -213,7 +213,7 @@ func (r *Registry) Delete(id string) error {
 
 	// Remove file if it exists and is in our directory
 	if model.Path != "" && strings.HasPrefix(model.Path, r.rootDir) {
-		os.Remove(model.Path)
+		os.Remove(model.Path) //nolint:errcheck // best-effort cleanup
 	}
 
 	// Remove from index
@@ -355,10 +355,10 @@ func compareVersions(v1, v2 string) int {
 		var num1, num2 int
 
 		if i < len(parts1) {
-			fmt.Sscanf(parts1[i], "%d", &num1)
+			fmt.Sscanf(parts1[i], "%d", &num1) //nolint:errcheck // non-numeric parts parse as 0
 		}
 		if i < len(parts2) {
-			fmt.Sscanf(parts2[i], "%d", &num2)
+			fmt.Sscanf(parts2[i], "%d", &num2) //nolint:errcheck // non-numeric parts parse as 0
 		}
 
 		if num1 > num2 {
@@ -461,7 +461,7 @@ func (r *Registry) ExportToOllama(modelID string, ollamaName string) error {
 	// Create Modelfile
 	modelfileContent := fmt.Sprintf(`FROM ./%s
 
-SYSTEM """You are MozartPay, a cryptocurrency payment CLI assistant."""
+SYSTEM """You are Stellar Go CLI, a cryptocurrency payment CLI assistant."""
 
 PARAMETER temperature 0.1
 PARAMETER top_p 0.9

@@ -1,7 +1,7 @@
 # Payment Operations Skills
 
 ## Overview
-Comprehensive payment capabilities for the MozartPay platform, including multi-rail payments, quoting, request generation, and payment history tracking across different payment protocols and networks.
+Comprehensive payment capabilities for the Stellar Go CLI platform, including multi-rail payments, quoting, request generation, and payment history tracking across different payment protocols and networks.
 
 ## Skills
 

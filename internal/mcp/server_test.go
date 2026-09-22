@@ -42,7 +42,7 @@ func TestMCPServerInitialize(t *testing.T) {
 	if !strings.Contains(output, `"protocolVersion":"2024-11-05"`) {
 		t.Errorf("Expected protocol version in response, got: %s", output)
 	}
-	if !strings.Contains(output, `"name":"mozartpay-mcp"`) {
+	if !strings.Contains(output, `"name":"stellar-go-cli-mcp"`) {
 		t.Errorf("Expected server name in response, got: %s", output)
 	}
 }

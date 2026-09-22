@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/iso20022"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/reporting"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/iso20022"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newReportCmd(cfg *config.Config) *Command {
@@ -84,7 +84,7 @@ func newReportGenerateCmd(cfg *config.Config) *Command {
 
 			if payment == nil && asset == nil {
 				ui.Warn("No payment or asset found in state.")
-				ui.Info("Run 'mozartpay pay send' or 'mozartpay asset create-ft' first.")
+				ui.Info("Run 'stellar-go-cli pay send' or 'stellar-go-cli asset create-ft' first.")
 				ui.Info("Generating demo report...")
 				payment = demoPayment()
 				asset = demoAsset()
@@ -108,7 +108,10 @@ func newReportGenerateCmd(cfg *config.Config) *Command {
 
 			switch *output {
 			case "json":
-				out, _ := svc.FormatJSON(report)
+				out, err := svc.FormatJSON(report)
+				if err != nil {
+					return fmt.Errorf("format JSON: %w", err)
+				}
 				fmt.Println(out)
 			case "iso20022":
 				out, err := svc.FormatISO20022XML(report)
@@ -122,10 +125,10 @@ func newReportGenerateCmd(cfg *config.Config) *Command {
 				fmt.Println(svc.FormatSummary(report))
 			}
 
-			config.SaveState("report_latest", report)
+			config.SaveState("report_latest", report) //nolint:errcheck // best-effort cache
 			if *output == "pretty" {
-				ui.Info("Full report saved to ~/.mozartpay/state/report_latest.json")
-				ui.Info("Export as XML: mozartpay report iso20022")
+				ui.Info("Full report saved to ~/.stellar-go-cli/state/report_latest.json")
+				ui.Info("Export as XML: stellar-go-cli report iso20022")
 			}
 
 			return nil
@@ -148,13 +151,16 @@ func newReportShowCmd(cfg *config.Config) *Command {
 
 			var report models.TransactionReport
 			if err := config.LoadState("report_latest", &report); err != nil {
-				ui.Warn("No report found. Run 'mozartpay report generate' first.")
+				ui.Warn("No report found. Run 'stellar-go-cli report generate' first.")
 				return nil
 			}
 
 			svc := reporting.NewService()
 			if *output == "json" {
-				out, _ := svc.FormatJSON(&report)
+				out, err := svc.FormatJSON(&report)
+				if err != nil {
+					return fmt.Errorf("format JSON: %w", err)
+				}
 				fmt.Println(out)
 			} else {
 				fmt.Println(svc.FormatSummary(&report))
@@ -188,8 +194,10 @@ func newReportISO20022Cmd(cfg *config.Config) *Command {
 					payment = *demoPayment()
 				}
 				svc := reporting.NewService()
-				r, _ := svc.GenerateReport(&payment, nil, cfg.ActiveDID, nil)
-				report = *r
+				r, gerr := svc.GenerateReport(&payment, nil, cfg.ActiveDID, nil)
+				if gerr == nil && r != nil {
+					report = *r
+				}
 			}
 
 			svc := reporting.NewService()
@@ -201,16 +209,16 @@ func newReportISO20022Cmd(cfg *config.Config) *Command {
 			switch *msgType {
 			case "pacs.008":
 				xmlStr, err = svc.FormatISO20022XML(&report)
-				ui.SectionLabel("pacs.008.001.08")
+				ui.SectionLabel("pacs.008.001.14")
 			case "pacs.002":
 				xmlStr, err = svc.FormatPacs002(&report, iso20022.TransactionStatus(*status), *reasonCode)
-				ui.SectionLabel("pacs.002.001.12")
+				ui.SectionLabel("pacs.002.001.16")
 			case "pacs.004":
 				xmlStr, err = svc.FormatPacs004(&report, *reasonCode)
-				ui.SectionLabel("pacs.004.001.12")
+				ui.SectionLabel("pacs.004.001.15")
 			case "pacs.009":
 				xmlStr, err = svc.FormatPacs009(&report)
-				ui.SectionLabel("pacs.009.001.10")
+				ui.SectionLabel("pacs.009.001.13")
 			default:
 				ui.Error(fmt.Sprintf("unsupported message type: %s", *msgType))
 				return fmt.Errorf("unsupported message type: %s", *msgType)

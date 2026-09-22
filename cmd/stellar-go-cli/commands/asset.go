@@ -10,9 +10,9 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/assets"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newAssetCmd(cfg *config.Config) *Command {
@@ -26,7 +26,6 @@ func newAssetCmd(cfg *config.Config) *Command {
 	cmd.addSub(newAssetCreateNFACmd(cfg))
 	cmd.addSub(newAssetTrustCmd(cfg))
 	cmd.addSub(newAssetUntrustCmd(cfg))
-	cmd.addSub(newAssetScoreCmd(cfg))
 	cmd.addSub(newAssetCarbonCmd(cfg))
 	cmd.addSub(newAssetShowCmd(cfg))
 	cmd.Run = func(c *Command, args []string) error {
@@ -88,7 +87,6 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 				ui.Error("Active wallet is not a Stellar wallet. Please switch to a Stellar wallet first.")
 				return fmt.Errorf("stellar wallet required for asset issuance")
 			}
-			fmt.Printf("DEBUG: Loaded account - Address: %s, PrivateKey first 10 chars: %s...\n", acc.Address, acc.PrivateKey[:10])
 			issuer := acc.Address
 			issuerKey := acc.PrivateKey
 
@@ -101,7 +99,7 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 			time.Sleep(800 * time.Millisecond)
 
 			metadata := map[string]interface{}{
-				"description": fmt.Sprintf("%s token issued via MozartPay CLI", *name),
+				"description": fmt.Sprintf("%s token issued via stellar-go-cli", *name),
 				"issuerDID":   cfg.ActiveDID,
 				"version":     "1.0",
 			}
@@ -146,7 +144,7 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 			ui.KV("Created", asset.CreatedAt.Format(time.RFC3339))
 
 			if asset.Score != nil {
-				ui.SectionLabel("OA Score")
+				ui.SectionLabel("Score")
 				ui.KVColor("Score", fmt.Sprintf("%d / 1000 (%s)", asset.Score.Score, asset.Score.Grade), ui.BrightCyan)
 				ui.KV("Risk Level", asset.Score.RiskLevel)
 			}
@@ -159,8 +157,8 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 			}
 			ui.Separator()
 
-			config.SaveState("asset_latest", asset)
-			ui.Info("Run 'mozartpay report generate' to produce a compliance report.")
+			config.SaveState("asset_latest", asset) //nolint:errcheck // best-effort cache
+			ui.Info("Run 'stellar-go-cli report generate' to produce a compliance report.")
 
 			return nil
 		},
@@ -226,7 +224,11 @@ func newAssetCreateNFACmd(cfg *config.Config) *Command {
 				spin2 := ui.NewSpinner("Attaching carbon credit...")
 				spin2.Start()
 				time.Sleep(400 * time.Millisecond)
-				asset, _ = svc.AttachCarbonCredit(asset, 0.5, time.Now().Year()-1, "Gold Standard")
+				if a, cerr := svc.AttachCarbonCredit(asset, 0.5, time.Now().Year()-1, "Gold Standard"); cerr != nil {
+					ui.Warn("carbon credit attachment failed: " + cerr.Error())
+				} else {
+					asset = a
+				}
 				spin2.Stop(true, "Carbon credit attached to NFA")
 			}
 
@@ -247,7 +249,7 @@ func newAssetCreateNFACmd(cfg *config.Config) *Command {
 				ui.KVColor("Carbon Offset", fmt.Sprintf("%.2f tCO2e (%s)", asset.CarbonOffset.Amount, asset.CarbonOffset.Standard), ui.BrightGreen)
 			}
 
-			config.SaveState("asset_latest", asset)
+			config.SaveState("asset_latest", asset) //nolint:errcheck // best-effort cache
 			return nil
 		},
 	}
@@ -449,20 +451,6 @@ func newAssetUntrustCmd(cfg *config.Config) *Command {
 	}
 }
 
-// ─── asset score ──────────────────────────────
-
-func newAssetScoreCmd(cfg *config.Config) *Command {
-	return &Command{
-		Name:  "score",
-		Short: "Add an OA score to latest asset",
-		Run: func(c *Command, args []string) error {
-			ui.Header("OA Score")
-			ui.Warn("OA scoring functionality has been removed.")
-			return nil
-		},
-	}
-}
-
 // ─── asset carbon ─────────────────────────────
 
 func newAssetCarbonCmd(cfg *config.Config) *Command {
@@ -486,7 +474,7 @@ func newAssetCarbonCmd(cfg *config.Config) *Command {
 			svc := assets.NewService()
 			var asset models.Asset
 			if err := config.LoadState("asset_latest", &asset); err != nil {
-				spin.Stop(false, "No asset found. Run 'mozartpay asset create-ft' first.")
+				spin.Stop(false, "No asset found. Run 'stellar-go-cli asset create-ft' first.")
 				return nil
 			}
 
@@ -504,7 +492,7 @@ func newAssetCarbonCmd(cfg *config.Config) *Command {
 				ui.Success(fmt.Sprintf("Credit retired on-chain: %s", updated.CarbonOffset.TokenID))
 			}
 
-			config.SaveState("asset_latest", updated)
+			config.SaveState("asset_latest", updated) //nolint:errcheck // best-effort cache
 
 			ui.SectionLabel("Carbon Credit")
 			ui.KV("Token ID", updated.CarbonOffset.TokenID)
@@ -530,7 +518,7 @@ func newAssetShowCmd(cfg *config.Config) *Command {
 
 			var asset models.Asset
 			if err := config.LoadState("asset_latest", &asset); err != nil {
-				ui.Warn("No asset found. Run 'mozartpay asset create-ft' or 'mozartpay asset create-nfa'.")
+				ui.Warn("No asset found. Run 'stellar-go-cli asset create-ft' or 'stellar-go-cli asset create-nfa'.")
 				return nil
 			}
 
@@ -546,7 +534,7 @@ func newAssetShowCmd(cfg *config.Config) *Command {
 			ui.KV("Created", asset.CreatedAt.Format(time.RFC3339))
 
 			if asset.Score != nil {
-				ui.SectionLabel("OA Score")
+				ui.SectionLabel("Score")
 				ui.KVColor("Score", fmt.Sprintf("%d / 1000 (%s) — %s risk", asset.Score.Score, asset.Score.Grade, asset.Score.RiskLevel), ui.BrightCyan)
 			}
 			if asset.CarbonOffset != nil {

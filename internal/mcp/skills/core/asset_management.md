@@ -1,7 +1,7 @@
 # Asset Management Skills
 
 ## Overview
-Comprehensive asset creation, management, and analysis capabilities for the MozartPay platform, including token issuance, trustline management, asset scoring, and carbon credit integration.
+Comprehensive asset creation, management, and analysis capabilities for the Stellar Go CLI platform, including token issuance, trustline management, asset scoring, and carbon credit integration.
 
 ## Skills
 

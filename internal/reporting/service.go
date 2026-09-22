@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/iso20022"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/iso20022"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 // Service generates post-transaction reports
@@ -62,14 +62,10 @@ func (s *Service) FormatJSON(report *models.TransactionReport) (string, error) {
 	return string(b), nil
 }
 
-// FormatISO20022XML renders the ISO 20022 message as XML
+// FormatISO20022XML renders the ISO 20022 message as XML. The XML is always
+// regenerated from the payment so exports pick up the current schema version
+// instead of a stale message cached when the report was created.
 func (s *Service) FormatISO20022XML(report *models.TransactionReport) (string, error) {
-	if report.ISO20022 == nil {
-		return "", fmt.Errorf("no ISO 20022 data in report")
-	}
-	if report.ISO20022.XML != "" {
-		return report.ISO20022.XML, nil
-	}
 	if report.Payment == nil {
 		return "", fmt.Errorf("no payment data to generate XML")
 	}
@@ -109,63 +105,63 @@ func (s *Service) FormatPacs009(report *models.TransactionReport) (string, error
 func (s *Service) FormatSummary(report *models.TransactionReport) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Report ID   : %s\n", report.ReportID))
-	sb.WriteString(fmt.Sprintf("Generated   : %s\n", report.GeneratedAt.Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("DID         : %s\n", report.DID))
-	sb.WriteString(fmt.Sprintf("VC Attached : %v\n", report.VCAttached))
-	sb.WriteString(fmt.Sprintf("Audit Hash  : %s\n", report.AuditHash))
+	fmt.Fprintf(&sb, "Report ID   : %s\n", report.ReportID)
+	fmt.Fprintf(&sb, "Generated   : %s\n", report.GeneratedAt.Format(time.RFC3339))
+	fmt.Fprintf(&sb, "DID         : %s\n", report.DID)
+	fmt.Fprintf(&sb, "VC Attached : %v\n", report.VCAttached)
+	fmt.Fprintf(&sb, "Audit Hash  : %s\n", report.AuditHash)
 
 	if report.Payment != nil {
 		p := report.Payment
 		sb.WriteString("\n── Payment ──────────────────────────\n")
-		sb.WriteString(fmt.Sprintf("  TX Hash    : %s\n", p.TxHash))
-		sb.WriteString(fmt.Sprintf("  From       : %s\n", p.From))
+		fmt.Fprintf(&sb, "  TX Hash    : %s\n", p.TxHash)
+		fmt.Fprintf(&sb, "  From       : %s\n", p.From)
 		if p.Network == models.NetworkStellarTestnet || p.Network == models.NetworkStellarMainnet {
-			sb.WriteString(fmt.Sprintf("  From URL   : %s\n", stellarExplorerURL(p.From, p.Network)))
+			fmt.Fprintf(&sb, "  From URL   : %s\n", stellarExplorerURL(p.From, p.Network))
 		}
-		sb.WriteString(fmt.Sprintf("  To         : %s\n", p.To))
+		fmt.Fprintf(&sb, "  To         : %s\n", p.To)
 		if p.Network == models.NetworkStellarTestnet || p.Network == models.NetworkStellarMainnet {
-			sb.WriteString(fmt.Sprintf("  To URL     : %s\n", stellarExplorerURL(p.To, p.Network)))
+			fmt.Fprintf(&sb, "  To URL     : %s\n", stellarExplorerURL(p.To, p.Network))
 		}
-		sb.WriteString(fmt.Sprintf("  Amount     : %s %s\n", p.Amount, p.Asset))
-		sb.WriteString(fmt.Sprintf("  Rail       : %s\n", p.Rail))
-		sb.WriteString(fmt.Sprintf("  Status     : %s\n", p.Status))
+		fmt.Fprintf(&sb, "  Amount     : %s %s\n", p.Amount, p.Asset)
+		fmt.Fprintf(&sb, "  Rail       : %s\n", p.Rail)
+		fmt.Fprintf(&sb, "  Status     : %s\n", p.Status)
 		if p.FXRate != "" {
-			sb.WriteString(fmt.Sprintf("  FX Rate    : %s\n", p.FXRate))
+			fmt.Fprintf(&sb, "  FX Rate    : %s\n", p.FXRate)
 		}
-		sb.WriteString(fmt.Sprintf("  Fee        : %s\n", p.Fee))
+		fmt.Fprintf(&sb, "  Fee        : %s\n", p.Fee)
 		if p.ConfirmedAt != nil {
-			sb.WriteString(fmt.Sprintf("  Confirmed  : %s\n", p.ConfirmedAt.Format(time.RFC3339)))
+			fmt.Fprintf(&sb, "  Confirmed  : %s\n", p.ConfirmedAt.Format(time.RFC3339))
 		}
 	}
 
 	if report.Asset != nil {
 		a := report.Asset
 		sb.WriteString("\n── Asset ────────────────────────────\n")
-		sb.WriteString(fmt.Sprintf("  Contract   : %s\n", a.ContractID))
-		sb.WriteString(fmt.Sprintf("  Name       : %s (%s)\n", a.Name, a.Symbol))
-		sb.WriteString(fmt.Sprintf("  Type       : %s\n", a.Type))
-		sb.WriteString(fmt.Sprintf("  Standard   : %s\n", a.Standard))
-		sb.WriteString(fmt.Sprintf("  Supply     : %s\n", a.TotalSupply))
+		fmt.Fprintf(&sb, "  Contract   : %s\n", a.ContractID)
+		fmt.Fprintf(&sb, "  Name       : %s (%s)\n", a.Name, a.Symbol)
+		fmt.Fprintf(&sb, "  Type       : %s\n", a.Type)
+		fmt.Fprintf(&sb, "  Standard   : %s\n", a.Standard)
+		fmt.Fprintf(&sb, "  Supply     : %s\n", a.TotalSupply)
 	}
 
 	if report.CarbonOffset != nil {
 		c := report.CarbonOffset
 		sb.WriteString("\n── Carbon Credit ────────────────────\n")
-		sb.WriteString(fmt.Sprintf("  Token ID   : %s\n", c.TokenID))
-		sb.WriteString(fmt.Sprintf("  Amount     : %.4f tCO2e\n", c.Amount))
-		sb.WriteString(fmt.Sprintf("  Vintage    : %d\n", c.Vintage))
-		sb.WriteString(fmt.Sprintf("  Standard   : %s\n", c.Standard))
-		sb.WriteString(fmt.Sprintf("  Retired    : %v\n", c.Retired))
+		fmt.Fprintf(&sb, "  Token ID   : %s\n", c.TokenID)
+		fmt.Fprintf(&sb, "  Amount     : %.4f tCO2e\n", c.Amount)
+		fmt.Fprintf(&sb, "  Vintage    : %d\n", c.Vintage)
+		fmt.Fprintf(&sb, "  Standard   : %s\n", c.Standard)
+		fmt.Fprintf(&sb, "  Retired    : %v\n", c.Retired)
 	}
 
 	if report.Score != nil {
 		sc := report.Score
 		sb.WriteString("\n── Stablecoin Score ─────────────────\n")
-		sb.WriteString(fmt.Sprintf("  Provider   : %s\n", sc.Provider))
-		sb.WriteString(fmt.Sprintf("  Score      : %d / 1000\n", sc.Score))
-		sb.WriteString(fmt.Sprintf("  Grade      : %s\n", sc.Grade))
-		sb.WriteString(fmt.Sprintf("  Risk       : %s\n", sc.RiskLevel))
+		fmt.Fprintf(&sb, "  Provider   : %s\n", sc.Provider)
+		fmt.Fprintf(&sb, "  Score      : %d / 1000\n", sc.Score)
+		fmt.Fprintf(&sb, "  Grade      : %s\n", sc.Grade)
+		fmt.Fprintf(&sb, "  Risk       : %s\n", sc.RiskLevel)
 	}
 
 	return sb.String()
@@ -176,7 +172,7 @@ func (s *Service) FormatSummary(report *models.TransactionReport) string {
 // ─────────────────────────────────────────────
 
 func (s *Service) buildISO20022(p *models.Payment) (*models.ISO20022Message, error) {
-	msgID := "MZTP" + safeTruncateID(p.ID, 8)
+	msgID := "SGC1" + safeTruncateID(p.ID, 8)
 	currency := p.Asset
 	if currency == "" {
 		currency = "XLM"
@@ -191,7 +187,7 @@ func (s *Service) buildISO20022(p *models.Payment) (*models.ISO20022Message, err
 		MessageType:     iso20022.MsgPacs008,
 		MessageID:       msgID,
 		CreatedAt:       p.CreatedAt,
-		InitiatingParty: "MozartPay",
+		InitiatingParty: "Stellar Go CLI",
 		PaymentInfo: models.ISO20022PaymentInfo{
 			PaymentID:    p.ID,
 			Method:       "TRF",

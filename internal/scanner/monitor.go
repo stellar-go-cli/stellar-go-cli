@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 // MonitorConfig holds configuration for continuous monitoring
@@ -61,7 +61,7 @@ func (m *MonitorService) Run(ctx context.Context) error {
 			fmt.Println("\n🛑 Shutting down monitor...")
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			server.Shutdown(shutdownCtx)
+			server.Shutdown(shutdownCtx) //nolint:errcheck // best-effort shutdown
 			return ctx.Err()
 
 		case err := <-serverErr:
@@ -124,7 +124,7 @@ func (m *MonitorService) promptAndExecute(result *ScanResult) {
 	// Stop the ticker temporarily by using stdin prompt
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Execute this arbitrage? [y/N]: ")
-	response, _ := reader.ReadString('\n')
+	response, _ := reader.ReadString('\n') //nolint:errcheck // read error yields empty response, treated as no
 	response = strings.TrimSpace(strings.ToLower(response))
 
 	if response != "y" && response != "yes" {
@@ -189,8 +189,8 @@ func (m *MonitorService) promptAndExecute(result *ScanResult) {
 	fmt.Printf("   TX: %s\n", paymentB.TxHash)
 
 	// Calculate actual profit
-	finalAmount, _ := strconv.ParseFloat(quoteB.ExpectedAmount, 64)
-	startAmount, _ := strconv.ParseFloat(result.TestAmount, 64)
+	finalAmount, _ := strconv.ParseFloat(quoteB.ExpectedAmount, 64) //nolint:errcheck // parse failure yields 0 fallback
+	startAmount, _ := strconv.ParseFloat(result.TestAmount, 64)     //nolint:errcheck // parse failure yields 0 fallback
 	actualProfit := finalAmount - startAmount
 
 	fmt.Println()

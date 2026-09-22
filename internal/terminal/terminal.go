@@ -28,7 +28,6 @@ var (
 	colorRed      = lipgloss.Color("#FF4136")
 	colorWhite    = lipgloss.Color("#FFFFFF")
 	colorGray     = lipgloss.Color("#666666")
-	colorDarkBlue = lipgloss.Color("#1E3A5F")
 	colorBlack    = lipgloss.Color("#0A0A0A")
 	colorDarkGray = lipgloss.Color("#1A1A1A")
 )
@@ -88,25 +87,9 @@ var (
 				Foreground(colorGray).
 				Bold(true)
 
-	helpStyle = lipgloss.NewStyle().
-			Foreground(colorGray).
-			Background(colorDarkGray)
-
-	dataLabelStyle = lipgloss.NewStyle().
-			Foreground(colorGray)
-
-	dataValueStyle = lipgloss.NewStyle().
-			Foreground(colorWhite).
-			Bold(true)
-
 	// Section divider
 	dividerStyle = lipgloss.NewStyle().
 			Foreground(colorGray)
-
-	// Adaptive styles
-	responsiveTitleStyle = lipgloss.NewStyle().
-				Foreground(colorGold).
-				Bold(true)
 )
 
 // Key bindings
@@ -255,17 +238,6 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-// refreshMsg signals data has been refreshed
-type refreshMsg struct{}
-
-func (m Model) refreshData() tea.Msg {
-	m.loadWalletData()
-	m.loadTickers()
-	m.loadNews()
-	m.lastRefresh = time.Now()
-	return refreshMsg{}
-}
-
 func (m *Model) loadWalletData() {
 	m.walletErr = ""
 	svc := wallet.NewService()
@@ -291,13 +263,14 @@ func (m *Model) loadWalletData() {
 	// Parse balance
 	if acc.Funded && acc.Balance != "" {
 		var bal float64
-		fmt.Sscanf(acc.Balance, "%f", &bal)
-		m.wallet.Balances["XLM"] = bal
+		if _, err := fmt.Sscanf(acc.Balance, "%f", &bal); err == nil {
+			m.wallet.Balances["XLM"] = bal
+		}
 	}
 
 	// Fetch assets
 	if acc.Funded {
-		assets, _ := svc.GetAccountAssets(acc.Address, acc.Network)
+		assets, _ := svc.GetAccountAssets(acc.Address, acc.Network) //nolint:errcheck // empty list on error is acceptable
 		importantAssets := map[string]bool{
 			"USDC": true, "USDT": true, "yXLM": true,
 			"AQUA": true, "SHX": true, "XRP": true, "BTC": true, "ETH": true,
@@ -309,15 +282,16 @@ func (m *Model) loadWalletData() {
 			}
 			if importantAssets[asset.Code] {
 				var bal float64
-				fmt.Sscanf(asset.Balance, "%f", &bal)
-				m.wallet.Balances[asset.Code] = bal
+				if _, err := fmt.Sscanf(asset.Balance, "%f", &bal); err == nil {
+					m.wallet.Balances[asset.Code] = bal
+				}
 			}
 		}
 	}
 
 	// Fetch recent transactions
 	if acc.Funded {
-		txs, _ := svc.GetTransactions(acc.Address, acc.Network, 5)
+		txs, _ := svc.GetTransactions(acc.Address, acc.Network, 5) //nolint:errcheck // empty list on error is acceptable
 		m.wallet.Transactions = txs
 	} else {
 		m.wallet.Transactions = []wallet.TransactionInfo{}
@@ -348,7 +322,7 @@ func fetchLivePrices() []TickerData {
 	// Fetch crypto prices from CoinGecko
 	cryptoURL := "https://api.coingecko.com/api/v3/simple/price?ids=stellar,bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true"
 	if resp, err := client.Get(cryptoURL); err == nil {
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck // best-effort close
 		var data map[string]struct {
 			Usd          float64 `json:"usd"`
 			Usd24hChange float64 `json:"usd_24h_change"`
@@ -371,7 +345,7 @@ func fetchLivePrices() []TickerData {
 
 	// Fetch EUR/USD from Frankfurter (ECB rates)
 	if resp, err := client.Get("https://api.frankfurter.app/latest?from=EUR&to=USD"); err == nil {
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck // best-effort close
 		var data struct {
 			Rates map[string]float64 `json:"rates"`
 			Date  string             `json:"date"`
@@ -467,12 +441,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activePanel = (m.activePanel + 1) % 3
 		case key.Matches(msg, m.keys.Up):
 			if m.useViewport {
-				m.viewport.LineUp(1)
+				m.viewport.ScrollUp(1)
 			}
 			return m, nil
 		case key.Matches(msg, m.keys.Down):
 			if m.useViewport {
-				m.viewport.LineDown(1)
+				m.viewport.ScrollDown(1)
 			}
 			return m, nil
 		}
@@ -580,7 +554,7 @@ func (m Model) renderScrollableView() string {
 	m.viewport.SetContent(fullContent)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
-		headerStyle.Render(" MOZARTPAY TERMINAL "),
+		headerStyle.Render(" STELLAR TERMINAL "),
 		m.viewport.View(),
 		m.renderTickerStrip(),
 	)
@@ -590,7 +564,7 @@ func (m Model) renderHeader() string {
 	timeStr := time.Now().Format("15:04:05")
 	status := "● LIVE"
 
-	left := headerStyle.Render(" MOZARTPAY TERMINAL ")
+	left := headerStyle.Render(" STELLAR TERMINAL ")
 	center := lipgloss.NewStyle().
 		Foreground(colorGray).
 		Render(fmt.Sprintf("v0.1.0-mvp | Last update: %s", m.lastRefresh.Format("15:04:05")))
@@ -991,16 +965,6 @@ func formatTimeAgo(t time.Time) string {
 }
 
 // truncateURL truncates a URL for display
-func truncateURL(url string, maxLen int) string {
-	if len(url) <= maxLen {
-		return url
-	}
-	if maxLen < 10 {
-		return url[:maxLen]
-	}
-	return url[:maxLen-3] + "..."
-}
-
 // Run starts the terminal UI
 func Run(cfg *config.Config) error {
 	model := NewModel(cfg)

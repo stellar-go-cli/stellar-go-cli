@@ -1,4 +1,4 @@
-// Package mcp implements the Model Context Protocol server for MozartPay CLI.
+// Package mcp implements the Model Context Protocol server for Stellar Go CLI.
 // It exposes CLI functionality as MCP tools via stdio or SSE transport using JSON-RPC 2.0.
 package mcp
 
@@ -127,12 +127,12 @@ func (s *Server) serveStdio() error {
 
 		var msg JSONRPCMessage
 		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			s.sendError(nil, ParseError, "Parse error", err.Error())
+			s.sendError(nil, ParseError, "Parse error", err.Error()) //nolint:errcheck // client connection may already be dead
 			continue
 		}
 
 		if msg.JSONRPC != jsonRPCVersion {
-			s.sendError(msg.ID, InvalidRequest, "Invalid JSON-RPC version", nil)
+			s.sendError(msg.ID, InvalidRequest, "Invalid JSON-RPC version", nil) //nolint:errcheck // client connection may already be dead
 			continue
 		}
 
@@ -193,7 +193,7 @@ func (s *Server) handleInitialize(msg *JSONRPCMessage) error {
 			"logging": map[string]interface{}{},
 		},
 		"serverInfo": map[string]string{
-			"name":    "mozartpay-mcp",
+			"name":    "stellar-go-cli-mcp",
 			"version": config.Version,
 		},
 	}
@@ -325,14 +325,14 @@ func (s *Server) sendToolResult(id interface{}, result interface{}) error {
 			content = append(content, v)
 		} else {
 			// Otherwise wrap as text with JSON
-			jsonBytes, _ := json.MarshalIndent(v, "", "  ")
+			jsonBytes, _ := json.MarshalIndent(v, "", "  ") //nolint:errcheck // marshal failure yields empty text fallback
 			content = append(content, map[string]interface{}{
 				"type": "text",
 				"text": string(jsonBytes),
 			})
 		}
 	default:
-		jsonBytes, _ := json.MarshalIndent(result, "", "  ")
+		jsonBytes, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // marshal failure yields empty text fallback
 		content = append(content, map[string]interface{}{
 			"type": "text",
 			"text": string(jsonBytes),
@@ -393,7 +393,7 @@ func (s *Server) serveSSE(port int) error {
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck // best-effort response write
 	})
 
 	// JSON-RPC message endpoint (for client-to-server)
@@ -417,7 +417,7 @@ func (s *Server) serveSSE(port int) error {
 		// Handle the message and return response
 		response := s.handleMessageHTTP(&msg)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(response) //nolint:errcheck // best-effort response write
 	})
 
 	server := &http.Server{
@@ -451,7 +451,7 @@ func (s *Server) handleSSEConnection(w http.ResponseWriter, r *http.Request) {
 		"event": "endpoint",
 		"data":  "/message",
 	}
-	json.NewEncoder(w).Encode(endpoint)
+	json.NewEncoder(w).Encode(endpoint) //nolint:errcheck // best-effort response write
 	flusher.Flush()
 
 	// Keep connection alive and handle messages
@@ -465,7 +465,7 @@ func (s *Server) handleSSEConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			// Send keep-alive ping
-			fmt.Fprintf(w, "event: ping\ndata: {}\n\n")
+			fmt.Fprintf(w, "event: ping\ndata: {}\n\n") //nolint:errcheck // best-effort SSE keep-alive
 			flusher.Flush()
 		}
 	}
@@ -516,7 +516,7 @@ func (s *Server) handleInitializeHTTP(msg *JSONRPCMessage) *JSONRPCMessage {
 			"logging": map[string]interface{}{},
 		},
 		"serverInfo": map[string]string{
-			"name":    "mozartpay-mcp",
+			"name":    "stellar-go-cli-mcp",
 			"version": config.Version,
 		},
 	}
@@ -636,14 +636,14 @@ func (s *Server) createToolResultResponse(id interface{}, result interface{}) *J
 		if _, ok := v["type"]; ok {
 			content = append(content, v)
 		} else {
-			jsonBytes, _ := json.MarshalIndent(v, "", "  ")
+			jsonBytes, _ := json.MarshalIndent(v, "", "  ") //nolint:errcheck // marshal failure yields empty text fallback
 			content = append(content, map[string]interface{}{
 				"type": "text",
 				"text": string(jsonBytes),
 			})
 		}
 	default:
-		jsonBytes, _ := json.MarshalIndent(result, "", "  ")
+		jsonBytes, _ := json.MarshalIndent(result, "", "  ") //nolint:errcheck // marshal failure yields empty text fallback
 		content = append(content, map[string]interface{}{
 			"type": "text",
 			"text": string(jsonBytes),
@@ -677,7 +677,7 @@ func (s *Server) createToolErrorResponse(id interface{}, err error) *JSONRPCMess
 func (s *Server) sendHTTPError(w http.ResponseWriter, statusCode, jsonRPCCode int, message string, data interface{}) {
 	w.WriteHeader(statusCode)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(&JSONRPCMessage{
+	json.NewEncoder(w).Encode(&JSONRPCMessage{ //nolint:errcheck // best-effort response write
 		JSONRPC: jsonRPCVersion,
 		Error: &JSONRPCError{
 			Code:    jsonRPCCode,

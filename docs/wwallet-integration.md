@@ -1,6 +1,6 @@
 # wwWallet Integration Guide
 
-This guide covers the technical integration details of wwWallet with MozartPay CLI, including WebAuthn implementation, security considerations, and advanced usage patterns.
+This guide covers the technical integration details of wwWallet with Stellar Go CLI, including WebAuthn implementation, security considerations, and advanced usage patterns.
 
 ## Architecture Overview
 
@@ -8,7 +8,7 @@ This guide covers the technical integration details of wwWallet with MozartPay C
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   User Device   │    │   wwWallet      │    │   MozartPay     │
+│   User Device   │    │   wwWallet      │    │   Stellar Go CLI     │
 │                 │    │   Service       │    │   CLI           │
 │  • Face ID      │◄──►│  • WebAuthn     │◄──►│  • Wallet Mgmt  │
 │  • Touch ID     │    │  • Passkey Mgmt │    │  • Asset Issuance│
@@ -141,8 +141,8 @@ const createOptions = {
         rp: rpConfig,
         user: {
             id: new Uint8Array(16),
-            name: "user@mozartpay.com",
-            displayName: "MozartPay User"
+            name: "user@example.com",
+            displayName: "Stellar Go CLI User"
         },
         pubKeyCredParams: [
             { alg: -7, type: "public-key" } // ES256
@@ -162,55 +162,55 @@ const createOptions = {
 
 ```bash
 # Create wwWallet
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Fund wallet
-./mozartpay wallet fund
+./stellar-go-cli wallet fund
 
 # Check balance
-./mozartpay wallet balance
+./stellar-go-cli wallet balance
 
 # Show wallet details
-./mozartpay wallet show
+./stellar-go-cli wallet show
 ```
 
 ### Asset Management
 
 ```bash
 # Create fungible token
-./mozartpay asset create-ft --name "MyToken" --symbol "MTK" --supply 1000000
+./stellar-go-cli asset create-ft --name "MyToken" --symbol "MTK" --supply 1000000
 
 # Create non-fungible asset
-./mozartpay asset create-nfa --name "MyNFA" --description "Digital collectible"
+./stellar-go-cli asset create-nfa --name "MyNFA" --description "Digital collectible"
 
 # Attach carbon credits
-./mozartpay asset carbon --amount 1.0 --standard VCS
+./stellar-go-cli asset carbon --amount 1.0 --standard VCS
 ```
 
 ### Payment Operations
 
 ```bash
 # Send payment
-./mozartpay pay send --to GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ --amount 100 --asset XLM
+./stellar-go-cli pay send --to GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ --amount 100 --asset XLM
 
 # Request FX quote
-./mozartpay pay quote --from XLM --to EUR --amount 1000
+./stellar-go-cli pay quote --from XLM --to EUR --amount 1000
 
 # HTTP 402 payment
-./mozartpay pay x402 --url https://api.example.com/resource --price 0.5
+./stellar-go-cli pay x402 --url https://api.example.com/resource --price 0.5
 ```
 
 ### DID Integration
 
 ```bash
 # Create DID
-./mozartpay did create --method key
+./stellar-go-cli did create --method key
 
 # Issue VC
-./mozartpay did attest --type "NationalID" --subject "did:key:z123..."
+./stellar-go-cli did attest --type "NationalID" --subject "did:key:z123..."
 
 # Verify VC
-./mozartpay did verify --vc-id vc_123456
+./stellar-go-cli did verify --vc-id vc_123456
 ```
 
 ## Advanced Features
@@ -221,43 +221,43 @@ Users can create wwWallet instances on multiple devices:
 
 ```bash
 # Device 1
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Device 2 (same passkey if supported)
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Device 3 (different passkey)
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 ```
 
 ### Wallet Registry Management
 
 ```bash
 # List all wallets
-./mozartpay wallet list
+./stellar-go-cli wallet list
 
 # Switch active wallet
-./mozartpay wallet switch GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ
+./stellar-go-cli wallet switch GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ
 
 # Rename wallet
-./mozartpay wallet rename GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ "My wwWallet"
+./stellar-go-cli wallet rename GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ "My wwWallet"
 
 # Export wallet (read-only)
-./mozartpay wallet export --address GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ
+./stellar-go-cli wallet export --address GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ
 ```
 
 ### Network Configuration
 
 ```bash
 # Testnet
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Mainnet (production)
-./mozartpay wallet connect --provider wwwallet --network stellar-mainnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-mainnet
 
 # EVM Networks
-./mozartpay wallet connect --provider wwwallet --network evm-sepolia
-./mozartpay wallet connect --provider wwwallet --network evm-mainnet
+./stellar-go-cli wallet connect --provider wwwallet --network evm-sepolia
+./stellar-go-cli wallet connect --provider wwwallet --network evm-mainnet
 ```
 
 ## Error Handling
@@ -282,7 +282,7 @@ if err != nil {
 
 ```go
 if !acc.Funded {
-    ui.Warn("Account not funded. Run: mozartpay wallet fund")
+    ui.Warn("Account not funded. Run: stellar-go-cli wallet fund")
     ui.Info("Faucet: " + wallet.FaucetURL(net, acc.Address))
 }
 ```
@@ -292,7 +292,7 @@ if !acc.Funded {
 ```go
 acc, err := svc.GetActiveWallet()
 if err != nil {
-    ui.Warn("No active wallet found. Run 'mozartpay wallet connect' first.")
+    ui.Warn("No active wallet found. Run 'stellar-go-cli wallet connect' first.")
     return nil
 }
 ```
@@ -302,7 +302,7 @@ if err != nil {
 Enable detailed logging:
 
 ```bash
-./mozartpay wallet connect --provider wwwallet --debug
+./stellar-go-cli wallet connect --provider wwwallet --debug
 ```
 
 **Debug Output:**
@@ -356,14 +356,14 @@ func TestConnectWWWallet(t *testing.T) {
 
 ```bash
 # Test wallet creation
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Test funding
-./mozartpay wallet fund
+./stellar-go-cli wallet fund
 
 # Test operations
-./mozartpay wallet balance
-./mozartpay wallet show
+./stellar-go-cli wallet balance
+./stellar-go-cli wallet show
 ```
 
 ### End-to-End Tests
@@ -433,31 +433,31 @@ func (s *Service) UpdateWalletBalance(address string) (*models.Account, error)
 
 ```bash
 # Wallet operations
-./mozartpay wallet connect --provider wwwallet [--network <net>] [--passkey]
-./mozartpay wallet fund [--network <net>]
-./mozartpay wallet balance [--address <addr>]
-./mozartpay wallet show
-./mozartpay wallet list
-./mozartpay wallet switch <address>
-./mozartpay wallet rename <address> <name>
-./mozartpay wallet export [--address <addr>] [--private]
+./stellar-go-cli wallet connect --provider wwwallet [--network <net>] [--passkey]
+./stellar-go-cli wallet fund [--network <net>]
+./stellar-go-cli wallet balance [--address <addr>]
+./stellar-go-cli wallet show
+./stellar-go-cli wallet list
+./stellar-go-cli wallet switch <address>
+./stellar-go-cli wallet rename <address> <name>
+./stellar-go-cli wallet export [--address <addr>] [--private]
 
 # Asset operations
-./mozartpay asset create-ft --name <name> --symbol <sym> [--supply <amt>]
-./mozartpay asset create-nfa --name <name> [--description <desc>]
-./mozartpay asset score
-./mozartpay asset carbon --amount <amt> --standard <std>
-./mozartpay asset show
+./stellar-go-cli asset create-ft --name <name> --symbol <sym> [--supply <amt>]
+./stellar-go-cli asset create-nfa --name <name> [--description <desc>]
+./stellar-go-cli asset score
+./stellar-go-cli asset carbon --amount <amt> --standard <std>
+./stellar-go-cli asset show
 
 # Payment operations
-./mozartpay pay send --to <addr> --amount <amt> [--asset <asset>]
-./mozartpay pay quote --from <src> --to <dst> --amount <amt>
-./mozartpay pay x402 --url <url> --price <price>
+./stellar-go-cli pay send --to <addr> --amount <amt> [--asset <asset>]
+./stellar-go-cli pay quote --from <src> --to <dst> --amount <amt>
+./stellar-go-cli pay x402 --url <url> --price <price>
 
 # DID operations
-./mozartpay did create --method <method>
-./mozartpay did attest --type <type> --subject <did>
-./mozartpay did verify --vc-id <id>
+./stellar-go-cli did create --method <method>
+./stellar-go-cli did attest --type <type> --subject <did>
+./stellar-go-cli did verify --vc-id <id>
 ```
 
 ## Support and Resources

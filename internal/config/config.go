@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,25 +11,24 @@ import (
 )
 
 const (
-	DefaultConfigDir   = ".mozartpay"
+	DefaultConfigDir   = ".stellar-go-cli"
+	LegacyConfigDir    = ".mozartpay" // pre-rename directory; migrated on first run
 	DefaultConfigFile  = "config.json"
 	Version            = "0.1.0-mvp"
-	AppName            = "MozartPay CLI"
+	AppName            = "Stellar Go CLI"
 	DefaultHTTPTimeout = 30 * time.Second
 )
 
 type Config struct {
-	Network         string            `json:"network"`
-	WalletType      string            `json:"walletType"`
-	DIDMethod       string            `json:"didMethod"`
-	ActiveDID       string            `json:"activeDid,omitempty"`
-	ActiveAddress   string            `json:"activeAddress,omitempty"`
-	ContractID      string            `json:"contractID,omitempty"`
-	AgreementIDs    []string          `json:"agreementIDs,omitempty"`
-	LastAgreementID string            `json:"lastAgreementID,omitempty"`
-	Integrations    IntegrationConfig `json:"integrations"`
-	Debug           bool              `json:"debug"`
-	LLM             LLMConfig         `json:"llm,omitempty"`
+	Network       string            `json:"network"`
+	WalletType    string            `json:"walletType"`
+	DIDMethod     string            `json:"didMethod"`
+	ActiveDID     string            `json:"activeDid,omitempty"`
+	ActiveAddress string            `json:"activeAddress,omitempty"`
+	ContractID    string            `json:"contractID,omitempty"`
+	Integrations  IntegrationConfig `json:"integrations"`
+	Debug         bool              `json:"debug"`
+	LLM           LLMConfig         `json:"llm,omitempty"`
 }
 
 type IntegrationConfig struct {
@@ -98,7 +98,25 @@ func ConfigDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, DefaultConfigDir), nil
+	dir := filepath.Join(home, DefaultConfigDir)
+	migrateLegacyDir(home, dir)
+	return dir, nil
+}
+
+// migrateLegacyDir renames the legacy ~/.mozartpay config directory to the
+// current location on first run. One-release migration; remove in a later release.
+func migrateLegacyDir(home, dir string) {
+	legacy := filepath.Join(home, LegacyConfigDir)
+	if _, err := os.Stat(legacy); err != nil {
+		return
+	}
+	if _, err := os.Stat(dir); err == nil {
+		return
+	}
+	// Best-effort migration; on failure the user can rename the directory manually.
+	if err := os.Rename(legacy, dir); err != nil {
+		log.Printf("could not migrate legacy config dir %s: %v", legacy, err)
+	}
 }
 
 func Load() (*Config, error) {

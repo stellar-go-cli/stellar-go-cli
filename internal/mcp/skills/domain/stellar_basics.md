@@ -1,7 +1,7 @@
 # Stellar Basics Knowledge
 
 ## Overview
-Fundamental knowledge about the Stellar network, its architecture, operations, and key concepts that underpin the MozartPay platform's functionality.
+Fundamental knowledge about the Stellar network, its architecture, operations, and key concepts that underpin the Stellar Go CLI platform's functionality.
 
 ## Core Concepts
 

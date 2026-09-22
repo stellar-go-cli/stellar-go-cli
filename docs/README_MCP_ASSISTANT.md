@@ -1,6 +1,6 @@
-# MozartPay MCP Assistant
+# Stellar Go CLI MCP Assistant
 
-An interactive command-line assistant that provides a user-friendly interface to the MozartPay MCP (Model Context Protocol) server.
+An interactive command-line assistant that provides a user-friendly interface to the Stellar Go CLI MCP (Model Context Protocol) server.
 
 ## Features
 
@@ -25,7 +25,7 @@ python3 mcp_assistant.py
 
 ### Option 3: Build and run manually
 ```bash
-cd mozartpay
+cd stellar-go-cli
 go build ./cmd/stellar-go-cli
 cd ..
 python3 mcp_assistant.py
@@ -70,7 +70,7 @@ swap_quote from=XLM to=USDC amount=100
 ## Examples
 
 ```bash
-🤖 MozartPay MCP Assistant Ready!
+🤖 Stellar Go CLI MCP Assistant Ready!
 Type 'help' for commands or 'quit' to exit
 
 🤔 > status
@@ -103,13 +103,13 @@ Type 'help' for commands or 'quit' to exit
 
 The assistant consists of:
 
-1. **MCP Server** (`./mozartpay mcp`) - JSON-RPC 2.0 server exposing CLI tools
+1. **MCP Server** (`./stellar-go-cli mcp`) - JSON-RPC 2.0 server exposing CLI tools
 2. **Python Assistant** (`mcp_assistant.py`) - Interactive client with command parsing
 3. **Shell Wrapper** (`mcp_assistant.sh`) - Easy launcher with auto-build
 
 ## MCP Protocol
 
-The assistant communicates with the MozartPay MCP server using:
+The assistant communicates with the Stellar Go CLI MCP server using:
 - **Transport:** stdio (stdin/stdout)
 - **Protocol:** JSON-RPC 2.0
 - **Version:** MCP 2024-11-05
@@ -133,11 +133,11 @@ To extend the assistant:
 
 ## Troubleshooting
 
-**"mozartpay binary not found"**
-- Run `go build ./cmd/stellar-go-cli` in the mozartpay directory
+**"stellar-go-cli binary not found"**
+- Run `go build ./cmd/stellar-go-cli` in the stellar-go-cli directory
 
 **"Failed to initialize MCP server"**
-- Check if mozartpay binary exists and is executable
+- Check if stellar-go-cli binary exists and is executable
 - Verify you're in the correct directory
 
 **"Lost connection to MCP server"**
@@ -151,12 +151,12 @@ The MCP server can be integrated with AI assistants like Claude, ChatGPT, etc.:
 ```json
 {
   "mcpServers": {
-    "mozartpay": {
-      "command": "./mozartpay/mozartpay",
+    "stellar-go-cli": {
+      "command": "./stellar-go-cli/stellar-go-cli",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-This exposes all MozartPay CLI functionality as tools to the AI assistant.
+This exposes all Stellar Go CLI functionality as tools to the AI assistant.

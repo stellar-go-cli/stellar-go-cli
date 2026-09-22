@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (

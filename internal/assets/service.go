@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/contracts"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/network"
@@ -395,36 +395,6 @@ func (s *Service) loadStellarKeypair() (*keypair.Full, error) {
 
 // Helpers
 // ─────────────────────────────────────────────
-
-func scoreToGrade(score int) string {
-	switch {
-	case score >= 900:
-		return "AAA"
-	case score >= 800:
-		return "AA"
-	case score >= 700:
-		return "A"
-	case score >= 600:
-		return "BBB"
-	case score >= 500:
-		return "BB"
-	case score >= 400:
-		return "B"
-	default:
-		return "CCC"
-	}
-}
-
-func gradeToRisk(grade string) string {
-	switch grade {
-	case "AAA", "AA":
-		return "LOW"
-	case "A", "BBB":
-		return "MEDIUM"
-	default:
-		return "HIGH"
-	}
-}
 
 // SupportedStandards lists carbon credit standards
 func SupportedStandards() []string {

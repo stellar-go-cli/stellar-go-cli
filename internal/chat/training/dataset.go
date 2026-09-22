@@ -18,7 +18,7 @@ type TrainingExample struct {
 
 // ChatMLMessage represents a message in ChatML format
 type ChatMLMessage struct {
-	Role    string `json:"role"`    // system, user, assistant
+	Role    string `json:"role"` // system, user, assistant
 	Content string `json:"content"`
 }
 
@@ -47,11 +47,11 @@ type Dataset struct {
 
 // DatasetMetadata contains statistics and info about the dataset
 type DatasetMetadata struct {
-	TotalExamples   int                `json:"total_examples"`
-	IntentCounts    map[string]int     `json:"intent_counts"`
-	AvgInputLength  float64            `json:"avg_input_length"`
-	AvgOutputLength float64            `json:"avg_output_length"`
-	Categories      map[string]int     `json:"categories"`
+	TotalExamples   int            `json:"total_examples"`
+	IntentCounts    map[string]int `json:"intent_counts"`
+	AvgInputLength  float64        `json:"avg_input_length"`
+	AvgOutputLength float64        `json:"avg_output_length"`
+	Categories      map[string]int `json:"categories"`
 }
 
 // DatasetBuilder helps construct training datasets
@@ -84,7 +84,7 @@ func (b *DatasetBuilder) AddExample(instruction, input, output, system string) {
 
 // AddIntentExample adds an example for intent classification
 func (b *DatasetBuilder) AddIntentExample(message, intent string, confidence float64, system string) {
-	instruction := "Classify the user intent for this MozartPay CLI command. Respond with ONLY a JSON object: {\"intent\": \"NAME\", \"confidence\": 0.0-1.0}"
+	instruction := "Classify the user intent for this Stellar Go CLI command. Respond with ONLY a JSON object: {\"intent\": \"NAME\", \"confidence\": 0.0-1.0}"
 	output := fmt.Sprintf(`{"intent": "%s", "confidence": %.2f}`, intent, confidence)
 	b.AddExample(instruction, message, output, system)
 }
@@ -92,7 +92,10 @@ func (b *DatasetBuilder) AddIntentExample(message, intent string, confidence flo
 // AddParameterExample adds an example for parameter extraction
 func (b *DatasetBuilder) AddParameterExample(intent, message string, params map[string]interface{}, system string) {
 	instruction := fmt.Sprintf("Extract parameters from the message for intent '%s'. Respond with JSON.", intent)
-	outputBytes, _ := json.Marshal(params)
+	outputBytes, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
 	b.AddExample(instruction, message, string(outputBytes), system)
 }
 
@@ -104,7 +107,10 @@ func (b *DatasetBuilder) AddResponseExample(intent string, params map[string]int
 		"params": params,
 		"result": result,
 	}
-	inputBytes, _ := json.Marshal(inputData)
+	inputBytes, err := json.Marshal(inputData)
+	if err != nil {
+		return
+	}
 	b.AddExample(instruction, string(inputBytes), expectedResponse, system)
 }
 
@@ -144,7 +150,7 @@ func (ds *Dataset) SaveToFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("create dataset file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() //nolint:errcheck // best-effort close
 
 	encoder := json.NewEncoder(file)
 	for _, ex := range ds.Examples {
@@ -171,7 +177,7 @@ func LoadDataset(path string) (*Dataset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open dataset file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() //nolint:errcheck // best-effort close
 
 	ds := &Dataset{
 		Examples: make([]TrainingExample, 0),
@@ -222,7 +228,7 @@ func (ds *Dataset) SplitDataset(trainRatio, valRatio float64) (*Dataset, *Datase
 
 	total := len(ds.Examples)
 	trainEnd := int(float64(total) * trainRatio)
-	valEnd := trainEnd + int(float64(total) * valRatio)
+	valEnd := trainEnd + int(float64(total)*valRatio)
 
 	train := &Dataset{
 		Name:        ds.Name + "_train",

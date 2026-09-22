@@ -1,6 +1,6 @@
 package scanner
 
-import "github.com/stellar-go-cli/stellar-go-cli/internal/models"
+import "github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 
 // AssetPair represents a liquid trading pair for arbitrage scanning
 type AssetPair struct {

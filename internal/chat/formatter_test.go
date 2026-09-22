@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func TestFormatWalletBalance(t *testing.T) {

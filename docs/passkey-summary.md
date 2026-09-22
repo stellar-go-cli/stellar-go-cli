@@ -1,6 +1,6 @@
 # wwWallet Passkey Implementation Summary
 
-This document summarizes the complete passkey setup implementation for wwWallet in MozartPay CLI.
+This document summarizes the complete passkey setup implementation for wwWallet in Stellar Go CLI.
 
 ## Implementation Overview
 
@@ -11,10 +11,10 @@ This document summarizes the complete passkey setup implementation for wwWallet 
    - [wwWallet Integration Guide](wwallet-integration.md) - Technical documentation
 
 2. **Enhanced CLI Commands**
-   - `mozartpay wallet passkey create` - Create new passkey
-   - `mozartpay wallet passkey verify` - Verify passkey functionality
-   - `mozartpay wallet passkey list` - List all passkey credentials
-   - `mozartpay wallet passkey remove` - Remove passkey from wallet
+   - `stellar-go-cli wallet passkey create` - Create new passkey
+   - `stellar-go-cli wallet passkey verify` - Verify passkey functionality
+   - `stellar-go-cli wallet passkey list` - List all passkey credentials
+   - `stellar-go-cli wallet passkey remove` - Remove passkey from wallet
 
 3. **Dedicated Setup Script**
    - `scripts/setup-passkey.sh` - Interactive passkey setup
@@ -40,36 +40,36 @@ This document summarizes the complete passkey setup implementation for wwWallet 
 ### Method 3: Manual CLI Commands
 ```bash
 # Create wwWallet
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Fund wallet
-./mozartpay wallet fund
+./stellar-go-cli wallet fund
 
 # Manage passkeys
-./mozartpay wallet passkey list
-./mozartpay wallet passkey verify
+./stellar-go-cli wallet passkey list
+./stellar-go-cli wallet passkey verify
 ```
 
 ## Passkey Management Commands
 
 ### Create Passkey
 ```bash
-./mozartpay wallet passkey create [--address <wallet>] [active wallet]
+./stellar-go-cli wallet passkey create [--address <wallet>] [active wallet]
 ```
 
 ### Verify Passkey
 ```bash
-./mozartpay wallet passkey verify [--address <wallet>] [active wallet]
+./stellar-go-cli wallet passkey verify [--address <wallet>] [active wallet]
 ```
 
 ### List Passkeys
 ```bash
-./mozartpay wallet passkey list
+./stellar-go-cli wallet passkey list
 ```
 
 ### Remove Passkey
 ```bash
-./mozartpay wallet passkey remove [--address <wallet>] [--confirm]
+./stellar-go-cli wallet passkey remove [--address <wallet>] [--confirm]
 ```
 
 ## Security Features
@@ -156,9 +156,9 @@ type PasskeyInfo struct {
 ### Manual Testing
 ```bash
 # Test basic functionality
-./mozartpay wallet connect --provider wwwallet
-./mozartpay wallet passkey list
-./mozartpay wallet passkey verify
+./stellar-go-cli wallet connect --provider wwwallet
+./stellar-go-cli wallet passkey list
+./stellar-go-cli wallet passkey verify
 
 # Test script
 ./scripts/setup-passkey.sh --testnet
@@ -218,7 +218,7 @@ type PasskeyInfo struct {
    - Try different browser
 
 2. **Wallet not funded**
-   - Run `./mozartpay wallet fund`
+   - Run `./stellar-go-cli wallet fund`
    - Check network connectivity
    - Verify testnet status
 
@@ -229,7 +229,7 @@ type PasskeyInfo struct {
 
 ### Debug Mode
 ```bash
-./mozartpay wallet connect --provider wwwallet --debug
+./stellar-go-cli wallet connect --provider wwwallet --debug
 ./scripts/setup-passkey.sh --debug
 ```
 
@@ -237,20 +237,20 @@ type PasskeyInfo struct {
 
 ### DID Integration
 ```bash
-./mozartpay did create --method key
-./mozartpay wallet connect --provider wwwallet
+./stellar-go-cli did create --method key
+./stellar-go-cli wallet connect --provider wwwallet
 # DID automatically linked to wallet
 ```
 
 ### Asset Creation
 ```bash
-./mozartpay asset create-ft --name "MyToken" --symbol "MTK"
+./stellar-go-cli asset create-ft --name "MyToken" --symbol "MTK"
 # Uses wwWallet for transaction signing
 ```
 
 ### Payment Operations
 ```bash
-./mozartpay pay send --to <address> --amount 10 --asset XLM
+./stellar-go-cli pay send --to <address> --amount 10 --asset XLM
 # Authenticated via passkey
 ```
 

@@ -1,6 +1,6 @@
 # Chat Model Fine-Tuning Guide
 
-This guide explains how to fine-tune language models for the MozartPay CLI chat interface using LoRA/QLoRA and GGUF quantization.
+This guide explains how to fine-tune language models for the Stellar Go CLI chat interface using LoRA/QLoRA and GGUF quantization.
 
 ## Overview
 
@@ -14,7 +14,7 @@ The fine-tuning pipeline enables you to create domain-specific models for:
 ```
 Training Data → LoRA/QLoRA Training → GGUF Export → Ollama Integration
       ↓                ↓                    ↓              ↓
-  Synthetic      PEFT + Transformers    llama.cpp     MozartPay CLI
+  Synthetic      PEFT + Transformers    llama.cpp     Stellar Go CLI
   Generation     4-bit Quantization     Quantization  Inference
 ```
 
@@ -53,26 +53,26 @@ Create synthetic training examples from existing prompts:
 
 ```bash
 # Generate 100 intent examples and 50 parameter examples per type
-mozartpay chat train-data --generate --intents 100 --params 50
+stellar-go-cli chat train-data --generate --intents 100 --params 50
 
 # Generate with ChatML format (better for modern models)
-mozartpay chat train-data --generate --format chatml --output ./training.jsonl
+stellar-go-cli chat train-data --generate --format chatml --output ./training.jsonl
 ```
 
 ### 2. Validate Training Data
 
 ```bash
-mozartpay chat train-data --validate ./training.jsonl
+stellar-go-cli chat train-data --validate ./training.jsonl
 ```
 
 ### 3. Fine-Tune with LoRA
 
 ```bash
 # LoRA training (faster, requires more VRAM)
-mozartpay chat finetune --method lora \
+stellar-go-cli chat finetune --method lora \
   --base-model llama3.2:3b \
   --data ./training.jsonl \
-  --name mozartpay-intent-v1 \
+  --name stellar-cli-intent-v1 \
   --rank 32 \
   --alpha 64 \
   --epochs 5
@@ -82,10 +82,10 @@ mozartpay chat finetune --method lora \
 
 ```bash
 # QLoRA training (4-bit, works with less VRAM)
-mozartpay chat finetune --method qlora \
+stellar-go-cli chat finetune --method qlora \
   --base-model llama3.2:3b \
   --data ./training.jsonl \
-  --name mozartpay-qlora-v1 \
+  --name stellar-cli-qlora-v1 \
   --bits 4 \
   --rank 32 \
   --epochs 3
@@ -94,14 +94,14 @@ mozartpay chat finetune --method qlora \
 ### 5. Check Training Status
 
 ```bash
-mozartpay chat finetune --status <job-id>
+stellar-go-cli chat finetune --status <job-id>
 ```
 
 ### 6. Export to GGUF
 
 ```bash
 # Export with multiple quantization levels
-mozartpay chat model --export <job-id> \
+stellar-go-cli chat model --export <job-id> \
   --quantizations Q4_K_M,Q5_K_M,Q8_0 \
   --register-ollama
 ```
@@ -110,13 +110,13 @@ mozartpay chat model --export <job-id> \
 
 ```bash
 # List available models
-mozartpay chat model --list
+stellar-go-cli chat model --list
 
 # Set as active model
-mozartpay chat model --use mozartpay-intent-v1-q4_k_m
+stellar-go-cli chat model --use stellar-cli-intent-v1-q4_k_m
 
 # Start chat with fine-tuned model
-mozartpay chat
+stellar-go-cli chat
 ```
 
 ## Training Data Format
@@ -124,10 +124,10 @@ mozartpay chat
 ### Alpaca Format (Default)
 ```json
 {
-  "instruction": "Classify the user intent for this MozartPay CLI command",
+  "instruction": "Classify the user intent for this Stellar Go CLI command",
   "input": "Send 100 USDC to GABC...",
   "output": "{\"intent\": \"pay_send\", \"confidence\": 0.95}",
-  "system": "You are an intent classifier for MozartPay..."
+  "system": "You are an intent classifier for Stellar Go CLI..."
 }
 ```
 
@@ -135,7 +135,7 @@ mozartpay chat
 ```json
 {
   "messages": [
-    {"role": "system", "content": "You are MozartPay, a crypto payment assistant."},
+    {"role": "system", "content": "You are Stellar Go CLI, a crypto payment assistant."},
     {"role": "user", "content": "Classify: Send 100 USDC to GABC..."},
     {"role": "assistant", "content": "{\"intent\": \"pay_send\", \"confidence\": 0.95}"}
   ]
@@ -178,7 +178,7 @@ Recommended: **4-bit with NF4 and double quantization** for most use cases.
 The model registry stores all your fine-tuned models:
 
 ```
-~/.mozartpay/
+~/.stellar-go-cli/
 ├── models/
 │   ├── base/           # Base models (Ollama pulled)
 │   ├── adapters/       # LoRA adapters (training output)
@@ -191,13 +191,13 @@ The model registry stores all your fine-tuned models:
 
 ```bash
 # Show all models
-mozartpay chat model --list
+stellar-go-cli chat model --list
 
 # Show registry statistics
-mozartpay chat model --stats
+stellar-go-cli chat model --stats
 
 # Set active model
-mozartpay chat model --use <model-id>
+stellar-go-cli chat model --use <model-id>
 ```
 
 ## Advanced Usage
@@ -207,13 +207,13 @@ mozartpay chat model --use <model-id>
 Create your own training data:
 
 ```jsonl
-{"instruction": "Classify intent", "input": "Check my balance", "output": "{\"intent\": \"wallet_balance\"}", "system": "You are MozartPay..."}
-{"instruction": "Classify intent", "input": "Send 50 XLM to GABC...", "output": "{\"intent\": \"pay_send\"}", "system": "You are MozartPay..."}
+{"instruction": "Classify intent", "input": "Check my balance", "output": "{\"intent\": \"wallet_balance\"}", "system": "You are Stellar Go CLI..."}
+{"instruction": "Classify intent", "input": "Send 50 XLM to GABC...", "output": "{\"intent\": \"pay_send\"}", "system": "You are Stellar Go CLI..."}
 ```
 
 Save as `custom-training.jsonl` and use:
 ```bash
-mozartpay chat finetune --data ./custom-training.jsonl ...
+stellar-go-cli chat finetune --data ./custom-training.jsonl ...
 ```
 
 ### Multiple Quantization Exports
@@ -221,7 +221,7 @@ mozartpay chat finetune --data ./custom-training.jsonl ...
 Export one model in multiple sizes:
 
 ```bash
-mozartpay chat model --export job-123 \
+stellar-go-cli chat model --export job-123 \
   --quantizations Q4_K_M,Q5_K_M,Q6_K,Q8_0 \
   --register-ollama
 ```
@@ -236,7 +236,7 @@ export LLAMA_CPP_PATH=/usr/local/llama.cpp
 export PYTHON_PATH=/usr/bin/python3.11
 
 # Enable debug logging
-export MOZARTPAY_DEBUG=1
+export STELLAR_GO_CLI_DEBUG=1
 ```
 
 ## Troubleshooting
@@ -278,7 +278,7 @@ sudo systemctl start ollama
 2. **Validate First**: Always validate training data before training
 3. **Use QLoRA**: Most efficient for most hardware
 4. **Test Multiple Quants**: Compare Q4_K_M vs Q5_K_M for your use case
-5. **Version Your Models**: Use descriptive names like `mozartpay-intent-v1`
+5. **Version Your Models**: Use descriptive names like `stellar-cli-intent-v1`
 6. **Monitor Metrics**: Watch training loss for overfitting
 
 ## Example: Complete Workflow
@@ -288,30 +288,30 @@ sudo systemctl start ollama
 export LLAMA_CPP_PATH=~/llama.cpp
 
 # 2. Generate data
-mozartpay chat train-data --generate --intents 200 --params 100 --format chatml
+stellar-go-cli chat train-data --generate --intents 200 --params 100 --format chatml
 
 # 3. Validate
-mozartpay chat train-data --validate ./training-data.jsonl
+stellar-go-cli chat train-data --validate ./training-data.jsonl
 
 # 4. Train with QLoRA
-mozartpay chat finetune --method qlora \
+stellar-go-cli chat finetune --method qlora \
   --base-model llama3.2:3b \
   --data ./training-data.jsonl \
-  --name mozartpay-production-v1 \
+  --name stellar-go-cli-production-v1 \
   --rank 64 \
   --alpha 128 \
   --epochs 5
 
 # 5. Wait for completion, then export
-mozartpay chat model --export <job-id> \
+stellar-go-cli chat model --export <job-id> \
   --quantizations Q4_K_M,Q5_K_M \
   --register-ollama
 
 # 6. Set as active
-mozartpay chat model --use mozartpay-production-v1-q5_k_m
+stellar-go-cli chat model --use stellar-go-cli-production-v1-q5_k_m
 
 # 7. Test
-mozartpay chat
+stellar-go-cli chat
 > Send 100 USDC to GABC123...
 ```
 
@@ -331,4 +331,4 @@ To add new intent patterns for synthetic data generation, edit:
 
 ## License
 
-The fine-tuning infrastructure follows the same license as MozartPay CLI.
+The fine-tuning infrastructure follows the same license as Stellar Go CLI.

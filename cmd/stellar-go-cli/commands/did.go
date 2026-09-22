@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/did"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/vc"
 )
 
 // proof type constants for CLI flags
@@ -48,7 +48,7 @@ func newDIDCmd(cfg *config.Config) *Command {
 func newDIDCreateCmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	method := fs.String("method", "key", "DID method: web | key | ethr | ebsi")
-	domain := fs.String("domain", "mozartpay.com", "Domain for did:web (used with --method web)")
+	domain := fs.String("domain", "example.com", "Domain for did:web (used with --method web)")
 	output := fs.String("output", "pretty", "Output format: pretty | json")
 
 	return &Command{
@@ -63,7 +63,7 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(600 * time.Millisecond)
 
-			svc, err := did.NewService()
+			svc, err := vc.NewService()
 			if err != nil {
 				spin.Stop(false, "Key generation failed")
 				return err
@@ -83,7 +83,7 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 			spin.Stop(true, "DID document created")
 
 			if *output == "json" {
-				fmt.Println(did.PrettyPrint(doc))
+				fmt.Println(vc.PrettyPrint(doc))
 				return nil
 			}
 
@@ -96,13 +96,15 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 
 			// Save to state
 			if err := config.SaveState("did_"+string(m), doc); err == nil {
-				ui.Info("Saved to ~/.mozartpay/state/did_" + string(m) + ".json")
+				ui.Info("Saved to ~/.stellar-go-cli/state/did_" + string(m) + ".json")
 			}
 
 			// Update config with active DID
 			cfg.ActiveDID = doc.ID
 			cfg.DIDMethod = string(m)
-			config.Save(cfg)
+			if err := config.Save(cfg); err != nil {
+				return fmt.Errorf("save config: %w", err)
+			}
 
 			return nil
 		},
@@ -140,7 +142,7 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(800 * time.Millisecond)
 
-			var svc *did.Service
+			var svc *vc.Service
 			if *useWalletKey {
 				ws := wallet.NewService()
 				acc, werr := ws.GetActiveWallet()
@@ -154,9 +156,9 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 						spin.Stop(false, "Key derivation failed")
 						return kerr
 					}
-					svc = did.NewServiceWithECDSAKey(key)
+					svc = vc.NewServiceWithECDSAKey(key)
 				} else {
-					s, serr := did.NewServiceWithStellarSeed(acc.PrivateKey)
+					s, serr := vc.NewServiceWithStellarSeed(acc.PrivateKey)
 					if serr != nil {
 						spin.Stop(false, "Stellar seed error: "+serr.Error())
 						return serr
@@ -171,10 +173,10 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 						spin.Stop(false, "Key generation failed")
 						return eerr
 					}
-					svc = did.NewServiceWithECDSAKey(eckey)
+					svc = vc.NewServiceWithECDSAKey(eckey)
 				} else {
 					var err error
-					svc, err = did.NewService()
+					svc, err = vc.NewService()
 					if err != nil {
 						spin.Stop(false, "Failed")
 						return err
@@ -189,41 +191,43 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			}
 
 			vcTypeName := vcTypeToName(*vcType)
-			vc, err := svc.IssueNationalIDVC(doc.ID, doc.ID, *name, *country, "", *birthYear, *level)
+			cred, err := svc.IssueNationalIDVC(doc.ID, doc.ID, *name, *country, "", *birthYear, *level)
 			if err != nil {
 				spin.Stop(false, err.Error())
 				return err
 			}
-			vc.Type = append(vc.Type[:1], vcTypeName)
+			cred.Type = append(cred.Type[:1], vcTypeName)
 
 			spin.Stop(true, "Attestation complete")
 
-			config.SaveState("vc_latest", vc)
-			config.SaveState("did_"+string(m), doc)
+			config.SaveState("vc_latest", cred)     //nolint:errcheck // best-effort state cache
+			config.SaveState("did_"+string(m), doc) //nolint:errcheck // best-effort state cache
 			cfg.ActiveDID = doc.ID
 			cfg.DIDMethod = string(m)
-			config.Save(cfg)
+			if err := config.Save(cfg); err != nil {
+				return fmt.Errorf("save config: %w", err)
+			}
 
 			if *output == "json" {
-				fmt.Println(did.PrettyPrint(vc))
+				fmt.Println(vc.PrettyPrint(cred))
 				return nil
 			}
 
 			ui.SectionLabel("Verifiable Credential")
-			ui.KV("VC ID", vc.ID)
+			ui.KV("VC ID", cred.ID)
 			ui.KV("Type", vcTypeName)
-			ui.KV("Issuer DID", safeTrunc(vc.Issuer, 40)+"...")
+			ui.KV("Issuer DID", safeTrunc(cred.Issuer, 40)+"...")
 			ui.KV("Subject", *name)
 			ui.KV("Country", *country)
 			ui.KV("Level", *level)
-			ui.KV("Issued", vc.IssuanceDate.Format(time.RFC3339))
-			ui.KV("Expires", vc.ExpirationDate.Format("2006-01-02"))
-			ui.KV("Proof Type", vc.Proof.Type)
-			if vc.Proof.ProofValue != "" {
-				ui.KV("Proof Value (trunc)", safeTrunc(vc.Proof.ProofValue, 24)+"...")
+			ui.KV("Issued", cred.IssuanceDate.Format(time.RFC3339))
+			ui.KV("Expires", cred.ExpirationDate.Format("2006-01-02"))
+			ui.KV("Proof Type", cred.Proof.Type)
+			if cred.Proof.ProofValue != "" {
+				ui.KV("Proof Value (trunc)", safeTrunc(cred.Proof.ProofValue, 24)+"...")
 			}
-			if vc.Proof.JWSSignature != "" {
-				ui.KV("JWS (trunc)", safeTrunc(vc.Proof.JWSSignature, 24)+"...")
+			if cred.Proof.JWSSignature != "" {
+				ui.KV("JWS (trunc)", safeTrunc(cred.Proof.JWSSignature, 24)+"...")
 			}
 			if *useWalletKey {
 				ui.KVColor("Signed By", "wallet key", ui.BrightGreen)
@@ -231,7 +235,7 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 				ui.KV("Signed By", "ephemeral key")
 			}
 
-			ui.Info("Saved to ~/.mozartpay/state/vc_latest.json")
+			ui.Info("Saved to ~/.stellar-go-cli/state/vc_latest.json")
 			ui.KVColor("Active DID", safeTrunc(doc.ID, 50)+"...", ui.Teal)
 
 			return nil
@@ -252,17 +256,17 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 		Run: func(c *Command, args []string) error {
 			ui.Header("Verify VC")
 
-			var vc models.VerifiableCredential
+			var cred models.VerifiableCredential
 			if *vcFile != "" {
 				data, err := os.ReadFile(*vcFile)
 				if err != nil {
 					return fmt.Errorf("read VC file: %w", err)
 				}
-				if err := json.Unmarshal(data, &vc); err != nil {
+				if err := json.Unmarshal(data, &cred); err != nil {
 					return fmt.Errorf("parse VC file: %w", err)
 				}
-			} else if err := config.LoadState("vc_latest", &vc); err != nil {
-				ui.Warn("No saved VC found. Run 'mozartpay did attest' first.")
+			} else if err := config.LoadState("vc_latest", &cred); err != nil {
+				ui.Warn("No saved VC found. Run 'stellar-go-cli did attest' first.")
 				return nil
 			}
 
@@ -270,8 +274,12 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(500 * time.Millisecond)
 
-			svc, _ := did.NewService()
-			valid, err := svc.Verify(&vc)
+			svc, serr := vc.NewService()
+			if serr != nil {
+				spin.Stop(false, "Service init failed")
+				return fmt.Errorf("vc service: %w", serr)
+			}
+			valid, err := svc.Verify(&cred)
 			if err != nil {
 				spin.Stop(false, "Verification failed: "+err.Error())
 				return fmt.Errorf("verification failed: %w", err)
@@ -279,11 +287,11 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			spin.Stop(valid, map[bool]string{true: "Credential is VALID", false: "Credential is INVALID"}[valid])
 
 			ui.SectionLabel("Verification Result")
-			ui.KV("VC ID", vc.ID)
-			ui.KV("Issuer", safeTrunc(vc.Issuer, 40)+"...")
-			ui.KV("Proof Type", vc.Proof.Type)
+			ui.KV("VC ID", cred.ID)
+			ui.KV("Issuer", safeTrunc(cred.Issuer, 40)+"...")
+			ui.KV("Proof Type", cred.Proof.Type)
 			ui.KV("Valid", fmt.Sprintf("%v", valid))
-			ui.KV("Expires", vc.ExpirationDate.Format("2006-01-02"))
+			ui.KV("Expires", cred.ExpirationDate.Format("2006-01-02"))
 			ui.KV("Status", map[bool]string{true: "✓ VERIFIED", false: "✗ INVALID"}[valid])
 
 			if !valid {

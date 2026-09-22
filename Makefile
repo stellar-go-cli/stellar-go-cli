@@ -65,6 +65,14 @@ clean:
 tidy:
 	@go mod tidy
 
+## xsd: Copy ISO 20022 XSDs from messages/ into testdata (enables TestXSDValidation_*)
+xsd:
+	@mkdir -p pkg/iso20022/testdata/xsd
+	@cp messages/pacs.008.001.14.xsd messages/pacs.002.001.16.xsd \
+		messages/pacs.004.001.15.xsd messages/pacs.009.001.13.xsd \
+		pkg/iso20022/testdata/xsd/
+	@echo "✓ XSDs copied to pkg/iso20022/testdata/xsd/"
+
 # ─── Demo targets ────────────────────────────
 
 ## demo-did: Demo DID creation
@@ -80,20 +88,19 @@ demo-wallet: build
 	@$(BUILD_DIR)/$(BINARY) wallet connect --provider wwwallet --network stellar-testnet
 	@$(BUILD_DIR)/$(BINARY) wallet fund --network stellar-testnet
 
-## demo-asset: Demo asset creation with score and carbon
+## demo-asset: Demo asset creation with carbon offset
 demo-asset: build
 	@$(BUILD_DIR)/$(BINARY) asset create-ft \
 		--name "OGTechToken" \
 		--symbol OGT \
 		--supply 10000000 \
-		--with-score \
 		--with-carbon \
 		--carbon-amount 5.0
 
 ## demo-pay: Demo payment via x402
 demo-pay: build
 	@$(BUILD_DIR)/$(BINARY) pay x402 \
-		--resource "https://api.mozartpay.com/v1/feed" \
+		--resource "https://api.example.com/v1/feed" \
 		--price 0.001 \
 		--asset USDC
 
@@ -105,23 +112,23 @@ demo-report: build
 demo-flow: build
 	@$(BUILD_DIR)/$(BINARY) flow
 
-## demo-full: Run the full end-to-end orchestrated flow
+## demo-full: Run the full end-to-end flow
 demo-full: build
 	@echo ""
 	@echo "════════════════════════════════════════════"
-	@echo " MozartPay — Full Orchestrated Flow Demo"
+	@echo " Stellar Go CLI — Full End-to-End Flow Demo"
 	@echo "════════════════════════════════════════════"
 	@$(BUILD_DIR)/$(BINARY) init
 	@$(BUILD_DIR)/$(BINARY) did attest --method ebsi --name "Olvis E. Gil Ríos" --country AT
 	@$(BUILD_DIR)/$(BINARY) wallet connect --provider wwwallet --network stellar-testnet
 	@$(BUILD_DIR)/$(BINARY) wallet fund --network stellar-testnet
-	@$(BUILD_DIR)/$(BINARY) asset create-ft --name "EduToken" --symbol EDU --supply 5000000 --with-score --with-carbon
-	@$(BUILD_DIR)/$(BINARY) pay x402 --resource "https://api.mozartpay.com/v1/edudata" --price 0.001 --asset USDC
+	@$(BUILD_DIR)/$(BINARY) asset create-ft --name "EduToken" --symbol EDU --supply 5000000 --with-carbon
+	@$(BUILD_DIR)/$(BINARY) pay x402 --resource "https://api.example.com/v1/edudata" --price 0.001 --asset USDC
 	@$(BUILD_DIR)/$(BINARY) report generate --vc-attach
 	@$(BUILD_DIR)/$(BINARY) status
 
 ## help: Show this help
 help:
-	@echo "MozartPay CLI — Available targets:"
+	@echo "Stellar Go CLI — Available targets:"
 	@echo ""
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## /  /' | column -t -s ':'

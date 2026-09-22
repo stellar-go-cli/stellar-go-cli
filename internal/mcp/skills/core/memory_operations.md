@@ -1,7 +1,7 @@
 # Memory Skills
 
 ## Overview
-Memory management capabilities for the MozartPay MCP server, enabling AI assistants to remember user preferences, conversation context, and operational history across sessions.
+Memory management capabilities for the Stellar Go CLI MCP server, enabling AI assistants to remember user preferences, conversation context, and operational history across sessions.
 
 ## Skills
 
@@ -525,4 +525,4 @@ Assistant: "Based on your patterns, you typically:
 - Identify learning opportunities
 - Propose automation workflows
 
-This memory system transforms MozartPay from a transactional tool into a personalized assistant that truly understands and remembers your needs.
+This memory system transforms Stellar Go CLI from a transactional tool into a personalized assistant that truly understands and remembers your needs.

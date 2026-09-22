@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 // createStringSchema creates a JSON Schema for a string parameter
@@ -56,7 +55,7 @@ func buildInputSchema(properties map[string]interface{}, required []string) json
 	if len(required) > 0 {
 		schema["required"] = required
 	}
-	data, _ := json.Marshal(schema)
+	data, _ := json.Marshal(schema) //nolint:errcheck // schema map is always marshalable
 	return data
 }
 
@@ -458,7 +457,7 @@ func (s *Server) registerSystemTools() {
 	// system_status - Get system status
 	s.RegisterTool(Tool{
 		Name:        "system_status",
-		Description: "Get MozartPay system status including network connection and version",
+		Description: "Get Stellar Go CLI system status including network connection and version",
 		InputSchema: buildInputSchema(map[string]interface{}{}, nil),
 	}, s.handleSystemStatus)
 
@@ -666,11 +665,4 @@ func getBoolArg(args map[string]interface{}, key string) bool {
 	}
 	b, ok := val.(bool)
 	return b && ok
-}
-
-// formatError creates a formatted error response
-func formatError(err error) map[string]interface{} {
-	return map[string]interface{}{
-		"error": fmt.Sprintf("%v", err),
-	}
 }

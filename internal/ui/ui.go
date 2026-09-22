@@ -67,21 +67,21 @@ func White_(s string) string   { return colorize(BrightWhite, s) }
 // ─────────────────────────────────────────────
 
 func PrintBanner() {
-	fmt.Println()
-	fmt.Println(Gold_("  ███╗   ███╗ ██████╗ ███████╗ █████╗ ██████╗ ████████╗"))
-	fmt.Println(Gold_("  ████╗ ████║██╔═══██╗╚══███╔╝██╔══██╗██╔══██╗╚══██╔══╝"))
-	fmt.Println(Gold_("  ██╔████╔██║██║   ██║  ███╔╝ ███████║██████╔╝   ██║   "))
-	fmt.Println(Gold_("  ██║╚██╔╝██║██║   ██║ ███╔╝  ██╔══██║██╔══██╗   ██║   "))
-	fmt.Println(Gold_("  ██║ ╚═╝ ██║╚██████╔╝███████╗██║  ██║██║  ██║   ██║   "))
-	fmt.Println(Gold_("  ╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝  "))
-	fmt.Println()
-	fmt.Printf("  %s %s  %s\n",
-		Teal_("Orchestrated Agreements CLI"),
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, Teal_("  ███████╗████████╗███████╗██╗     ██╗      █████╗ ██████╗"))
+	fmt.Fprintln(os.Stderr, Teal_("  ██╔════╝╚══██╔══╝██╔════╝██║     ██║     ██╔══██╗██╔══██╗"))
+	fmt.Fprintln(os.Stderr, Teal_("  ███████╗   ██║   █████╗  ██║     ██║     ███████║██████╔╝"))
+	fmt.Fprintln(os.Stderr, Teal_("  ╚════██║   ██║   ██╔══╝  ██║     ██║     ██╔══██║██╔══██╗"))
+	fmt.Fprintln(os.Stderr, Teal_("  ███████║   ██║   ███████╗███████╗███████╗██║  ██║██║  ██║"))
+	fmt.Fprintln(os.Stderr, Teal_("  ╚══════╝   ╚═╝   ╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝"))
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %s %s  %s\n",
+		Bold_("Stellar Go CLI"),
 		Dim_("|"),
-		Dim_("v0.1.0-mvp · OG Technologies EU"),
+		Dim_("v0.1.0-mvp"),
 	)
-	fmt.Println(Dim_("  ─────────────────────────────────────────────────────"))
-	fmt.Println()
+	fmt.Fprintln(os.Stderr, Dim_("  ─────────────────────────────────────────────────────"))
+	fmt.Fprintln(os.Stderr)
 }
 
 // ─────────────────────────────────────────────
@@ -108,10 +108,10 @@ func (s *Spinner) Start() {
 		for {
 			select {
 			case <-s.done:
-				fmt.Printf("\r%s\r", strings.Repeat(" ", 80))
+				fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 80))
 				return
 			default:
-				fmt.Printf("\r  %s %s", Teal_(s.frames[i%len(s.frames)]), s.msg)
+				fmt.Fprintf(os.Stderr, "\r  %s %s", Teal_(s.frames[i%len(s.frames)]), s.msg)
 				time.Sleep(80 * time.Millisecond)
 				i++
 			}
@@ -123,9 +123,9 @@ func (s *Spinner) Stop(success bool, msg string) {
 	close(s.done)
 	time.Sleep(100 * time.Millisecond)
 	if success {
-		fmt.Printf("  %s %s\n", Green_("✓"), msg)
+		fmt.Fprintf(os.Stderr, "  %s %s\n", Green_("✓"), msg)
 	} else {
-		fmt.Printf("  %s %s\n", Red_("✗"), msg)
+		fmt.Fprintf(os.Stderr, "  %s %s\n", Red_("✗"), msg)
 	}
 }
 
@@ -134,47 +134,47 @@ func (s *Spinner) Stop(success bool, msg string) {
 // ─────────────────────────────────────────────
 
 func Success(msg string) {
-	fmt.Printf("  %s %s\n", Green_("✓"), msg)
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Green_("✓"), msg)
 }
 
 func Error(msg string) {
-	fmt.Printf("  %s %s\n", Red_("✗"), Red_(msg))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Red_("✗"), Red_(msg))
 }
 
 func Info(msg string) {
-	fmt.Printf("  %s %s\n", Teal_("→"), msg)
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Teal_("→"), msg)
 }
 
 func Warn(msg string) {
-	fmt.Printf("  %s %s\n", Yellow_("⚠"), msg)
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Yellow_("⚠"), msg)
 }
 
 func Header(title string) {
-	fmt.Println()
-	fmt.Printf("  %s\n", Bold_(Gold_(title)))
-	fmt.Printf("  %s\n", Dim_(strings.Repeat("─", len(title)+2)))
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %s\n", Bold_(Gold_(title)))
+	fmt.Fprintf(os.Stderr, "  %s\n", Dim_(strings.Repeat("─", len(title)+2)))
 }
 
 func SectionLabel(label string) {
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 	dots := strings.Repeat("·", 40-len(label))
-	fmt.Printf("  %s %s\n", Dim_(label), Dim_(dots))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", Dim_(label), Dim_(dots))
 }
 
 func KV(key, value string) {
-	fmt.Printf("  %-22s %s\n", Dim_(key+":"), White_(value))
+	fmt.Fprintf(os.Stderr, "  %-22s %s\n", Dim_(key+":"), White_(value))
 }
 
 func KVColor(key, value, color string) {
-	fmt.Printf("  %-22s %s\n", Dim_(key+":"), colorize(color, value))
+	fmt.Fprintf(os.Stderr, "  %-22s %s\n", Dim_(key+":"), colorize(color, value))
 }
 
 func Separator() {
-	fmt.Println(Dim_("  ─────────────────────────────────────────────────────"))
+	fmt.Fprintln(os.Stderr, Dim_("  ─────────────────────────────────────────────────────"))
 }
 
 func PrintStep(n int, label string) {
-	fmt.Printf("\n  %s %s\n",
+	fmt.Fprintf(os.Stderr, "\n  %s %s\n",
 		colorize(Gold, fmt.Sprintf("[%02d]", n)),
 		Bold_(label),
 	)
@@ -186,10 +186,10 @@ func Link(url, text string) {
 		// Use terminal hyperlink escape sequence for modern terminals
 		// Format: \033]8;;URL\033\TEXT\033]8;;\033\
 		hyperlink := fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
-		fmt.Printf("  %s %s\n", Teal_("🔗"), hyperlink)
+		fmt.Fprintf(os.Stderr, "  %s %s\n", Teal_("🔗"), hyperlink)
 	} else {
 		// Fallback for non-terminal environments or CI/CD
-		fmt.Printf("  %s %s: %s\n", Teal_("🔗"), text, url)
+		fmt.Fprintf(os.Stderr, "  %s %s: %s\n", Teal_("🔗"), text, url)
 	}
 }
 
@@ -225,30 +225,30 @@ func (t *Table) Print() {
 	}
 
 	// Header
-	fmt.Print("  ")
+	fmt.Fprint(os.Stderr, "  ")
 	for i, h := range t.Headers {
-		fmt.Printf("%-*s  ", widths[i], Dim_(h))
+		fmt.Fprintf(os.Stderr, "%-*s  ", widths[i], Dim_(h))
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	// Separator
-	fmt.Print("  ")
+	fmt.Fprint(os.Stderr, "  ")
 	for _, w := range widths {
-		fmt.Print(Dim_(strings.Repeat("─", w+2)))
+		fmt.Fprint(os.Stderr, Dim_(strings.Repeat("─", w+2)))
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	// Rows
 	for _, row := range t.Rows {
-		fmt.Print("  ")
+		fmt.Fprint(os.Stderr, "  ")
 		for i, cell := range row {
 			if i < len(widths) {
-				fmt.Printf("%-*s  ", widths[i], cell)
+				fmt.Fprintf(os.Stderr, "%-*s  ", widths[i], cell)
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 }
 
 // ─────────────────────────────────────────────
@@ -256,27 +256,33 @@ func (t *Table) Print() {
 // ─────────────────────────────────────────────
 
 func Prompt(label string) string {
-	fmt.Printf("  %s %s ", Teal_("?"), label)
+	fmt.Fprintf(os.Stderr, "  %s %s ", Teal_("?"), label)
 	var input string
-	fmt.Scanln(&input)
+	if _, err := fmt.Scanln(&input); err != nil {
+		return ""
+	}
 	return strings.TrimSpace(input)
 }
 
 func Confirm(label string) bool {
-	fmt.Printf("  %s %s [y/N]: ", Teal_("?"), label)
+	fmt.Fprintf(os.Stderr, "  %s %s [y/N]: ", Teal_("?"), label)
 	var input string
-	fmt.Scanln(&input)
+	if _, err := fmt.Scanln(&input); err != nil {
+		return false
+	}
 	return strings.ToLower(strings.TrimSpace(input)) == "y"
 }
 
 func SelectNetwork(defaultNetwork string) string {
-	fmt.Printf("  %s Select network:\n", Teal_("?"))
-	fmt.Printf("    1) %s\n", Green_("Testnet")+" (stellar-testnet)")
-	fmt.Printf("    2) %s\n", Yellow_("Mainnet")+" (stellar-mainnet)")
-	fmt.Printf("  %s Enter choice [1-2]: ", Teal_("?"))
+	fmt.Fprintf(os.Stderr, "  %s Select network:\n", Teal_("?"))
+	fmt.Fprintf(os.Stderr, "    1) %s\n", Green_("Testnet")+" (stellar-testnet)")
+	fmt.Fprintf(os.Stderr, "    2) %s\n", Yellow_("Mainnet")+" (stellar-mainnet)")
+	fmt.Fprintf(os.Stderr, "  %s Enter choice [1-2]: ", Teal_("?"))
 
 	var choice string
-	fmt.Scanln(&choice)
+	if _, err := fmt.Scanln(&choice); err != nil {
+		return defaultNetwork
+	}
 
 	choice = strings.TrimSpace(choice)
 	switch choice {
@@ -288,16 +294,18 @@ func SelectNetwork(defaultNetwork string) string {
 		if choice == "" {
 			return defaultNetwork
 		}
-		fmt.Printf("  %s Invalid choice. Using default: %s\n", Yellow_("⚠"), defaultNetwork)
+		fmt.Fprintf(os.Stderr, "  %s Invalid choice. Using default: %s\n", Yellow_("⚠"), defaultNetwork)
 		return defaultNetwork
 	}
 }
 
 func PromptSupply(defaultSupply string) string {
 	for {
-		fmt.Printf("  %s Total supply [%s]: ", Teal_("?"), defaultSupply)
+		fmt.Fprintf(os.Stderr, "  %s Total supply [%s]: ", Teal_("?"), defaultSupply)
 		var input string
-		fmt.Scanln(&input)
+		if _, err := fmt.Scanln(&input); err != nil {
+			return defaultSupply
+		}
 
 		input = strings.TrimSpace(input)
 		if input == "" {
@@ -309,7 +317,7 @@ func PromptSupply(defaultSupply string) string {
 			return input
 		}
 
-		fmt.Printf("  %s Invalid supply. Please enter a positive number.\n", Red_("✗"))
+		fmt.Fprintf(os.Stderr, "  %s Invalid supply. Please enter a positive number.\n", Red_("✗"))
 	}
 }
 
@@ -322,7 +330,7 @@ func isValidSupply(supply string) bool {
 	// Simple validation - check if it's a valid number format
 	// This is a basic check; in production you'd want more robust validation
 	for _, char := range supply {
-		if !((char >= '0' && char <= '9') || char == '.' || char == ',') {
+		if (char < '0' || char > '9') && char != '.' && char != ',' {
 			return false
 		}
 	}

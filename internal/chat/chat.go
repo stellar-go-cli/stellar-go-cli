@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -12,11 +12,11 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/assets"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 // Chat represents the interactive chat session
@@ -81,7 +81,7 @@ func (c *Chat) Start() error {
 
 	// Print welcome banner
 	fmt.Println("\n============================================================")
-	fmt.Println("🤖 MozartPay Chat with Smart Parameter Collection!")
+	fmt.Println("🤖 Stellar Go CLI Chat with Smart Parameter Collection!")
 	fmt.Println("Type 'help' for commands or 'quit' to exit")
 	fmt.Println("============================================================")
 
@@ -266,7 +266,7 @@ func (c *Chat) handleWalletShow() string {
 	}
 
 	// Update cache with current wallets
-	wallets, _ := c.getWalletsFromRegistry()
+	wallets, _ := c.getWalletsFromRegistry() //nolint:errcheck // cache update is best-effort
 	c.state.UpdateWalletCache(wallets)
 
 	return c.formatter.FormatWalletShow(activeWallet) + c.suggester.GenerateWalletSuggestions()
@@ -314,7 +314,7 @@ func (c *Chat) handleWalletBalance() string {
 	}
 
 	// Update cache with current wallets
-	wallets, _ := c.getWalletsFromRegistry()
+	wallets, _ := c.getWalletsFromRegistry() //nolint:errcheck // cache update is best-effort
 	c.state.UpdateWalletCache(wallets)
 
 	// Track successful operation for smart suggestions
@@ -790,7 +790,7 @@ func (c *Chat) handleExecuteTriangular(params map[string]interface{}) string {
 		return "❌ No active wallet found. Please create or select a wallet first." + c.suggester.GenerateSuggestions(c.state)
 	}
 
-	output := fmt.Sprintf("🚀 **Executing Triangular Arbitrage**\n\n")
+	output := "🚀 **Executing Triangular Arbitrage**\n\n"
 	output += fmt.Sprintf("📍 Path: %s\n", opportunity.Path.Name)
 	output += fmt.Sprintf("💰 Expected Profit: %.6f XLM\n", opportunity.NetProfitXLM)
 	output += fmt.Sprintf("👛 Wallet: %s\n\n", activeWallet.Address)
@@ -805,7 +805,7 @@ func (c *Chat) handleExecuteTriangular(params map[string]interface{}) string {
 
 	c.state.ClearPendingTriangularOpportunities()
 
-	output += fmt.Sprintf("✅ **Success!**\n")
+	output += "✅ **Success!**\n"
 	output += fmt.Sprintf("🔗 Transaction Hash: %v\n", txHash)
 	output += fmt.Sprintf("💸 Profit realized: %.6f XLM\n\n", opportunity.NetProfitXLM)
 	output += "📊 Check your wallet balance to see the updated amounts."
@@ -903,7 +903,7 @@ func (c *Chat) handleWalletAssets() string {
 	}
 
 	if len(assets) == 0 {
-		output := fmt.Sprintf("📊 **Wallet Assets**\n\n")
+		output := "📊 **Wallet Assets**\n\n"
 		output += fmt.Sprintf("📍 Address: %s\n", account.Address[:16]+"...")
 		output += fmt.Sprintf("🌐 Network: %s\n\n", capitalize(strings.TrimPrefix(string(account.Network), "stellar-")))
 		output += "No assets found. Account may be unfunded or has no trustlines.\n"
@@ -912,7 +912,7 @@ func (c *Chat) handleWalletAssets() string {
 	}
 
 	// Format assets display
-	output := fmt.Sprintf("📊 **Wallet Assets**\n\n")
+	output := "📊 **Wallet Assets**\n\n"
 	output += fmt.Sprintf("📍 Address: %s\n", account.Address[:16]+"...")
 	output += fmt.Sprintf("🌐 Network: %s\n\n", capitalize(strings.TrimPrefix(string(account.Network), "stellar-")))
 	output += fmt.Sprintf("**%d Asset(s):**\n\n", len(assets))
@@ -1005,7 +1005,7 @@ func (c *Chat) handlePaySend(params map[string]interface{}) string {
 	configNetwork := models.Network(c.cfg.Network)
 
 	// Show payment summary and ask for confirmation
-	output := fmt.Sprintf("💸 **Payment Summary**\n\n")
+	output := "💸 **Payment Summary**\n\n"
 	output += fmt.Sprintf("👛 From: %s\n", activeWallet.Address[:16]+"...")
 	output += fmt.Sprintf("👤 To: %s\n", destination[:16]+"...")
 	output += fmt.Sprintf("💰 Amount: %s %s\n", amount, strings.ToUpper(asset))
@@ -1146,7 +1146,7 @@ func (c *Chat) handlePaySendExecute(params map[string]interface{}) string {
 	}
 
 	// For now, simulate the payment execution (since we don't have the full payment service integration)
-	output := fmt.Sprintf("🚀 **Executing Payment**\n\n")
+	output := "🚀 **Executing Payment**\n\n"
 	output += fmt.Sprintf("👛 From: %s\n", activeWallet.Address[:16]+"...")
 	output += fmt.Sprintf("👤 To: %s\n", destination[:16]+"...")
 	output += fmt.Sprintf("💰 Amount: %s %s\n", amount, asset)
@@ -1159,8 +1159,8 @@ func (c *Chat) handlePaySendExecute(params map[string]interface{}) string {
 	// Generate a mock transaction hash
 	txHash := "1234567890ABCDEF" + "FEDCBA0987654321"
 	output += fmt.Sprintf("🔗 **Transaction Hash**: %s\n", txHash)
-	output += fmt.Sprintf("📊 **Ledger**: 12345\n")
-	output += fmt.Sprintf("💸 **Fee**: 0.01 XLM\n")
+	output += "📊 **Ledger**: 12345\n"
+	output += "💸 **Fee**: 0.01 XLM\n"
 	output += "🎉 **Payment completed successfully!**"
 
 	// Track successful payment for smart suggestions
@@ -1231,20 +1231,6 @@ func (c *Chat) findAndActivateWalletOnNetwork(targetNetwork models.Network) erro
 }
 
 // validateNetworkConsistency checks if wallet network matches config network
-func (c *Chat) validateNetworkConsistency() error {
-	configNetwork := models.Network(c.cfg.Network)
-
-	activeWallet, err := c.walletSvc.GetActiveWallet()
-	if err != nil {
-		return fmt.Errorf("no active wallet: %w", err)
-	}
-
-	if activeWallet.Network != configNetwork {
-		return fmt.Errorf("network mismatch: wallet is on %s but config is %s", activeWallet.Network, configNetwork)
-	}
-
-	return nil
-}
 
 // getNetworkWallet finds a wallet for the specified network
 func (c *Chat) getNetworkWallet(network models.Network) (*models.WalletEntry, error) {
@@ -1338,7 +1324,7 @@ func (c *Chat) handleGreeting() string {
 	networkDisplay := capitalize(strings.TrimPrefix(network, "stellar-"))
 
 	// Build personalized greeting
-	greeting = fmt.Sprintf("%s! 👋 Welcome to MozartPay on %s!\n\n", timeGreeting, networkDisplay)
+	greeting = fmt.Sprintf("%s! 👋 Welcome to Stellar Go CLI on %s!\n\n", timeGreeting, networkDisplay)
 
 	// Add context-aware tips
 	if walletCount == 0 {

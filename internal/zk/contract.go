@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/txnbuild"
@@ -227,7 +227,7 @@ func (cs *ContractService) BuildZKTransaction(
 	default:
 		// Try to use reflection to get the address and sequence
 		v := reflect.ValueOf(sourceAcct)
-		if v.Kind() == reflect.Ptr {
+		if v.Kind() == reflect.Pointer {
 			v = v.Elem()
 		}
 		if v.Kind() == reflect.Struct {
@@ -307,9 +307,11 @@ func (cs *ContractService) SubmitZKTransaction(tx *txnbuild.Transaction) (interf
 	resp, err := cs.client.SubmitTransactionXDR(txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
-			rc, _ := herr.ResultCodes()
-			return nil, fmt.Errorf("ZK transaction failed — code: %s, ops: %v",
-				rc.TransactionCode, rc.OperationCodes)
+			if rc, rerr := herr.ResultCodes(); rerr == nil && rc != nil {
+				return nil, fmt.Errorf("ZK transaction failed — code: %s, ops: %v",
+					rc.TransactionCode, rc.OperationCodes)
+			}
+			return nil, fmt.Errorf("ZK transaction failed: %s", herr.Problem.Title)
 		}
 		return nil, fmt.Errorf("submit ZK transaction to Horizon: %w", err)
 	}

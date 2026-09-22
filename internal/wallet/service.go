@@ -13,14 +13,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/protocols/horizon/operations"
@@ -191,11 +192,14 @@ func (s *Service) FundTestnetAccount(acc *models.Account) (*models.Account, erro
 		if err != nil {
 			return nil, fmt.Errorf("failed to call Friendbot: %w", err)
 		}
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, fmt.Errorf("Friendbot returned status %d: %s", resp.StatusCode, string(body))
+			body, rerr := io.ReadAll(resp.Body)
+			if rerr != nil {
+				return nil, fmt.Errorf("friendbot returned status %d", resp.StatusCode)
+			}
+			return nil, fmt.Errorf("friendbot returned status %d: %s", resp.StatusCode, string(body))
 		}
 
 		// Parse Friendbot response
@@ -385,7 +389,7 @@ func (s *Service) GetTransactions(address string, network models.Network, limit 
 					if o.Asset.Type == "native" {
 						info.Asset = "XLM"
 					} else {
-						info.Asset = o.Asset.Code
+						info.Asset = o.Code
 					}
 				case *operations.CreateAccount:
 					info.Amount = parseAmount(o.StartingBalance)
@@ -429,8 +433,10 @@ func getOperationType(opType string) string {
 }
 
 func parseAmount(amount string) float64 {
-	var val float64
-	fmt.Sscanf(amount, "%f", &val)
+	val, err := strconv.ParseFloat(amount, 64)
+	if err != nil {
+		return 0
+	}
 	return val
 }
 
@@ -472,7 +478,7 @@ func (s *Service) SaveAccountByType(acc *models.Account) error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	statePath := fmt.Sprintf("%s/.mozartpay/state/account_%s.json", stateDir, acc.Type)
+	statePath := fmt.Sprintf("%s/.stellar-go-cli/state/account_%s.json", stateDir, acc.Type)
 	data, err := json.Marshal(acc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal account: %w", err)
@@ -483,7 +489,7 @@ func (s *Service) SaveAccountByType(acc *models.Account) error {
 	}
 
 	// Also save as default for backward compatibility
-	defaultPath := fmt.Sprintf("%s/.mozartpay/state/account.json", stateDir)
+	defaultPath := fmt.Sprintf("%s/.stellar-go-cli/state/account.json", stateDir)
 	return os.WriteFile(defaultPath, data, 0644)
 }
 
@@ -494,7 +500,7 @@ func (s *Service) LoadAccountByType(walletType string) (*models.Account, error) 
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	statePath := fmt.Sprintf("%s/.mozartpay/state/account_%s.json", stateDir, walletType)
+	statePath := fmt.Sprintf("%s/.stellar-go-cli/state/account_%s.json", stateDir, walletType)
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read account state: %w", err)
@@ -550,41 +556,13 @@ func FaucetURL(n models.Network, address string) string {
 	case models.NetworkEVMSepolia:
 		return fmt.Sprintf("https://sepoliafaucet.com/?address=%s", address)
 	default:
-		return "https://faucet.mozartpay.com"
+		return "https://friendbot.stellar.org"
 	}
 }
 
 // ─────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────
-
-func (s *Service) deriveStellarAddress(secretKey string) string {
-	// Use a known valid Stellar address pattern and modify it based on secretKey
-	// This ensures we generate addresses that are properly formatted
-	// In production, would use proper Stellar SDK with StrKey encoding
-
-	baseAddress := "GDQ5ENR7YRYH4DAKZ2YQ3S2N5DQX2W3FMIPRGDZJAVJNGXQJQYQQ"
-
-	// Use secretKey to create variation but keep valid format
-	hash := mpCrypto.Hash256([]byte(secretKey))
-
-	// Create a valid Stellar address by mixing with base pattern
-	result := make([]byte, 56)
-	result[0] = 'G'
-
-	// Use characters from hash to modify the address while keeping it valid
-	for i := 1; i < 56; i++ {
-		if i < len(baseAddress) {
-			result[i] = baseAddress[i]
-		} else {
-			// Use valid Stellar characters
-			validChars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-			result[i] = validChars[int(hash[i%len(hash)])%32]
-		}
-	}
-
-	return string(result)
-}
 
 func (s *Service) deriveAddress(network models.Network, seed string) string {
 	hash := mpCrypto.Hash256([]byte(seed))
@@ -605,7 +583,7 @@ func (s *Service) GetWalletRegistryPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
-	return filepath.Join(stateDir, ".mozartpay", "state", "wallets.json"), nil
+	return filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets.json"), nil
 }
 
 // GetWalletsDir returns the directory where individual wallet files are stored
@@ -614,7 +592,7 @@ func (s *Service) GetWalletsDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
-	walletsDir := filepath.Join(stateDir, ".mozartpay", "state", "wallets")
+	walletsDir := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets")
 	if err := os.MkdirAll(walletsDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create wallets directory: %w", err)
 	}
@@ -653,7 +631,7 @@ func (s *Service) SaveRegistry(registry *models.WalletRegistry) error {
 	if err := lock.Lock(); err != nil {
 		return fmt.Errorf("failed to acquire registry lock: %w", err)
 	}
-	defer lock.Unlock()
+	defer func() { _ = lock.Unlock() }() //nolint:errcheck // best-effort lock release
 
 	registryPath, err := s.GetWalletRegistryPath()
 	if err != nil {
@@ -920,7 +898,7 @@ func (s *Service) RemoveWallet(address string) error {
 	}
 
 	// Remove wallet file
-	walletPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets", address+".json")
+	walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", address+".json")
 	if err := os.Remove(walletPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove wallet file: %w", err)
 	}
@@ -991,7 +969,7 @@ func (s *Service) MigrateFromLegacy() error {
 	}
 
 	// Check for old wallet file
-	oldWalletPath := filepath.Join(stateDir, ".mozartpay", "state", "account_stellar.json")
+	oldWalletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account_stellar.json")
 	data, err := os.ReadFile(oldWalletPath)
 	if err != nil {
 		// No legacy wallet to migrate, but still run passkey migration
@@ -1010,7 +988,7 @@ func (s *Service) MigrateFromLegacy() error {
 
 	// Rename old file as backup
 	backupPath := oldWalletPath + ".backup"
-	os.Rename(oldWalletPath, backupPath)
+	_ = os.Rename(oldWalletPath, backupPath) //nolint:errcheck // backup is best-effort
 
 	// Also run passkey wallet type migration
 	return s.MigratePasskeyWalletTypes()
@@ -1077,9 +1055,9 @@ func (s *Service) generateWebAuthnChallenge(walletAddress string, network models
 	challengeObj := &models.WebAuthnChallenge{
 		Challenge:   challenge,
 		UserID:      userID,
-		UserName:    fmt.Sprintf("%s@mozartpay.com", walletAddress[:8]),
-		DisplayName: fmt.Sprintf("MozartPay User %s", walletAddress[:8]),
-		RPName:      "MozartPay wwWallet",
+		UserName:    fmt.Sprintf("%s@example.com", walletAddress[:8]),
+		DisplayName: fmt.Sprintf("Stellar Go CLI User %s", walletAddress[:8]),
+		RPName:      "Stellar Go CLI",
 		RPID:        "wwwallet.app",
 		Timestamp:   time.Now().UTC(),
 		CallbackURL: fmt.Sprintf("http://localhost:%d/callback", port),
@@ -1097,7 +1075,7 @@ func (s *Service) getAvailablePort() (int, error) {
 	for i := 9000; i < 10000; i++ {
 		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", fmt.Sprintf(":%d", i))
 		if err == nil {
-			listener.Close()
+			_ = listener.Close() //nolint:errcheck // port probe; close error is not actionable
 			return i, nil
 		}
 	}
@@ -1116,7 +1094,7 @@ func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChalle
 			// Add CORS headers
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Mozart-WebAuthn")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Stellar-CLI-WebAuthn")
 
 			// Handle preflight
 			if r.Method == "OPTIONS" {
@@ -1149,10 +1127,11 @@ func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChalle
 
 					// Return success page
 					w.Header().Set("Content-Type", "text/html")
+					//nolint:errcheck // best-effort response write
 					fmt.Fprintf(w, `<!DOCTYPE html>
 <html>
 <head>
-	<title>✅ Passkey Created - MozartPay</title>
+	<title>✅ Passkey Created - Stellar Go CLI</title>
 	<meta charset="UTF-8">
 	<style>
 		body { 
@@ -1233,7 +1212,7 @@ func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChalle
 		setTimeout(() => { window.open('', '_self').close(); }, 500);
 	</script>
 </body>
-</html>`)
+</html>`) //nolint:errcheck // response write; client may have disconnected
 					return
 				} else {
 					errorChan <- fmt.Errorf("WebAuthn callback failed: status=%s", status)
@@ -1275,11 +1254,12 @@ func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChalle
 			case string:
 				algorithmStr = v
 			case float64:
-				if v == -7 {
+				switch v {
+				case -7:
 					algorithmStr = "ES256"
-				} else if v == -257 {
+				case -257:
 					algorithmStr = "RS256"
-				} else {
+				default:
 					algorithmStr = fmt.Sprintf("%v", v)
 				}
 			}
@@ -1296,6 +1276,7 @@ func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChalle
 			// Send success response
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
+			//nolint:errcheck // best-effort response write
 			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 
 			// Send result to channel
@@ -1315,13 +1296,13 @@ func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChalle
 	case passkey := <-resultChan:
 		// Give browser time to render success page before shutting down
 		time.Sleep(2 * time.Second)
-		server.Close()
+		_ = server.Close() //nolint:errcheck // shutdown cleanup
 		return passkey, nil
 	case err := <-errorChan:
-		server.Close()
+		_ = server.Close() //nolint:errcheck // shutdown cleanup
 		return nil, err
 	case <-time.After(2 * time.Minute):
-		server.Close()
+		_ = server.Close() //nolint:errcheck // shutdown cleanup
 		return nil, fmt.Errorf("timeout waiting for WebAuthn callback")
 	}
 }
@@ -1454,7 +1435,7 @@ func (s *Service) waitForServer(port int, timeout time.Duration) bool {
 	for time.Since(start) < timeout {
 		resp, err := client.Get(healthURL)
 		if err == nil {
-			resp.Body.Close()
+			resp.Body.Close() //nolint:errcheck // best-effort close
 			if resp.StatusCode == 200 {
 				return true
 			}
@@ -1492,10 +1473,10 @@ func (s *Service) SignTransactionWithPasskey(tx *txnbuild.Transaction, walletAdd
 		Challenge:   mpCrypto.RandomBase64(32),
 		UserID:      base64.StdEncoding.EncodeToString([]byte(walletAddress)),
 		UserName:    acc.Address[:16] + "...",
-		DisplayName: "MozartPay Transaction",
-		RPName:      "MozartPay wwWallet",
+		DisplayName: "Stellar Transaction",
+		RPName:      "Stellar Go CLI",
 		RPID:        "localhost",
-		CallbackURL: fmt.Sprintf("http://localhost:9000/callback"),
+		CallbackURL: "http://localhost:9000/callback",
 	}
 
 	fmt.Println("🔐 Initiating passkey signing for transaction...")
@@ -1527,7 +1508,7 @@ func (s *Service) GetPasskeyCredentials(walletAddress string) (*models.PasskeyCr
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	walletPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets", walletAddress+".json")
+	walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", walletAddress+".json")
 	data, err := os.ReadFile(walletPath)
 	if err != nil {
 		return nil, fmt.Errorf("wallet file not found: %w", err)
@@ -1588,7 +1569,7 @@ func (s *Service) GetActiveAccount() (*models.Account, error) {
 	}
 
 	// Load registry to get active wallet
-	registryPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets.json")
+	registryPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets.json")
 	data, err := os.ReadFile(registryPath)
 	if err != nil {
 		return nil, fmt.Errorf("no wallet registry found: %w", err)
@@ -1606,7 +1587,7 @@ func (s *Service) GetActiveAccount() (*models.Account, error) {
 	}
 
 	// Load the active wallet
-	walletPath := filepath.Join(stateDir, ".mozartpay", "state", "wallets", registry.ActiveWallet+".json")
+	walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", registry.ActiveWallet+".json")
 	wdata, err := os.ReadFile(walletPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read wallet file: %w", err)

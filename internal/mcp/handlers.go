@@ -6,7 +6,7 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/integrations"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 // ============================================
@@ -530,7 +530,7 @@ func (s *Server) handleSystemStatus(ctx context.Context, args map[string]interfa
 		network = "stellar-testnet"
 	}
 
-	acc, _ := s.walletSvc.GetActiveWallet()
+	acc, _ := s.walletSvc.GetActiveWallet() //nolint:errcheck // nil result handled below
 
 	status := map[string]interface{}{
 		"version":           config.Version,
@@ -1638,6 +1638,6 @@ func (s *Server) tansuQuery(ctx context.Context, fn func(*integrations.TansuClie
 		network = "stellar-testnet"
 	}
 	client := integrations.NewTansuClientForNetwork(network, contractID)
-	defer client.Close()
+	defer client.Close() //nolint:errcheck // RPC client cleanup
 	return fn(client, ctx)
 }

@@ -51,11 +51,9 @@ func NewRootCmd(cfg *config.Config) *RootCmd {
 	r.register(newFlowCmd(cfg))
 	r.register(newNetworkCmd(cfg))
 	r.register(newMcpCmd(cfg))
-	r.register(newChatCmd(cfg))
-	r.register(newTerminalCmd(cfg))
-	r.register(newExchangeCmd(cfg))
 	r.register(newContractCmd(cfg))
 	r.register(newVCApiCmd(cfg))
+	r.registerExtras(cfg)
 
 	return r
 }
@@ -109,11 +107,11 @@ func (r *RootCmd) printHelp() {
 		{"Identity", []string{"did"}},
 		{"Wallet", []string{"wallet"}},
 		{"Transactions", []string{"pay", "swap", "pool", "trade", "asset", "claimable"}},
-		{"Exchanges", []string{"exchange"}},
 		{"Contracts", []string{"contract"}},
 		{"Integrations", []string{"integrations"}},
 		{"Reporting", []string{"report"}},
 		{"AI", []string{"mcp", "chat"}},
+		{"Extras", []string{"terminal", "exchange"}},
 		{"System", []string{"init", "status", "flow", "network", "version", "vc-api"}},
 	}
 
@@ -156,7 +154,9 @@ func (c *Command) execute(args []string) error {
 
 	// Parse flags
 	if c.Flags != nil {
-		c.Flags.Parse(args)
+		if err := c.Flags.Parse(args); err != nil {
+			return err
+		}
 		c.Args = c.Flags.Args()
 	} else {
 		c.Args = args

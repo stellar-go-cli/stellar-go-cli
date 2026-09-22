@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/network"
 	"github.com/stellar/go/protocols/horizon"
@@ -105,10 +105,10 @@ func (s *Service) CalculatePrice(pool *models.LiquidityPool) *models.PoolPrice {
 		return nil
 	}
 
-	reserveA, _ := strconv.ParseFloat(pool.Reserves[0].Amount, 64)
-	reserveB, _ := strconv.ParseFloat(pool.Reserves[1].Amount, 64)
+	reserveA, errA := strconv.ParseFloat(pool.Reserves[0].Amount, 64)
+	reserveB, errB := strconv.ParseFloat(pool.Reserves[1].Amount, 64)
 
-	if reserveA == 0 || reserveB == 0 {
+	if errA != nil || errB != nil || reserveA == 0 || reserveB == 0 {
 		return nil
 	}
 

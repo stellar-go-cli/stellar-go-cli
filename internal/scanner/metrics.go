@@ -70,7 +70,7 @@ var (
 		[]string{"pair", "network", "intermediate_asset"},
 	)
 
-	// LegBQuote tracks the second leg quote amount  
+	// LegBQuote tracks the second leg quote amount
 	LegBQuote = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "stellar_arbitrage_leg_b_quote",

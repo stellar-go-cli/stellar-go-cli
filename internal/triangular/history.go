@@ -5,14 +5,29 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 // HistoryStore provides persistence for triangular arbitrage data
 type HistoryStore struct {
 	db *sql.DB
+}
+
+// quoteRate returns the output/input rate for a swap leg quote.
+func quoteRate(q *models.SwapQuote) float64 {
+	in, err := strconv.ParseFloat(q.Amount, 64)
+	if err != nil || in == 0 {
+		return 0
+	}
+	out, err := strconv.ParseFloat(q.ExpectedAmount, 64)
+	if err != nil {
+		return 0
+	}
+	return out / in
 }
 
 // NewHistoryStore creates/opens the SQLite database
@@ -23,7 +38,7 @@ func NewHistoryStore() (*HistoryStore, error) {
 		return nil, err
 	}
 
-	dataDir := filepath.Join(home, ".mozartpay")
+	dataDir := filepath.Join(home, ".stellar-go-cli")
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, err
 	}
@@ -85,11 +100,18 @@ func (h *HistoryStore) RecordScan(result TriangularResult) error {
 	leg2Rate := 0.0
 	leg3Rate := 0.0
 
-	if result.Leg1Quote != nil && result.Leg2Quote != nil && result.Leg3Quote != nil {
-		// Rate = output / input for each leg
-		// Leg 1: XLM -> USDC (rate = USDC/XLM)
-		// Leg 2: USDC -> yXLM (rate = yXLM/USDC)
-		// Leg 3: yXLM -> XLM (rate = XLM/yXLM)
+	// Rate = output / input for each leg
+	// Leg 1: XLM -> USDC (rate = USDC/XLM)
+	// Leg 2: USDC -> yXLM (rate = yXLM/USDC)
+	// Leg 3: yXLM -> XLM (rate = XLM/yXLM)
+	if result.Leg1Quote != nil {
+		leg1Rate = quoteRate(result.Leg1Quote)
+	}
+	if result.Leg2Quote != nil {
+		leg2Rate = quoteRate(result.Leg2Quote)
+	}
+	if result.Leg3Quote != nil {
+		leg3Rate = quoteRate(result.Leg3Quote)
 	}
 
 	_, err := h.db.Exec(
@@ -120,7 +142,7 @@ func (h *HistoryStore) GetHistory(path string, limit int) ([]HistoryRecord, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // cleanup
 
 	var records []HistoryRecord
 	for rows.Next() {
@@ -130,7 +152,7 @@ func (h *HistoryStore) GetHistory(path string, limit int) ([]HistoryRecord, erro
 		if err != nil {
 			continue
 		}
-		r.Timestamp, _ = time.Parse("2006-01-02 15:04:05", ts)
+		r.Timestamp, _ = time.Parse("2006-01-02 15:04:05", ts) //nolint:errcheck // parse failure yields zero timestamp
 		r.Path = path
 		records = append(records, r)
 	}
@@ -144,7 +166,7 @@ func (h *HistoryStore) GetAllPaths() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // cleanup
 
 	var paths []string
 	for rows.Next() {

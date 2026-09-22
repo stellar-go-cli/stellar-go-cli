@@ -17,7 +17,7 @@ func newMcpCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "mcp",
 		Short: "Start MCP server for AI assistant integration",
-		Long: `Start an MCP (Model Context Protocol) server that exposes MozartPay CLI functionality as tools.
+		Long: `Start an MCP (Model Context Protocol) server that exposes Stellar Go CLI functionality as tools.
 
 This allows AI assistants to programmatically control the CLI via stdio or SSE transport.
 
@@ -26,8 +26,8 @@ Transport modes:
   - sse:   Server-Sent Events over HTTP (for browser/HTTP clients)
 
 Example usage:
-  mozartpay mcp                          # Start with stdio transport
-  mozartpay mcp --transport sse --port 3000  # Start HTTP server
+  stellar-go-cli mcp                          # Start with stdio transport
+  stellar-go-cli mcp --transport sse --port 3000  # Start HTTP server
 
 The server exposes tools like:
   - wallet_list, wallet_balance          # Wallet operations

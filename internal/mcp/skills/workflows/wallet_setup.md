@@ -1,7 +1,7 @@
 # Wallet Setup Workflow
 
 ## Overview
-Complete wallet setup and onboarding workflow for new users of the MozartPay platform, covering wallet creation, funding, security setup, and initial configuration.
+Complete wallet setup and onboarding workflow for new users of the Stellar Go CLI platform, covering wallet creation, funding, security setup, and initial configuration.
 
 ## Workflow Steps
 
@@ -12,7 +12,7 @@ Complete wallet setup and onboarding workflow for new users of the MozartPay pla
 - "I want to set up a wallet"
 - "new wallet setup"
 - "create my first wallet"
-- "get started with MozartPay"
+- "get started with Stellar Go CLI"
 
 **Assessment Questions**:
 - What type of wallet do you prefer? (passkey, stellar, external)
@@ -480,4 +480,4 @@ I can configure recommended settings based on your usage patterns, or you can cu
 3. **Security Awareness**: Keep up with best practices
 4. **Feature Exploration**: Discover new capabilities
 
-This comprehensive workflow ensures new users have a smooth, secure, and educational onboarding experience with the MozartPay platform.
+This comprehensive workflow ensures new users have a smooth, secure, and educational onboarding experience with the Stellar Go CLI platform.

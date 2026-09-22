@@ -28,7 +28,7 @@ type IntentPattern struct {
 	Parameters map[string][]string
 }
 
-// Common intent patterns for MozartPay
+// Common intent patterns for Stellar Go CLI
 var DefaultIntentPatterns = []IntentPattern{
 	{
 		Intent:   "greeting",
@@ -156,10 +156,10 @@ func (g *SyntheticGenerator) GenerateIntentExamples(pattern IntentPattern, count
 		confidence := 0.85 + g.rng.Float64()*0.14 // 0.85-0.99 confidence
 
 		ex := TrainingExample{
-			Instruction: "Classify the user intent for this MozartPay CLI command. Respond with ONLY a JSON object: {\"intent\": \"NAME\", \"confidence\": 0.0-1.0}",
+			Instruction: "Classify the user intent for this Stellar Go CLI command. Respond with ONLY a JSON object: {\"intent\": \"NAME\", \"confidence\": 0.0-1.0}",
 			Input:       message,
 			Output:      fmt.Sprintf(`{"intent": "%s", "confidence": %.2f}`, pattern.Intent, confidence),
-			System:      "You are an intent classifier for MozartPay, a cryptocurrency payment CLI.",
+			System:      "You are an intent classifier for Stellar Go CLI, a cryptocurrency payment CLI.",
 		}
 		examples = append(examples, ex)
 	}
@@ -181,7 +181,7 @@ func (g *SyntheticGenerator) generateFromPattern(pattern IntentPattern) string {
 		placeholder := "{" + key + "}"
 		if strings.Contains(result, placeholder) {
 			replacement := variations[g.rng.Intn(len(variations))]
-			result = strings.Replace(result, placeholder, replacement, -1)
+			result = strings.ReplaceAll(result, placeholder, replacement)
 		}
 	}
 
@@ -190,7 +190,7 @@ func (g *SyntheticGenerator) generateFromPattern(pattern IntentPattern) string {
 		placeholder := "{" + key + "}"
 		if strings.Contains(result, placeholder) {
 			replacement := values[g.rng.Intn(len(values))]
-			result = strings.Replace(result, placeholder, replacement, -1)
+			result = strings.ReplaceAll(result, placeholder, replacement)
 		}
 	}
 
@@ -289,13 +289,16 @@ func (g *SyntheticGenerator) GenerateParameterExamples(intent string, count int)
 		params := patterns[g.rng.Intn(len(patterns))]
 		message := g.generateMessageFromParams(intent, params)
 
-		output, _ := jsonMarshal(params)
+		output, err := jsonMarshal(params)
+		if err != nil {
+			continue
+		}
 
 		ex := TrainingExample{
 			Instruction: fmt.Sprintf("Extract parameters from the message for intent '%s'. Respond with JSON.", intent),
 			Input:       message,
 			Output:      string(output),
-			System:      "You are a parameter extractor for MozartPay, a cryptocurrency payment CLI.",
+			System:      "You are a parameter extractor for Stellar Go CLI, a cryptocurrency payment CLI.",
 		}
 		examples = append(examples, ex)
 	}
@@ -357,23 +360,19 @@ func jsonMarshal(v interface{}) ([]byte, error) {
 
 // GenerateFullDataset creates a complete training dataset with all intents
 func (g *SyntheticGenerator) GenerateFullDataset(intentCount, paramCount int) *Dataset {
-	builder := NewDatasetBuilder("mozartpay_synthetic", "1.0.0", "Synthetic training data for MozartPay intent classification and parameter extraction")
+	builder := NewDatasetBuilder("stellar_go_cli_synthetic", "1.0.0", "Synthetic training data for Stellar Go CLI intent classification and parameter extraction")
 
 	// Generate intent classification examples
 	for _, pattern := range DefaultIntentPatterns {
 		examples := g.GenerateIntentExamples(pattern, intentCount)
-		for _, ex := range examples {
-			builder.examples = append(builder.examples, ex)
-		}
+		builder.examples = append(builder.examples, examples...)
 	}
 
 	// Generate parameter extraction examples
 	paramIntents := []string{"pay_send", "swap_quote", "create_trustline"}
 	for _, intent := range paramIntents {
 		examples := g.GenerateParameterExamples(intent, paramCount)
-		for _, ex := range examples {
-			builder.examples = append(builder.examples, ex)
-		}
+		builder.examples = append(builder.examples, examples...)
 	}
 
 	// Apply augmentation

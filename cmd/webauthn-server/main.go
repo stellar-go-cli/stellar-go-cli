@@ -49,6 +49,29 @@ var (
 	store = make(map[string]*CredentialInfo)
 )
 
+// renderTemplate parses and renders an HTML template. Parse failures return
+// a 500 before any body is written; execute failures are logged since the
+// response may already be partially committed.
+func renderTemplate(w http.ResponseWriter, name, tmpl string, data interface{}) {
+	t, err := template.New(name).Parse(tmpl)
+	if err != nil {
+		http.Error(w, "internal template error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	if err := t.Execute(w, data); err != nil {
+		log.Printf("execute template %q: %v", name, err)
+	}
+}
+
+// writeJSON encodes v as a JSON response, logging encoding errors.
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("encode JSON response: %v", err)
+	}
+}
+
 func main() {
 	port := getPort()
 	if port == "" {
@@ -108,7 +131,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>MozartPay WebAuthn Server</title>
+    <title>Stellar Go CLI WebAuthn Server</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
         .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -119,7 +142,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
     <div class="container">
-        <h1>🔐 MozartPay WebAuthn Server</h1>
+        <h1>🔐 Stellar Go CLI WebAuthn Server</h1>
         <div class="status">
             <strong>✅ Server is running</strong><br>
             Ready to handle WebAuthn passkey authentication
@@ -132,17 +155,14 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
     </div>
 </body>
 </html>`
-	w.Header().Set("Content-Type", "text/html")
-	t, _ := template.New("home").Parse(tmpl)
-	t.Execute(w, nil)
+	renderTemplate(w, "home", tmpl, nil)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status":    "ok",
 		"timestamp": time.Now().UTC(),
-		"server":    "MozartPay WebAuthn Server",
+		"server":    "Stellar Go CLI WebAuthn Server",
 		"version":   "1.0.0",
 	})
 }
@@ -185,7 +205,7 @@ func webAuthnAuthHandler(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebAuthn Authentication - MozartPay</title>
+    <title>WebAuthn Authentication - Stellar Go CLI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -361,7 +381,6 @@ func webAuthnAuthHandler(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 
-	webauthnTmpl, _ := template.New("webauthn").Parse(tmpl)
 	data := struct {
 		Challenge   string
 		UserID      string
@@ -380,8 +399,7 @@ func webAuthnAuthHandler(w http.ResponseWriter, r *http.Request) {
 		CallbackURL: callbackURL,
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	webauthnTmpl.Execute(w, data)
+	renderTemplate(w, "webauthn", tmpl, data)
 }
 
 func webAuthnVerifyHandler(w http.ResponseWriter, r *http.Request) {
@@ -409,8 +427,7 @@ func webAuthnVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	// Store the credential (in production, use secure storage)
 	store[webAuthnResp.ID] = credentialInfo
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status":     "success",
 		"credential": credentialInfo,
 		"verified":   true,
@@ -427,7 +444,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Authentication Result - MozartPay</title>
+    <title>Authentication Result - Stellar Go CLI</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -469,7 +486,6 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 
-	callbackTmpl, _ := template.New("callback").Parse(tmpl)
 	data := struct {
 		Status       string
 		Message      string
@@ -482,8 +498,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 		Timestamp:    time.Now().Format(time.RFC3339),
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	callbackTmpl.Execute(w, data)
+	renderTemplate(w, "callback", tmpl, data)
 }
 
 // webAuthnSignHandler handles GET requests for WebAuthn signing
@@ -503,7 +518,7 @@ func webAuthnSignHandler(w http.ResponseWriter, r *http.Request) {
 <!DOCTYPE html>
 <html>
 <head>
-	<title>Sign Transaction - MozartPay</title>
+	<title>Sign Transaction - Stellar Go CLI</title>
 	<meta charset="UTF-8">
 	<style>
 		body { 
@@ -617,16 +632,13 @@ func webAuthnSignHandler(w http.ResponseWriter, r *http.Request) {
 		Transaction:  transaction,
 	}
 
-	w.Header().Set("Content-Type", "text/html")
-	signTmpl, _ := template.New("sign").Parse(tmpl)
-	signTmpl.Execute(w, data)
+	renderTemplate(w, "sign", tmpl, data)
 }
 
 // webAuthnSignVerifyHandler handles POST requests for WebAuthn signing verification
 func webAuthnSignVerifyHandler(w http.ResponseWriter, r *http.Request) {
 	// For now, just return success - in real implementation would verify signature
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status":  "success",
 		"message": "Transaction signed successfully",
 	})

@@ -99,13 +99,16 @@ func (c *AlphaVantageMCPClient) listTools() ([]MCPTool, error) {
 		Params:  json.RawMessage(`{}`),
 	}
 
-	data, _ := json.Marshal(reqBody)
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
 
 	resp, err := c.httpClient.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MCP server: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort close
 
 	var result struct {
 		Tools []MCPTool `json:"tools"`
@@ -132,7 +135,10 @@ func (c *AlphaVantageMCPClient) ToolCall(function string, kwargs map[string]inte
 		"kwargs":   kwargs,
 	}
 
-	paramsData, _ := json.Marshal(params)
+	paramsData, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("marshal params: %w", err)
+	}
 
 	reqBody := MCPMessage{
 		JSONRPC: "2.0",
@@ -141,13 +147,16 @@ func (c *AlphaVantageMCPClient) ToolCall(function string, kwargs map[string]inte
 		Params:  paramsData,
 	}
 
-	data, _ := json.Marshal(reqBody)
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
 
 	resp, err := c.httpClient.Post(url, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to call tool: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort close
 
 	var response MCPMessage
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
@@ -213,7 +222,10 @@ func (c *AlphaVantageMCPClient) parseNewsResponse(result interface{}) ([]NewsArt
 						}
 						if err := json.Unmarshal([]byte(text), &feedData); err == nil {
 							for _, item := range feedData.Feed {
-								publishedTime, _ := time.Parse("20060102T150405", item.TimePublished)
+								publishedTime, perr := time.Parse("20060102T150405", item.TimePublished)
+								if perr != nil {
+									publishedTime = time.Time{}
+								}
 								articles = append(articles, NewsArticle{
 									Title:       item.Title,
 									URL:         item.URL,

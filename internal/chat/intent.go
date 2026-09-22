@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -48,7 +48,7 @@ func NewIntentRecognizer() *IntentRecognizer {
 			"hlp":           "help",
 			"netwrk":        "network",
 			"netwok":        "network",
-			"excange":       "exchange",
+			"excange":       "exchange", //nolint:misspell // intentional typo→correction map key
 			"exchnge":       "exchange",
 			"trad":          "trade",
 			"trde":          "trade",
@@ -226,7 +226,7 @@ func (ir *IntentRecognizer) extractNumber(msg string) int {
 	re := regexp.MustCompile(`(?:opportunity|opp|#)?\s*(\d+)`)
 	matches := re.FindStringSubmatch(msg)
 	if len(matches) > 1 {
-		num, _ := strconv.Atoi(matches[1])
+		num, _ := strconv.Atoi(matches[1]) //nolint:errcheck // regexp guarantees digits
 		return num
 	}
 	return 0

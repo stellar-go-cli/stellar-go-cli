@@ -113,7 +113,7 @@ func (f *Formatter) toLlama2(ex TrainingExample) (string, error) {
 		system = f.systemMsg
 	}
 	if system != "" {
-		b.WriteString(fmt.Sprintf("<<SYS>>\n%s\n<</SYS>>\n\n", system))
+		fmt.Fprintf(&b, "<<SYS>>\n%s\n<</SYS>>\n\n", system)
 	}
 
 	// User message
@@ -121,10 +121,10 @@ func (f *Formatter) toLlama2(ex TrainingExample) (string, error) {
 	if ex.Input != "" {
 		content += "\n\n" + ex.Input
 	}
-	b.WriteString(fmt.Sprintf("[INST] %s [/INST]", content))
+	fmt.Fprintf(&b, "[INST] %s [/INST]", content)
 
 	// Assistant response
-	b.WriteString(fmt.Sprintf(" %s", ex.Output))
+	fmt.Fprintf(&b, " %s", ex.Output)
 
 	output := map[string]string{
 		"text": b.String(),
@@ -232,7 +232,7 @@ func (f *Formatter) SaveFormattedDataset(ds *Dataset, path string) error {
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() //nolint:errcheck // best-effort close
 
 	for _, line := range formatted {
 		if _, err := file.WriteString(line + "\n"); err != nil {

@@ -1,3 +1,5 @@
+//go:build extras
+
 package commands
 
 import (
@@ -28,7 +30,7 @@ func newChatTrainDataCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "train-data",
 		Short: "Generate and manage training data",
-		Long: `Generate synthetic training data for fine-tuning MozartPay's chat model.
+		Long: `Generate synthetic training data for fine-tuning Stellar Go CLI's chat model.
 
 This command creates training examples for:
   • Intent classification (identifying user intent from messages)
@@ -37,13 +39,13 @@ This command creates training examples for:
 
 Examples:
   # Generate synthetic training data
-  mozartpay chat train-data --generate --intents 200 --params 100
+  stellar-go-cli chat train-data --generate --intents 200 --params 100
   
   # Generate with specific output format
-  mozartpay chat train-data --generate --format chatml --output ./data/train.jsonl
+  stellar-go-cli chat train-data --generate --format chatml --output ./data/train.jsonl
   
   # Validate existing training data
-  mozartpay chat train-data --validate ./data/train.jsonl`,
+  stellar-go-cli chat train-data --validate ./data/train.jsonl`,
 		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			if *validate {
@@ -82,7 +84,7 @@ func newChatFinetuneCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "finetune",
 		Short: "Fine-tune chat models with LoRA/QLoRA",
-		Long: `Fine-tune a language model for MozartPay chat using LoRA or QLoRA.
+		Long: `Fine-tune a language model for Stellar Go CLI chat using LoRA or QLoRA.
 
 LoRA (Low-Rank Adaptation) efficiently fine-tunes models by training small
 adapter layers instead of the full model.
@@ -91,24 +93,24 @@ QLoRA uses 4-bit quantization to enable training larger models with less VRAM.
 
 Examples:
   # Start LoRA training
-  mozartpay chat finetune --method lora \
+  stellar-go-cli chat finetune --method lora \
     --base-model llama3.2:3b \
     --data ./training.jsonl \
-    --name mozartpay-intent-v1 \
+    --name stellar-cli-intent-v1 \
     --rank 32 --epochs 5
   
   # Start QLoRA training (4-bit, less VRAM)
-  mozartpay chat finetune --method qlora \
+  stellar-go-cli chat finetune --method qlora \
     --base-model qwen2.5:7b \
     --data ./training.jsonl \
-    --name mozartpay-qlora-v1 \
+    --name stellar-cli-qlora-v1 \
     --bits 4
   
   # Check job status
-  mozartpay chat finetune --status <job-id>
+  stellar-go-cli chat finetune --status <job-id>
   
   # List all jobs
-  mozartpay chat finetune --list`,
+  stellar-go-cli chat finetune --list`,
 		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			if *list {
@@ -161,7 +163,7 @@ func newChatModelCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "model",
 		Short: "Manage fine-tuned models",
-		Long: `Manage the model registry for fine-tuned MozartPay chat models.
+		Long: `Manage the model registry for fine-tuned Stellar Go CLI chat models.
 
 Commands:
   --list              List all registered models
@@ -171,15 +173,15 @@ Commands:
 
 Examples:
   # List all models
-  mozartpay chat model --list
+  stellar-go-cli chat model --list
   
   # Export trained adapter to GGUF with multiple quantizations
-  mozartpay chat model --export job-abc123 \
+  stellar-go-cli chat model --export job-abc123 \
     --quantizations Q4_K_M,Q5_K_M,Q8_0 \
     --register-ollama
   
   # Set active model
-  mozartpay chat model --use mozartpay-intent-v1-q4_k_m`,
+  stellar-go-cli chat model --use stellar-cli-intent-v1-q4_k_m`,
 		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			if *list {
@@ -224,7 +226,7 @@ func generateTrainingData(intents, params int, formatType, output string) error 
 
 	// Create formatter
 	format := training.FormatTypeFromString(formatType)
-	formatter := training.NewFormatter(format, "You are MozartPay, a cryptocurrency payment CLI assistant.")
+	formatter := training.NewFormatter(format, "You are Stellar Go CLI, a cryptocurrency payment CLI assistant.")
 
 	// Format and save
 	if err := formatter.SaveFormattedDataset(dataset, output); err != nil {
@@ -300,7 +302,7 @@ func startFinetuning(method, baseModel, dataPath, name string, loraConfig *finet
 	}
 
 	// Create trainer
-	workDir := filepath.Join(os.TempDir(), "mozartpay-finetune")
+	workDir := filepath.Join(os.TempDir(), "stellar-go-cli-finetune")
 	trainer := finetune.NewTrainer(workDir)
 
 	var job *finetune.TrainingJob
@@ -334,7 +336,7 @@ func startFinetuning(method, baseModel, dataPath, name string, loraConfig *finet
 	ui.Info(fmt.Sprintf("Output directory: %s", job.OutputPath))
 	ui.Info("")
 	ui.Info("To check status:")
-	ui.Info(fmt.Sprintf("  mozartpay chat finetune --status %s", job.ID))
+	ui.Info(fmt.Sprintf("  stellar-go-cli chat finetune --status %s", job.ID))
 
 	return nil
 }
@@ -348,7 +350,7 @@ func listTrainingJobs() error {
 func checkJobStatus(jobID string) error {
 	ui.Header(fmt.Sprintf("Job Status: %s", jobID))
 	ui.Info("Status: completed")
-	ui.Info("Output: /tmp/mozartpay-finetune/outputs/" + jobID)
+	ui.Info("Output: /tmp/stellar-go-cli-finetune/outputs/" + jobID)
 	return nil
 }
 

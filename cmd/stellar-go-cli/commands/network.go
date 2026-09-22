@@ -36,17 +36,18 @@ func newNetworkShowCmd(cfg *config.Config) *Command {
 			fmt.Println()
 
 			ui.SectionLabel("Active Network")
-			if cfg.Network == "stellar-mainnet" {
+			switch cfg.Network {
+			case "stellar-mainnet":
 				ui.KVColor("Current", "stellar-mainnet", ui.BrightGreen)
 				ui.KV("Type", "Production")
 				ui.KV("Horizon URL", "https://horizon.stellar.org")
 				ui.KV("Passphrase", "Public Global Stellar Network")
-			} else if cfg.Network == "stellar-testnet" {
+			case "stellar-testnet":
 				ui.KVColor("Current", "stellar-testnet", ui.BrightYellow)
 				ui.KV("Type", "Development/Testing")
 				ui.KV("Horizon URL", "https://horizon-testnet.stellar.org")
 				ui.KV("Passphrase", "Test SDF Network")
-			} else {
+			default:
 				ui.KV("Current", cfg.Network)
 			}
 
@@ -56,7 +57,7 @@ func newNetworkShowCmd(cfg *config.Config) *Command {
 			ui.KV("  2. stellar-testnet", "Development network with free faucet")
 
 			fmt.Println()
-			ui.Info("Use 'mozartpay network set <network>' to switch")
+			ui.Info("Use 'stellar-go-cli network set <network>' to switch")
 			return nil
 		},
 	}
@@ -75,7 +76,7 @@ func newNetworkSetCmd(cfg *config.Config) *Command {
 		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			if len(args) == 0 || (args[0] != "stellar-mainnet" && args[0] != "stellar-testnet") {
-				ui.Error("Usage: mozartpay network set <stellar-mainnet|stellar-testnet>")
+				ui.Error("Usage: stellar-go-cli network set <stellar-mainnet|stellar-testnet>")
 				fmt.Println()
 				ui.Info("Available networks:")
 				ui.KV("  stellar-mainnet", "Production network (real assets)")
@@ -127,7 +128,7 @@ func newNetworkSetCmd(cfg *config.Config) *Command {
 				ui.Info("Mainnet active - transactions will use real assets")
 			} else {
 				fmt.Println()
-				ui.Info("Testnet active - use 'mozartpay wallet fund' for free XLM")
+				ui.Info("Testnet active - use 'stellar-go-cli wallet fund' for free XLM")
 			}
 
 			return nil
@@ -160,7 +161,9 @@ func newNetworkSwitchCmd(cfg *config.Config) *Command {
 			fmt.Println()
 			fmt.Print("Choose [1-2]: ")
 			var choice string
-			fmt.Scanln(&choice)
+			if _, err := fmt.Scanln(&choice); err != nil {
+				return nil
+			}
 
 			var newNetwork string
 			switch choice {
@@ -184,7 +187,10 @@ func newNetworkSwitchCmd(cfg *config.Config) *Command {
 				ui.Warn("⚠️  You are switching to MAINNET with REAL assets")
 				fmt.Print("Proceed? [y/N]: ")
 				var confirm string
-				fmt.Scanln(&confirm)
+				if _, err := fmt.Scanln(&confirm); err != nil {
+					ui.Info("Cancelled")
+					return nil
+				}
 				if confirm != "y" && confirm != "Y" {
 					ui.Info("Cancelled")
 					return nil

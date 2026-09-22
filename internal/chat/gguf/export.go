@@ -234,7 +234,7 @@ func (e *Exporter) quantize(inputPath, outputPath string, quantType Quantization
 func (e *Exporter) generateModelfile(ggufPath string, opts ExportOptions) error {
 	modelfilePath := filepath.Join(filepath.Dir(ggufPath), "Modelfile")
 
-	systemPrompt := `You are MozartPay, a cryptocurrency payment CLI assistant. 
+	systemPrompt := `You are Stellar Go CLI, a cryptocurrency payment CLI assistant. 
 You help users with wallet management, payments, swaps, and other blockchain operations.
 Always respond concisely and accurately. For payment intents, extract parameters precisely.`
 

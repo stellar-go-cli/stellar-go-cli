@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"golang.org/x/term"
 )
 
@@ -75,7 +75,7 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 				fmt.Print("Choose option [1-3]: ")
 
 				var choice string
-				fmt.Scanln(&choice)
+				fmt.Scanln(&choice) //nolint:errcheck // empty input falls through to the default
 				switch choice {
 				case "1":
 					selectedProvider = "wwwallet"
@@ -164,10 +164,10 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 			}
 
 			// Migrate from legacy if needed
-			svc.MigrateFromLegacy()
+			svc.MigrateFromLegacy() //nolint:errcheck // best-effort migration
 
 			// Check if wallet already exists
-			existingWallets, activeWallet, _ := svc.ListWallets()
+			existingWallets, activeWallet, _ := svc.ListWallets() //nolint:errcheck // partial results acceptable for existence checks
 			walletExists := false
 			for _, w := range existingWallets {
 				if w.Address == acc.Address {
@@ -182,7 +182,7 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 				fmt.Println()
 				fmt.Printf("You have %d other wallet(s). Make this your active wallet? [Y/n]: ", len(existingWallets))
 				var response string
-				fmt.Scanln(&response)
+				fmt.Scanln(&response) //nolint:errcheck // empty input falls through to the default
 				if response != "" && response != "Y" && response != "y" {
 					makeActive = false
 				}
@@ -195,18 +195,20 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 
 			if makeActive {
 				cfg.ActiveAddress = acc.Address
-				config.Save(cfg)
+				if err := config.Save(cfg); err != nil {
+					return fmt.Errorf("failed to save config: %w", err)
+				}
 				ui.Success("Wallet created and set as active")
 			} else {
 				ui.Success("Wallet created (not active)")
 				ui.Info(fmt.Sprintf("Active wallet remains: %s", safeTruncW(activeWallet, 30)))
-				ui.Info("Use 'mozartpay wallet switch' to activate this wallet")
+				ui.Info("Use 'stellar-go-cli wallet switch' to activate this wallet")
 			}
 			ui.KV("Address", acc.Address)
 
 			if !acc.Funded {
 				fmt.Println()
-				ui.Warn("Account not funded. Run: mozartpay wallet fund")
+				ui.Warn("Account not funded. Run: stellar-go-cli wallet fund")
 				ui.Info("Faucet: " + wallet.FaucetURL(net, acc.Address))
 				if net == models.NetworkStellarTestnet {
 					ui.Info("Explorer: https://stellar.expert/explorer/testnet/account/" + acc.Address)
@@ -251,7 +253,7 @@ func newWalletImportCmd(cfg *config.Config) *Command {
 			}
 
 			svc := wallet.NewService()
-			_ = svc.MigrateFromLegacy()
+			_ = svc.MigrateFromLegacy() //nolint:errcheck // best-effort migration
 
 			spin := ui.NewSpinner("Validating key and fetching account from Horizon...")
 			spin.Start()
@@ -266,7 +268,7 @@ func newWalletImportCmd(cfg *config.Config) *Command {
 				acc.CreatedAt = old.CreatedAt
 			}
 
-			existingWallets, activeWallet, _ := svc.ListWallets()
+			existingWallets, activeWallet, _ := svc.ListWallets() //nolint:errcheck // partial results acceptable for existence checks
 			walletExists := false
 			for _, w := range existingWallets {
 				if w.Address == acc.Address {
@@ -280,7 +282,7 @@ func newWalletImportCmd(cfg *config.Config) *Command {
 				fmt.Println()
 				fmt.Printf("You have %d other wallet(s). Make this your active wallet? [Y/n]: ", len(existingWallets))
 				var response string
-				fmt.Scanln(&response)
+				fmt.Scanln(&response) //nolint:errcheck // empty input falls through to the default
 				if response != "" && response != "Y" && response != "y" {
 					makeActive = false
 				}
@@ -291,7 +293,9 @@ func newWalletImportCmd(cfg *config.Config) *Command {
 			}
 			if makeActive {
 				cfg.ActiveAddress = acc.Address
-				_ = config.Save(cfg)
+				if err := config.Save(cfg); err != nil {
+					return fmt.Errorf("failed to save config: %w", err)
+				}
 			}
 
 			if *out == "json" {
@@ -313,10 +317,10 @@ func newWalletImportCmd(cfg *config.Config) *Command {
 				if activeWallet != "" {
 					ui.Info(fmt.Sprintf("Active wallet remains: %s", safeTruncW(activeWallet, 30)))
 				}
-				ui.Info("Use 'mozartpay wallet switch' to activate this wallet")
+				ui.Info("Use 'stellar-go-cli wallet switch' to activate this wallet")
 			}
 			if !acc.Funded && net == models.NetworkStellarTestnet {
-				ui.Info("Fund testnet: mozartpay wallet fund")
+				ui.Info("Fund testnet: stellar-go-cli wallet fund")
 			}
 			return nil
 		},
@@ -372,7 +376,7 @@ func newWalletFundCmd(cfg *config.Config) *Command {
 				// Fall back to legacy state
 				var legacyAcc models.Account
 				if err := config.LoadState("account", &legacyAcc); err != nil {
-					ui.Error("No active wallet found. Run 'mozartpay wallet connect' first.")
+					ui.Error("No active wallet found. Run 'stellar-go-cli wallet connect' first.")
 					return nil
 				}
 				acc = &legacyAcc
@@ -402,9 +406,11 @@ func newWalletFundCmd(cfg *config.Config) *Command {
 				ui.KV("Explorer", "https://stellar.expert/explorer/testnet/account/"+funded.Address)
 			}
 
-			config.SaveState("account", funded)
+			config.SaveState("account", funded) //nolint:errcheck // best-effort state cache
 			cfg.ActiveAddress = funded.Address
-			config.Save(cfg)
+			if err := config.Save(cfg); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
 
 			return nil
 		},
@@ -441,7 +447,7 @@ func newWalletBalanceCmd(cfg *config.Config) *Command {
 				// Fall back to loading from state
 				var stateAcc models.Account
 				if loadErr := config.LoadState("account", &stateAcc); loadErr != nil {
-					ui.Warn("No account found. Run 'mozartpay wallet connect' first.")
+					ui.Warn("No account found. Run 'stellar-go-cli wallet connect' first.")
 					return nil
 				}
 				acc = &stateAcc
@@ -469,7 +475,7 @@ func newWalletBalanceCmd(cfg *config.Config) *Command {
 
 				// If still mismatched, show warning
 				if acc.Network != currentNetwork {
-					ui.Warn(fmt.Sprintf("No wallet found on %s. Use 'mozartpay wallet switch' to select a wallet on this network.", currentNetwork))
+					ui.Warn(fmt.Sprintf("No wallet found on %s. Use 'stellar-go-cli wallet switch' to select a wallet on this network.", currentNetwork))
 				}
 			}
 
@@ -508,7 +514,7 @@ func newWalletAssetsCmd(cfg *config.Config) *Command {
 		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			svc := wallet.NewService()
-			_ = svc.MigrateFromLegacy()
+			_ = svc.MigrateFromLegacy() //nolint:errcheck // best-effort migration
 
 			var target string
 			if *addr != "" {
@@ -516,7 +522,7 @@ func newWalletAssetsCmd(cfg *config.Config) *Command {
 			} else {
 				acc, err := svc.GetActiveWallet()
 				if err != nil {
-					ui.Error("No address provided and no active wallet. Use --address or 'mozartpay wallet switch'.")
+					ui.Error("No address provided and no active wallet. Use --address or 'stellar-go-cli wallet switch'.")
 					return nil
 				}
 				target = acc.Address
@@ -600,7 +606,7 @@ func newWalletShowCmd(cfg *config.Config) *Command {
 			// Get active wallet
 			acc, err := svc.GetActiveWallet()
 			if err != nil {
-				ui.Warn("No active wallet found. Run 'mozartpay wallet connect' or 'mozartpay wallet switch'.")
+				ui.Warn("No active wallet found. Run 'stellar-go-cli wallet connect' or 'stellar-go-cli wallet switch'.")
 				return nil
 			}
 
@@ -616,7 +622,7 @@ func newWalletShowCmd(cfg *config.Config) *Command {
 						if w.Network == currentNetwork {
 							// Found a wallet on the correct network, switch to it
 							if err := svc.SetActiveWallet(w.Address); err == nil {
-								acc, _ = svc.GetActiveWallet()
+								acc, _ = svc.GetActiveWallet() //nolint:errcheck // refreshed best-effort; only used for display
 								ui.Success(fmt.Sprintf("Switched to wallet on %s: %s", currentNetwork, w.Address[:12]))
 								break
 							}
@@ -626,7 +632,7 @@ func newWalletShowCmd(cfg *config.Config) *Command {
 
 				// If still mismatched, show warning
 				if acc.Network != currentNetwork {
-					ui.Warn(fmt.Sprintf("No wallet found on %s. Use 'mozartpay wallet switch' to select a wallet on this network.", currentNetwork))
+					ui.Warn(fmt.Sprintf("No wallet found on %s. Use 'stellar-go-cli wallet switch' to select a wallet on this network.", currentNetwork))
 					ui.Info("Showing active wallet (network mismatch):")
 				}
 			}
@@ -660,7 +666,7 @@ func newWalletShowCmd(cfg *config.Config) *Command {
 
 			// Display assets/trustlines - filter for important assets only
 			if acc.Funded && (acc.Network == models.NetworkStellarTestnet || acc.Network == models.NetworkStellarMainnet) {
-				assets, _ := svc.GetAccountAssets(acc.Address, acc.Network)
+				assets, _ := svc.GetAccountAssets(acc.Address, acc.Network) //nolint:errcheck // empty list on error
 				if len(assets) > 0 {
 					fmt.Println()
 					ui.SectionLabel("Assets (Trustlines)")
@@ -712,7 +718,7 @@ func newWalletSwitchCmd(cfg *config.Config) *Command {
 			}
 
 			if len(wallets) == 0 {
-				ui.Info("No wallets found. Create one with: mozartpay wallet connect")
+				ui.Info("No wallets found. Create one with: stellar-go-cli wallet connect")
 				return nil
 			}
 
@@ -741,7 +747,7 @@ func newWalletSwitchCmd(cfg *config.Config) *Command {
 
 				fmt.Print("\nSelect wallet [1-" + fmt.Sprintf("%d", len(wallets)) + "]: ")
 				var choice string
-				fmt.Scanln(&choice)
+				fmt.Scanln(&choice) //nolint:errcheck // empty input falls through to the default
 
 				// Parse selection
 				var index int
@@ -798,7 +804,7 @@ func newWalletExportCmd(cfg *config.Config) *Command {
 			svc := wallet.NewService()
 
 			// Migrate from legacy if needed
-			svc.MigrateFromLegacy()
+			svc.MigrateFromLegacy() //nolint:errcheck // best-effort migration
 
 			var acc *models.Account
 			var err error
@@ -868,7 +874,7 @@ func newWalletListCmd(cfg *config.Config) *Command {
 			}
 
 			if len(wallets) == 0 {
-				ui.Info("No wallets found. Create one with: mozartpay wallet connect")
+				ui.Info("No wallets found. Create one with: stellar-go-cli wallet connect")
 				return nil
 			}
 
@@ -924,8 +930,8 @@ func newWalletListCmd(cfg *config.Config) *Command {
 				ui.Success(fmt.Sprintf("Active wallet: %s", safeTruncW(active, 30)))
 			}
 
-			ui.Info("Use 'mozartpay wallet switch' to change active wallet")
-			ui.Info("Use 'mozartpay wallet rename <address> <name>' to assign names")
+			ui.Info("Use 'stellar-go-cli wallet switch' to change active wallet")
+			ui.Info("Use 'stellar-go-cli wallet rename <address> <name>' to assign names")
 
 			return nil
 		},
@@ -944,7 +950,7 @@ func newWalletRenameCmd(cfg *config.Config) *Command {
 		cfg:   cfg,
 		Run: func(c *Command, args []string) error {
 			if len(args) < 2 {
-				ui.Error("Usage: mozartpay wallet rename <address> <name>")
+				ui.Error("Usage: stellar-go-cli wallet rename <address> <name>")
 				return fmt.Errorf("missing arguments")
 			}
 
@@ -1038,7 +1044,7 @@ func newWalletPasskeyCreateCmd(cfg *config.Config) *Command {
 			ui.KV("Created", passkey.CreatedAt.Format(time.RFC3339))
 
 			ui.Success("Passkey created and linked to wallet")
-			ui.Info("Use 'mozartpay wallet passkey verify' to test the passkey")
+			ui.Info("Use 'stellar-go-cli wallet passkey verify' to test the passkey")
 
 			return nil
 		},
@@ -1116,7 +1122,7 @@ func newWalletPasskeyListCmd(cfg *config.Config) *Command {
 
 			if len(passkeys) == 0 {
 				ui.Info("No passkey credentials found")
-				ui.Info("Create a passkey with: mozartpay wallet passkey create")
+				ui.Info("Create a passkey with: stellar-go-cli wallet passkey create")
 				return nil
 			}
 
@@ -1192,7 +1198,7 @@ func newWalletPasskeyRemoveCmd(cfg *config.Config) *Command {
 				ui.Warn("   This action cannot be undone.")
 				fmt.Print("Type 'remove' to confirm: ")
 				var confirmation string
-				fmt.Scanln(&confirmation)
+				fmt.Scanln(&confirmation) //nolint:errcheck // empty input falls through to the default
 
 				if confirmation != "remove" {
 					ui.Info("Passkey removal cancelled")
@@ -1266,7 +1272,7 @@ func newWalletRemoveCmd(cfg *config.Config) *Command {
 
 				fmt.Print("\nSelect wallet to remove [1]: ")
 				var selection int
-				fmt.Scanln(&selection)
+				fmt.Scanln(&selection) //nolint:errcheck // empty input falls through to the default
 				if selection < 1 || selection > len(wallets) {
 					selection = 1
 				}
@@ -1306,7 +1312,7 @@ func newWalletRemoveCmd(cfg *config.Config) *Command {
 				ui.Warn("   This action cannot be undone.")
 				fmt.Print("Type 'remove' to confirm: ")
 				var confirmation string
-				fmt.Scanln(&confirmation)
+				fmt.Scanln(&confirmation) //nolint:errcheck // empty input falls through to the default
 
 				if confirmation != "remove" {
 					ui.Info("Wallet removal cancelled")

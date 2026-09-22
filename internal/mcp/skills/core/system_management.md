@@ -1,12 +1,12 @@
 # System Management Skills
 
 ## Overview
-Comprehensive system management capabilities for the MozartPay platform, including status monitoring, network operations, health checks, configuration management, and system diagnostics.
+Comprehensive system management capabilities for the Stellar Go CLI platform, including status monitoring, network operations, health checks, configuration management, and system diagnostics.
 
 ## Skills
 
 ### system_status
-**Description**: Get MozartPay system status including network connection and version
+**Description**: Get Stellar Go CLI system status including network connection and version
 **Category**: system_management
 **MCP Tool**: system_status
 
@@ -30,7 +30,7 @@ Comprehensive system management capabilities for the MozartPay platform, includi
 ```
 
 **Status Information**:
-- **Version**: Current MozartPay version
+- **Version**: Current Stellar Go CLI version
 - **Network**: Active network configuration
 - **Active Wallet**: Currently selected wallet
 - **Wallet Connection**: Wallet service status
@@ -170,13 +170,13 @@ Comprehensive system management capabilities for the MozartPay platform, includi
 ---
 
 ### system_init
-**Description**: Initialize MozartPay CLI configuration
+**Description**: Initialize Stellar Go CLI configuration
 **Category**: system_management
 **MCP Tool**: system_init
 
 **Natural Language Patterns**:
 - "initialize system configuration"
-- "set up MozartPay for first time"
+- "set up Stellar Go CLI for first time"
 - "initialize CLI configuration"
 - "run initial setup"
 - "configure system for first use"
@@ -184,10 +184,10 @@ Comprehensive system management capabilities for the MozartPay platform, includi
 **Examples**:
 ```bash
 # Initial setup
-"initialize MozartPay configuration"
+"initialize Stellar Go CLI configuration"
 
 # First-time setup
-"set up MozartPay for first time"
+"set up Stellar Go CLI for first time"
 
 # Reinitialize
 "reset and reinitialize configuration"
@@ -224,7 +224,7 @@ Comprehensive system management capabilities for the MozartPay platform, includi
 ---
 
 ### system_version
-**Description**: Show MozartPay CLI version and build information
+**Description**: Show Stellar Go CLI version and build information
 **Category**: system_management
 **MCP Tool**: system_version
 
@@ -338,7 +338,7 @@ Comprehensive system management capabilities for the MozartPay platform, includi
 ## Workflows
 
 ### System Setup Process
-1. **Initialize**: "Initialize MozartPay configuration"
+1. **Initialize**: "Initialize Stellar Go CLI configuration"
 2. **Configure**: "Set up network and security settings"
 3. **Verify**: "Check system health and status"
 4. **Create Wallet**: "Set up first wallet"
@@ -380,7 +380,7 @@ Comprehensive system management capabilities for the MozartPay platform, includi
 ## Advanced Concepts
 
 ### System Architecture
-Understanding MozartPay architecture:
+Understanding Stellar Go CLI architecture:
 - Modular component design
 - Service integration patterns
 - Data flow architecture

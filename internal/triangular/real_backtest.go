@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 // RealDataBacktestEngine runs backtests using real-time Horizon quotes
@@ -129,8 +129,8 @@ func (r *RealDataBacktestEngine) sampleSinglePoint(cycle []string) (*HistoricalT
 
 func calculateRateFromQuote(quote *models.SwapQuote) float64 {
 	// For strict send: rate = expected_amount / amount
-	amount, _ := strconv.ParseFloat(quote.Amount, 64)
-	expected, _ := strconv.ParseFloat(quote.ExpectedAmount, 64)
+	amount, _ := strconv.ParseFloat(quote.Amount, 64)           //nolint:errcheck // parse failure yields 0, guarded below
+	expected, _ := strconv.ParseFloat(quote.ExpectedAmount, 64) //nolint:errcheck // parse failure yields 0
 	if amount == 0 {
 		return 0
 	}

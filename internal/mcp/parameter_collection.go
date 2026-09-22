@@ -237,7 +237,7 @@ func generateContextMessage(toolName string) string {
 
 // HasRequiredParams checks if all required parameters are present for a tool
 func HasRequiredParams(toolName string, args map[string]interface{}) bool {
-	response, _ := ValidateAndCollectParameters(toolName, args)
+	response, _ := ValidateAndCollectParameters(toolName, args) //nolint:errcheck // nil response means no collection needed
 	return response == nil
 }
 

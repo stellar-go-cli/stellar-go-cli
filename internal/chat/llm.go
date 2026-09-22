@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -19,7 +19,6 @@ import (
 type LLMClient struct {
 	config      config.LLMConfig
 	modelLoaded bool
-	lastErr     error
 }
 
 // NewLLMClient creates a new LLM client with the given configuration
@@ -72,7 +71,7 @@ func (l *LLMClient) isOllamaAvailable() bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 	if resp.StatusCode != http.StatusOK {
 		return false
@@ -140,7 +139,7 @@ func (l *LLMClient) predictOllama(prompt string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("ollama request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("ollama returned status %d", resp.StatusCode)
@@ -162,7 +161,7 @@ func (l *LLMClient) predictLlamaCLI(prompt string) (string, error) {
 	// Expand model path
 	modelPath := l.config.ModelPath
 	if strings.HasPrefix(modelPath, "~/") {
-		home, _ := os.UserHomeDir()
+		home, _ := os.UserHomeDir() //nolint:errcheck // empty home yields relative path fallback
 		modelPath = filepath.Join(home, modelPath[2:])
 	}
 
@@ -237,7 +236,7 @@ func (l *LLMClient) findLlamaCLI() string {
 		"/usr/bin/llama-cli",
 	}
 
-	home, _ := os.UserHomeDir()
+	home, _ := os.UserHomeDir() //nolint:errcheck // empty home is guarded below
 	if home != "" {
 		commonPaths = append(commonPaths,
 			filepath.Join(home, "llama.cpp/llama-cli"),

@@ -5,24 +5,30 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 // StellarExchange implements the Exchange interface for Stellar network
 type StellarExchange struct {
-	name    string
-	network models.Network
-	swapSvc *swap.Service
+	name      string
+	network   models.Network
+	swapSvc   *swap.Service
 	connected bool
 }
 
 // NewStellarExchange creates a new Stellar exchange instance
+// atof parses s as a float64, returning 0 when s is not a number.
+func atof(s string) float64 {
+	v, _ := strconv.ParseFloat(s, 64) //nolint:errcheck // 0 is the intended fallback
+	return v
+}
+
 func NewStellarExchange(network models.Network) *StellarExchange {
 	return &StellarExchange{
-		name:    "stellar",
-		network: network,
-		swapSvc: swap.NewService(network),
+		name:      "stellar",
+		network:   network,
+		swapSvc:   swap.NewService(network),
 		connected: false,
 	}
 }
@@ -81,7 +87,7 @@ func (s *StellarExchange) FetchTicker(symbol string) (*Ticker, error) {
 		}
 	}
 
-	lastPrice, _ := strconv.ParseFloat(quoteResult.ExpectedAmount, 64)
+	lastPrice := atof(quoteResult.ExpectedAmount)
 
 	return &Ticker{
 		Symbol:    symbol,
@@ -138,7 +144,7 @@ func (s *StellarExchange) FetchOrderBook(symbol string, limit int) (*OrderBook, 
 		}
 	}
 
-	price, _ := strconv.ParseFloat(quoteResult.ExpectedAmount, 64)
+	price := atof(quoteResult.ExpectedAmount)
 
 	// Return a simplified order book based on the best path
 	return &OrderBook{
@@ -197,8 +203,8 @@ func (s *StellarExchange) CreateOrder(symbol string, side OrderSide, orderType O
 
 	// For limit orders, check if price is acceptable
 	if orderType == OrderTypeLimit {
-		expectedPrice, _ := strconv.ParseFloat(quoteResult.ExpectedAmount, 64)
-		actualAmount, _ := strconv.ParseFloat(swapAmount, 64)
+		expectedPrice := atof(quoteResult.ExpectedAmount)
+		actualAmount := atof(swapAmount)
 		actualPrice := expectedPrice / actualAmount
 
 		if side == OrderSideBuy && actualPrice > price {

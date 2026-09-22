@@ -1,10 +1,10 @@
-# Ollama Integration with MozartPay
+# Ollama Integration with Stellar Go CLI
 
-This document describes how to use the Ollama deployment within your MozartPay Kubernetes cluster.
+This document describes how to use the Ollama deployment within your Stellar Go CLI Kubernetes cluster.
 
 ## Overview
 
-Ollama has been integrated into your existing MozartPay Kubernetes cluster to provide local AI model hosting capabilities. The deployment includes:
+Ollama has been integrated into your existing Stellar Go CLI Kubernetes cluster to provide local AI model hosting capabilities. The deployment includes:
 
 - **Persistent Storage**: 20GB PVC for model storage
 - **Auto-scaling**: HPA configured for 1-3 replicas
@@ -34,8 +34,8 @@ http://<loadbalancer-ip>:11434
 
 ### Ingress Access
 ```
-https://mozartpay.example.com/ollama
-https://api.mozartpay.example.com/ollama
+https://stellar-go-cli.example.com/ollama
+https://api.stellar-go-cli.example.com/ollama
 ```
 
 ## API Usage
@@ -72,41 +72,41 @@ curl http://ollama:11434/api/chat -d '{
 
 ### Check Deployment Status
 ```bash
-kubectl get pods -n mozartpay -l app.kubernetes.io/component=ollama
-kubectl get service ollama -n mozartpay
-kubectl get hpa ollama-hpa -n mozartpay
+kubectl get pods -n stellar-go-cli -l app.kubernetes.io/component=ollama
+kubectl get service ollama -n stellar-go-cli
+kubectl get hpa ollama-hpa -n stellar-go-cli
 ```
 
 ### View Logs
 ```bash
-kubectl logs -n mozartpay deployment/ollama -f
+kubectl logs -n stellar-go-cli deployment/ollama -f
 ```
 
 ### Manage Models
 ```bash
 # List models
-kubectl exec -n mozartpay deployment/ollama -- ollama list
+kubectl exec -n stellar-go-cli deployment/ollama -- ollama list
 
 # Pull new model
-kubectl exec -n mozartpay deployment/ollama -- ollama pull llama3.1:8b
+kubectl exec -n stellar-go-cli deployment/ollama -- ollama pull llama3.1:8b
 
 # Remove model
-kubectl exec -n mozartpay deployment/ollama -- ollama remove llama3.2:3b
+kubectl exec -n stellar-go-cli deployment/ollama -- ollama remove llama3.2:3b
 
 # Show model info
-kubectl exec -n mozartpay deployment/ollama -- ollama show llama3.2:3b
+kubectl exec -n stellar-go-cli deployment/ollama -- ollama show llama3.2:3b
 ```
 
 ### Scale Deployment
 ```bash
 # Scale up
-kubectl scale deployment ollama -n mozartpay --replicas=3
+kubectl scale deployment ollama -n stellar-go-cli --replicas=3
 
 # Scale down
-kubectl scale deployment ollama -n mozartpay --replicas=1
+kubectl scale deployment ollama -n stellar-go-cli --replicas=1
 ```
 
-## Integration with MozartPay Services
+## Integration with Stellar Go CLI Services
 
 Your MCP (Model Context Protocol) service can now connect to the Ollama service internally:
 
@@ -169,26 +169,26 @@ The deployment includes standard Kubernetes monitoring through your existing Pro
 
 1. **Models not loading**: Check the model pull job logs
    ```bash
-   kubectl logs job/ollama-pull-models -n mozartpay
+   kubectl logs job/ollama-pull-models -n stellar-go-cli
    ```
 
 2. **High memory usage**: Consider using smaller models or adding more replicas
    ```bash
-   kubectl top pods -n mozartpay -l app.kubernetes.io/component=ollama
+   kubectl top pods -n stellar-go-cli -l app.kubernetes.io/component=ollama
    ```
 
 3. **Connection refused**: Ensure the Ollama pod is running and ready
    ```bash
-   kubectl get pods -n mozartpay -l app.kubernetes.io/component=ollama
+   kubectl get pods -n stellar-go-cli -l app.kubernetes.io/component=ollama
    ```
 
 ### Logs Analysis
 ```bash
 # Real-time logs
-kubectl logs -n mozartpay deployment/ollama -f
+kubectl logs -n stellar-go-cli deployment/ollama -f
 
 # Previous deployment logs
-kubectl logs -n mozartpay deployment/ollama --previous
+kubectl logs -n stellar-go-cli deployment/ollama --previous
 ```
 
 ## Backup and Recovery
@@ -198,20 +198,20 @@ Models are stored in the persistent volume. To backup:
 
 ```bash
 # Create a backup pod
-kubectl run ollama-backup --image=busybox -n mozartpay --restart=Never -- \
+kubectl run ollama-backup --image=busybox -n stellar-go-cli --restart=Never -- \
   tar czf /backup/ollama-models.tar.gz -C /root/.ollama .
 
 # Copy backup
-kubectl cp mozartpay/ollama-backup:/backup/ollama-models.tar.gz ./ollama-backup.tar.gz
+kubectl cp stellar-go-cli/ollama-backup:/backup/ollama-models.tar.gz ./ollama-backup.tar.gz
 ```
 
 ### Recovery
 ```bash
 # Restore from backup
-kubectl cp ./ollama-backup.tar.gz mozartpay/$(kubectl get pods -n mozartpay -l app.kubernetes.io/component=ollama -o jsonpath='{.items[0].metadata.name}'):/tmp/
+kubectl cp ./ollama-backup.tar.gz stellar-go-cli/$(kubectl get pods -n stellar-go-cli -l app.kubernetes.io/component=ollama -o jsonpath='{.items[0].metadata.name}'):/tmp/
 
 # Extract in container
-kubectl exec -n mozartpay deployment/ollama -- tar xzf /tmp/ollama-backup.tar.gz -C /root/.ollama
+kubectl exec -n stellar-go-cli deployment/ollama -- tar xzf /tmp/ollama-backup.tar.gz -C /root/.ollama
 ```
 
 ## Future Enhancements

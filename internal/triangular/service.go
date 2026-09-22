@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 // TriangularPath represents a 3-leg arbitrage opportunity
@@ -149,7 +149,7 @@ func (s *Service) scanTriangularCycle(cycle []string, amount string) (Triangular
 	result.Leg3Quote = leg3Quote
 
 	// Calculate results
-	finalAmount, _ := strconv.ParseFloat(leg3Quote.ExpectedAmount, 64)
+	finalAmount, _ := strconv.ParseFloat(leg3Quote.ExpectedAmount, 64) //nolint:errcheck // parse failure yields 0
 	result.FinalXLM = finalAmount
 	result.NetProfitXLM = finalAmount - startingFloat
 	result.ProfitPercent = (result.NetProfitXLM / startingFloat) * 100

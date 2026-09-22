@@ -26,7 +26,7 @@ func GenerateKeyPair() (*ecdsa.PrivateKey, error) {
 // Stellar seed (S...) using SHA-256 as a KDF. The same seed always produces
 // the same key pair, linking the VC signature to the wallet owner.
 func DeriveKeyFromSeed(seed string) (*ecdsa.PrivateKey, error) {
-	h := sha256.Sum256([]byte("mozartpay-did-key-derivation:" + seed))
+	h := sha256.Sum256([]byte("stellar-go-cli-did-key-derivation:" + seed))
 	d := new(big.Int).SetBytes(h[:])
 	curve := elliptic.P256()
 	d.Mod(d, curve.Params().N)
@@ -35,37 +35,43 @@ func DeriveKeyFromSeed(seed string) (*ecdsa.PrivateKey, error) {
 		d.SetBytes(h[:])
 		d.Mod(d, curve.Params().N)
 	}
-	priv := &ecdsa.PrivateKey{
-		PublicKey: ecdsa.PublicKey{Curve: curve},
-		D:         d,
+	return ecdsa.ParseRawPrivateKey(curve, d.FillBytes(make([]byte, 32)))
+}
+
+// marshalPublicKey encodes a public key in uncompressed SEC 1 form
+// (0x04 || X || Y). Callers pass internally generated keys, which are
+// always valid.
+func marshalPublicKey(pub *ecdsa.PublicKey) []byte {
+	b, err := pub.Bytes()
+	if err != nil {
+		panic(fmt.Sprintf("invalid ECDSA public key: %v", err))
 	}
-	priv.PublicKey.X, priv.PublicKey.Y = curve.ScalarBaseMult(d.Bytes())
-	return priv, nil
+	return b
 }
 
 // PublicKeyToHex encodes the public key as uncompressed hex
 func PublicKeyToHex(pub *ecdsa.PublicKey) string {
-	b := elliptic.Marshal(pub.Curve, pub.X, pub.Y)
+	b := marshalPublicKey(pub)
 	return hex.EncodeToString(b)
 }
 
 // PublicKeyToMultibase returns a multibase-encoded (base58btc) public key
 func PublicKeyToMultibase(pub *ecdsa.PublicKey) string {
-	b := elliptic.Marshal(pub.Curve, pub.X, pub.Y)
+	b := marshalPublicKey(pub)
 	// z prefix = base58btc multibase
 	return "z" + base58Encode(b)
 }
 
 // AddressFromPublicKey derives an Ethereum-style address from a public key
 func AddressFromPublicKey(pub *ecdsa.PublicKey) string {
-	b := elliptic.Marshal(pub.Curve, pub.X, pub.Y)
+	b := marshalPublicKey(pub)
 	h := sha256.Sum256(b[1:]) // skip 0x04 prefix
 	return "0x" + hex.EncodeToString(h[12:])
 }
 
 // StellarAddressFromPublicKey derives a Stellar-style address (G...)
 func StellarAddressFromPublicKey(pub *ecdsa.PublicKey) string {
-	b := elliptic.Marshal(pub.Curve, pub.X, pub.Y)
+	b := marshalPublicKey(pub)
 	encoded := strings.ToUpper(base32Encode(b[:32]))
 	if len(encoded) > 54 {
 		encoded = encoded[:54]
@@ -350,7 +356,7 @@ func DIDEthrFromAddress(addr string) string {
 
 // DIDEBSIFromPublicKey builds a did:ebsi identifier
 func DIDEBSIFromPublicKey(pub *ecdsa.PublicKey) string {
-	b := elliptic.Marshal(pub.Curve, pub.X, pub.Y)
+	b := marshalPublicKey(pub)
 	h := sha256.Sum256(b)
 	enc := base58Encode(h[:16])
 	return "did:ebsi:z" + enc

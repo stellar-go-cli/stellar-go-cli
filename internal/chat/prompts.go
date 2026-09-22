@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -17,10 +17,10 @@ func NewPromptBuilder() *PromptBuilder {
 // IntentClassificationPrompt creates a prompt for intent classification
 func (p *PromptBuilder) IntentClassificationPrompt(message string) string {
 	var b strings.Builder
-	
-	b.WriteString("You are an intent classifier for a cryptocurrency payment CLI called MozartPay.\n")
+
+	b.WriteString("You are an intent classifier for a cryptocurrency payment CLI called Stellar Go CLI.\n")
 	b.WriteString("Analyze the user message and classify it into exactly one of these intents:\n\n")
-	
+
 	intents := []struct {
 		name        string
 		description string
@@ -53,49 +53,49 @@ func (p *PromptBuilder) IntentClassificationPrompt(message string) string {
 		{"memory_delete", "User wants to delete a memory", []string{"forget", "delete memory", "remove"}},
 		{"unknown", "None of the above match", []string{}},
 	}
-	
+
 	for _, intent := range intents {
-		b.WriteString(fmt.Sprintf("- %s: %s\n", intent.name, intent.description))
+		fmt.Fprintf(&b, "- %s: %s\n", intent.name, intent.description)
 		if len(intent.examples) > 0 {
-			b.WriteString(fmt.Sprintf("  Examples: %s\n", strings.Join(intent.examples, ", ")))
+			fmt.Fprintf(&b, "  Examples: %s\n", strings.Join(intent.examples, ", "))
 		}
 	}
-	
+
 	b.WriteString("\nRespond with ONLY a JSON object in this exact format:\n")
 	b.WriteString(`{"intent": "INTENT_NAME", "confidence": 0.0-1.0}`)
 	b.WriteString("\n\nUser message: \"")
 	b.WriteString(message)
 	b.WriteString("\"\n")
 	b.WriteString("\nIntent JSON: ")
-	
+
 	return b.String()
 }
 
 // ParameterExtractionPrompt creates a prompt for extracting parameters
 func (p *PromptBuilder) ParameterExtractionPrompt(intent string, message string, state *State) string {
 	var b strings.Builder
-	
-	b.WriteString("You are a parameter extractor for a cryptocurrency payment CLI called MozartPay.\n")
-	b.WriteString(fmt.Sprintf("The user intent has been classified as: %s\n\n", intent))
-	
+
+	b.WriteString("You are a parameter extractor for a cryptocurrency payment CLI called Stellar Go CLI.\n")
+	fmt.Fprintf(&b, "The user intent has been classified as: %s\n\n", intent)
+
 	// Define expected parameters for each intent
 	params := p.getExpectedParams(intent)
 	if len(params) > 0 {
 		b.WriteString("Extract the following parameters from the user message:\n")
 		for _, param := range params {
-			b.WriteString(fmt.Sprintf("- %s (%s): %s\n", param.name, param.paramType, param.description))
+			fmt.Fprintf(&b, "- %s (%s): %s\n", param.name, param.paramType, param.description)
 		}
 	}
-	
+
 	// Add context about current state
 	b.WriteString("\nCurrent state information:\n")
 	if state.GetNetwork() != "" {
-		b.WriteString(fmt.Sprintf("- Current network: %s\n", state.GetNetwork()))
+		fmt.Fprintf(&b, "- Current network: %s\n", state.GetNetwork())
 	}
 	if state.HasPendingSwap() {
 		b.WriteString("- There is a pending swap operation\n")
 	}
-	
+
 	b.WriteString("\nRespond with ONLY a JSON object containing the extracted parameters.\n")
 	b.WriteString("Use null for missing optional parameters. Omit parameters that aren't mentioned.\n")
 	b.WriteString("Example: {\"amount\": \"100\", \"asset\": \"XLM\"}\n")
@@ -103,7 +103,7 @@ func (p *PromptBuilder) ParameterExtractionPrompt(intent string, message string,
 	b.WriteString(message)
 	b.WriteString("\"\n")
 	b.WriteString("\nParameters JSON: ")
-	
+
 	return b.String()
 }
 
@@ -168,41 +168,41 @@ func (p *PromptBuilder) getExpectedParams(intent string) []paramInfo {
 // ResponseGenerationPrompt creates a prompt for generating natural responses
 func (p *PromptBuilder) ResponseGenerationPrompt(intent string, params map[string]interface{}, result string) string {
 	var b strings.Builder
-	
-	b.WriteString("You are a helpful assistant for MozartPay, a cryptocurrency payment CLI.\n")
+
+	b.WriteString("You are a helpful assistant for Stellar Go CLI, a cryptocurrency payment CLI.\n")
 	b.WriteString("Generate a friendly, concise response based on the operation result.\n\n")
-	b.WriteString(fmt.Sprintf("Intent: %s\n", intent))
-	
+	fmt.Fprintf(&b, "Intent: %s\n", intent)
+
 	if len(params) > 0 {
 		b.WriteString("Parameters:\n")
 		for k, v := range params {
-			b.WriteString(fmt.Sprintf("- %s: %v\n", k, v))
+			fmt.Fprintf(&b, "- %s: %v\n", k, v)
 		}
 	}
-	
-	b.WriteString(fmt.Sprintf("\nOperation result:\n%s\n\n", result))
+
+	fmt.Fprintf(&b, "\nOperation result:\n%s\n\n", result)
 	b.WriteString("Provide a helpful, conversational response. Keep it under 3 sentences if possible.\n")
 	b.WriteString("Response: ")
-	
+
 	return b.String()
 }
 
 // SuggestionPrompt creates a prompt for generating context-aware suggestions
 func (p *PromptBuilder) SuggestionPrompt(state *State, lastOperation string) string {
 	var b strings.Builder
-	
-	b.WriteString("You are a suggestion generator for MozartPay, a cryptocurrency payment CLI.\n")
+
+	b.WriteString("You are a suggestion generator for Stellar Go CLI, a cryptocurrency payment CLI.\n")
 	b.WriteString("Based on the user's current state and recent activity, suggest what they might want to do next.\n\n")
-	
+
 	b.WriteString("Current state:\n")
-	b.WriteString(fmt.Sprintf("- Network: %s\n", state.GetNetwork()))
-	b.WriteString(fmt.Sprintf("- Has pending swap: %v\n", state.HasPendingSwap()))
-	b.WriteString(fmt.Sprintf("- Has pending opportunities: %v\n", state.HasPendingTriangularOpportunities()))
-	
+	fmt.Fprintf(&b, "- Network: %s\n", state.GetNetwork())
+	fmt.Fprintf(&b, "- Has pending swap: %v\n", state.HasPendingSwap())
+	fmt.Fprintf(&b, "- Has pending opportunities: %v\n", state.HasPendingTriangularOpportunities())
+
 	if lastOperation != "" {
-		b.WriteString(fmt.Sprintf("- Last operation: %s\n", lastOperation))
+		fmt.Fprintf(&b, "- Last operation: %s\n", lastOperation)
 	}
-	
+
 	b.WriteString("\nSuggest 3 natural follow-up actions the user might want to take.\n")
 	b.WriteString("Respond with a JSON array of suggestions. Each suggestion should have:\n")
 	b.WriteString(`- "text": Natural language suggestion (e.g., "Check your wallet balance")`)
@@ -210,7 +210,7 @@ func (p *PromptBuilder) SuggestionPrompt(state *State, lastOperation string) str
 	b.WriteString(`- "command": The actual command (e.g., "balance")`)
 	b.WriteString("\n\n")
 	b.WriteString("Suggestions JSON: ")
-	
+
 	return b.String()
 }
 

@@ -1,7 +1,7 @@
 # Swap Operations Skills
 
 ## Overview
-Advanced swap and arbitrage capabilities for the MozartPay platform, including quoting, execution, monitoring, and automated trading strategies across multiple asset pairs and networks.
+Advanced swap and arbitrage capabilities for the Stellar Go CLI platform, including quoting, execution, monitoring, and automated trading strategies across multiple asset pairs and networks.
 
 ## Skills
 

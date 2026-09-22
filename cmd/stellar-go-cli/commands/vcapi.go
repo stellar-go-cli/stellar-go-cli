@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/did"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/vc"
 )
 
 func newVCApiCmd(cfg *config.Config) *Command {
@@ -27,7 +27,7 @@ func newVCApiCmd(cfg *config.Config) *Command {
 			p := *port
 			addr := fmt.Sprintf(":%d", p)
 
-			svc, err := did.NewService()
+			svc, err := vc.NewService()
 			if err != nil {
 				return fmt.Errorf("failed to create DID service: %w", err)
 			}
@@ -54,10 +54,17 @@ func newVCApiCmd(cfg *config.Config) *Command {
 	}
 }
 
+// writeJSON encodes v as a JSON response body; headers must already be set.
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		ui.Error(fmt.Sprintf("vc-api: failed to encode response: %v", err))
+	}
+}
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status":    "ok",
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 	})
@@ -68,7 +75,7 @@ type issueRequest struct {
 	Options    map[string]interface{} `json:"options,omitempty"`
 }
 
-func issueHandler(svc *did.Service) http.HandlerFunc {
+func issueHandler(svc *vc.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -80,7 +87,7 @@ func issueHandler(svc *did.Service) http.HandlerFunc {
 			httpError(w, http.StatusBadRequest, "failed to read request body")
 			return
 		}
-		defer r.Body.Close()
+		defer r.Body.Close() //nolint:errcheck // best-effort close
 
 		var req issueRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -121,19 +128,19 @@ func issueHandler(svc *did.Service) http.HandlerFunc {
 		}
 		didStr := didDoc.ID
 
-		vc, err := svc.IssueVC(didStr, vcType, subject)
+		issued, err := svc.IssueVC(didStr, vcType, subject)
 		if err != nil {
 			httpError(w, http.StatusBadRequest, fmt.Sprintf("issuance failed: %v", err))
 			return
 		}
 
 		if id, ok := cred["id"].(string); ok && id != "" {
-			vc.ID = id
+			issued.ID = id
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(vc)
+		writeJSON(w, issued)
 	}
 }
 
@@ -152,7 +159,7 @@ type checkResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func verifyHandler(svc *did.Service) http.HandlerFunc {
+func verifyHandler(svc *vc.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -164,7 +171,7 @@ func verifyHandler(svc *did.Service) http.HandlerFunc {
 			httpError(w, http.StatusBadRequest, "failed to read request body")
 			return
 		}
-		defer r.Body.Close()
+		defer r.Body.Close() //nolint:errcheck // best-effort close
 
 		var req verifyRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -199,14 +206,14 @@ func verifyHandler(svc *did.Service) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
-		json.NewEncoder(w).Encode(result)
+		writeJSON(w, result)
 	}
 }
 
 func httpError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"error": message,
 	})
 }

@@ -22,14 +22,14 @@ func (s *StatsCalculator) CalculateZScore(currentRate float64, history []History
 	if len(history) < 2 {
 		return 0
 	}
-	
+
 	// Calculate mean
 	sum := 0.0
 	for _, h := range history {
 		sum += h.CombinedRate
 	}
 	mean := sum / float64(len(history))
-	
+
 	// Calculate standard deviation
 	sumSqDiff := 0.0
 	for _, h := range history {
@@ -37,11 +37,11 @@ func (s *StatsCalculator) CalculateZScore(currentRate float64, history []History
 		sumSqDiff += diff * diff
 	}
 	stdDev := math.Sqrt(sumSqDiff / float64(len(history)))
-	
+
 	if stdDev == 0 {
 		return 0
 	}
-	
+
 	zScore := (currentRate - mean) / stdDev
 	return zScore
 }
@@ -51,19 +51,19 @@ func (s *StatsCalculator) CalculateVolatility(history []HistoryRecord) float64 {
 	if len(history) < 2 {
 		return 0
 	}
-	
+
 	sum := 0.0
 	for _, h := range history {
 		sum += h.CombinedRate
 	}
 	mean := sum / float64(len(history))
-	
+
 	sumSqDiff := 0.0
 	for _, h := range history {
 		diff := h.CombinedRate - mean
 		sumSqDiff += diff * diff
 	}
-	
+
 	return math.Sqrt(sumSqDiff / float64(len(history)))
 }
 
@@ -72,7 +72,7 @@ func (s *StatsCalculator) CalculateMean(history []HistoryRecord) float64 {
 	if len(history) == 0 {
 		return 1.0 // Default to efficient market
 	}
-	
+
 	sum := 0.0
 	for _, h := range history {
 		sum += h.CombinedRate
@@ -92,14 +92,14 @@ func (s *StatsCalculator) CalculateSharpeRatio(returns []float64, riskFreeRate f
 	if len(returns) == 0 {
 		return 0
 	}
-	
+
 	// Calculate average return
 	sum := 0.0
 	for _, r := range returns {
 		sum += r
 	}
 	avgReturn := sum / float64(len(returns))
-	
+
 	// Calculate volatility (std dev of returns)
 	sumSqDiff := 0.0
 	for _, r := range returns {
@@ -107,11 +107,11 @@ func (s *StatsCalculator) CalculateSharpeRatio(returns []float64, riskFreeRate f
 		sumSqDiff += diff * diff
 	}
 	stdDev := math.Sqrt(sumSqDiff / float64(len(returns)))
-	
+
 	if stdDev == 0 {
 		return 0
 	}
-	
+
 	return (avgReturn - riskFreeRate) / stdDev
 }
 
@@ -120,28 +120,28 @@ func (s *StatsCalculator) CalculateMaxDrawdown(profits []float64) float64 {
 	if len(profits) == 0 {
 		return 0
 	}
-	
+
 	maxDrawdown := 0.0
 	peak := profits[0]
-	
+
 	for _, profit := range profits {
 		if profit > peak {
 			peak = profit
 		}
-		
+
 		drawdown := (peak - profit) / peak
 		if drawdown > maxDrawdown {
 			maxDrawdown = drawdown
 		}
 	}
-	
+
 	return maxDrawdown
 }
 
 // OpportunityScore calculates a 0-100 score based on multiple factors
 func (s *StatsCalculator) OpportunityScore(result TriangularResult, history []HistoryRecord) int {
 	score := 0
-	
+
 	// Z-score component (0-40 points)
 	zScore := s.CalculateZScore(result.Path.CombinedRate, history)
 	zScoreAbs := math.Abs(zScore)
@@ -154,7 +154,7 @@ func (s *StatsCalculator) OpportunityScore(result TriangularResult, history []Hi
 	} else if zScoreAbs > 0.5 {
 		score += 10
 	}
-	
+
 	// Profit component (0-30 points)
 	if result.ProfitPercent > 0.2 {
 		score += 30
@@ -163,7 +163,7 @@ func (s *StatsCalculator) OpportunityScore(result TriangularResult, history []Hi
 	} else if result.ProfitPercent > 0.05 {
 		score += 10
 	}
-	
+
 	// Volatility component (0-30 points) - lower volatility = higher score
 	volatility := s.CalculateVolatility(history)
 	if volatility < 0.001 {
@@ -173,6 +173,6 @@ func (s *StatsCalculator) OpportunityScore(result TriangularResult, history []Hi
 	} else if volatility < 0.01 {
 		score += 10
 	}
-	
+
 	return score
 }

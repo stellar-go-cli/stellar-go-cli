@@ -8,16 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
-
-// ─────────────────────────────────────────────
-// OA — Orchestrated Agreement Score
-// ─────────────────────────────────────────────
-
-// Note: OA implementation removed - keeping structure for future use
 
 // ─────────────────────────────────────────────
 // Alpha Vantage — News & Market Data
@@ -121,10 +114,10 @@ func (av *AlphaVantageClient) fetchNewsREST(assets []string, limit int) ([]NewsA
 		if err != nil {
 			continue // Skip this topic on error
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			continue // Skip this topic on HTTP error
+			resp.Body.Close() //nolint:errcheck // close error is unactionable
+			continue          // Skip this topic on HTTP error
 		}
 
 		var apiResponse struct {
@@ -145,22 +138,26 @@ func (av *AlphaVantageClient) fetchNewsREST(assets []string, limit int) ([]NewsA
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
-			continue // Skip this topic on parse error
+			resp.Body.Close() //nolint:errcheck // close error is unactionable
+			continue          // Skip this topic on parse error
 		}
 
 		// Check for API errors or information messages
 		if apiResponse.Error != "" {
 			fmt.Printf("Alpha Vantage API Error: %s\n", apiResponse.Error)
+			resp.Body.Close() //nolint:errcheck // close error is unactionable
 			continue
 		}
 		if apiResponse.Information != "" {
 			// Check if this is a rate limit message
 			if strings.Contains(apiResponse.Information, "premium plans") || strings.Contains(apiResponse.Information, "rate limit") {
 				fmt.Printf("Alpha Vantage API rate limit reached. Using fallback news.\n")
+				resp.Body.Close() //nolint:errcheck // close error is unactionable
 				// Return mock news when rate limited
 				return av.getMockNews(assets, limit), nil
 			} else {
 				fmt.Printf("Alpha Vantage API Info: %s\n", apiResponse.Information)
+				resp.Body.Close() //nolint:errcheck // close error is unactionable
 				continue
 			}
 		}
@@ -187,6 +184,7 @@ func (av *AlphaVantageClient) fetchNewsREST(assets []string, limit int) ([]NewsA
 
 			allArticles = append(allArticles, article)
 		}
+		resp.Body.Close() //nolint:errcheck // close error is unactionable
 
 		// Add small delay between API calls to be respectful
 		time.Sleep(100 * time.Millisecond)
@@ -524,31 +522,3 @@ func PingIntegration(name string) (bool, int64) {
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
-
-func scoreToGrade(score int) string {
-	switch {
-	case score >= 900:
-		return "AAA"
-	case score >= 800:
-		return "AA"
-	case score >= 700:
-		return "A"
-	case score >= 600:
-		return "BBB"
-	case score >= 500:
-		return "BB"
-	default:
-		return "B"
-	}
-}
-
-func gradeToRisk(grade string) string {
-	switch grade {
-	case "AAA", "AA":
-		return "LOW"
-	case "A", "BBB":
-		return "MEDIUM"
-	default:
-		return "HIGH"
-	}
-}

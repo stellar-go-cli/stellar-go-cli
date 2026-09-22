@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/zk"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/network"
@@ -180,7 +180,7 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 		AccountID: kp.Address(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("horizon: account not found — run 'mozartpay wallet fund' first (testnet) or fund your mainnet account: %w", err)
+		return nil, fmt.Errorf("horizon: account not found — run 'stellar-go-cli wallet fund' first (testnet) or fund your mainnet account: %w", err)
 	}
 
 	// Only XLM native for now; anchored assets need issuer config
@@ -228,9 +228,10 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 	resp, err := client.SubmitTransactionXDR(txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
-			rc, _ := herr.ResultCodes()
-			return nil, fmt.Errorf("tx failed — code: %s, ops: %v",
-				rc.TransactionCode, rc.OperationCodes)
+			if rc, rcErr := herr.ResultCodes(); rcErr == nil && rc != nil {
+				return nil, fmt.Errorf("tx failed — code: %s, ops: %v",
+					rc.TransactionCode, rc.OperationCodes)
+			}
 		}
 		return nil, fmt.Errorf("submit to Horizon: %w", err)
 	}
@@ -369,9 +370,10 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 	resp, err := client.SubmitTransactionXDR(txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
-			rc, _ := herr.ResultCodes()
-			return nil, fmt.Errorf("ZK transaction failed — code: %s, ops: %v",
-				rc.TransactionCode, rc.OperationCodes)
+			if rc, rcErr := herr.ResultCodes(); rcErr == nil && rc != nil {
+				return nil, fmt.Errorf("ZK transaction failed — code: %s, ops: %v",
+					rc.TransactionCode, rc.OperationCodes)
+			}
 		}
 		return nil, fmt.Errorf("submit ZK transaction to Horizon: %w", err)
 	}
@@ -391,7 +393,7 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 	}
 
 	// Save verification data for compliance reporting
-	config.SaveState("zk_verification_latest", verification)
+	config.SaveState("zk_verification_latest", verification) //nolint:errcheck // best-effort cache
 
 	return &models.Payment{
 		ID:          "zk-" + resp.Hash[:12],
@@ -439,7 +441,7 @@ func (s *Service) payZKSimulated(from, to, amount, asset string, net models.Netw
 	}
 
 	// Save verification data for compliance reporting
-	config.SaveState("zk_verification_latest", verification)
+	config.SaveState("zk_verification_latest", verification) //nolint:errcheck // best-effort cache
 
 	return &models.Payment{
 		ID:          "zk-" + mpCrypto.RandomHex(12),

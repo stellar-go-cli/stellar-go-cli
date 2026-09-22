@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
 
 func newSwapCmd(cfg *config.Config) *Command {
@@ -31,7 +31,7 @@ func newSwapCmd(cfg *config.Config) *Command {
 	cmd.addSub(newSwapScanCmd(cfg))
 	cmd.addSub(newSwapMonitorCmd(cfg))
 	cmd.addSub(newSwapArbitrageAllCmd(cfg))
-	cmd.addSub(newTriangularCmd(cfg))
+	addSwapExtras(cmd, cfg)
 	cmd.addSub(newSwapAssetsCmd(cfg))
 	cmd.Run = func(c *Command, args []string) error {
 		c.printHelp()
@@ -134,7 +134,7 @@ func newSwapQuoteCmd(cfg *config.Config) *Command {
 				}
 			}
 
-			ui.Info(fmt.Sprintf("Run 'mozartpay swap execute --from %s --to %s --amount %s' to execute this swap", *from, *to, *amount))
+			ui.Info(fmt.Sprintf("Run 'stellar-go-cli swap execute --from %s --to %s --amount %s' to execute this swap", *from, *to, *amount))
 			return nil
 		},
 	}
@@ -265,8 +265,8 @@ func newSwapExecuteCmd(cfg *config.Config) *Command {
 			ui.Separator()
 
 			// Save payment for reporting
-			config.SaveState("payment_latest", payment)
-			ui.Info("Run 'mozartpay report generate' to produce a compliance report.")
+			config.SaveState("payment_latest", payment) //nolint:errcheck // best-effort state cache
+			ui.Info("Run 'stellar-go-cli report generate' to produce a compliance report.")
 
 			return nil
 		},
@@ -336,7 +336,10 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			// Get sender address
 			var fromAddr string
 			if useRealService {
-				kp, _ := svc.LoadStellarKeypair()
+				kp, kerr := svc.LoadStellarKeypair()
+				if kerr != nil {
+					return fmt.Errorf("load keypair: %w", kerr)
+				}
 				fromAddr = kp.Address()
 			} else {
 				fromAddr = cfg.ActiveAddress
@@ -473,8 +476,8 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			ui.Separator()
 
 			// Save payment for reporting
-			config.SaveState("payment_latest", payment)
-			ui.Info("Run 'mozartpay report generate' to produce a compliance report.")
+			config.SaveState("payment_latest", payment) //nolint:errcheck // best-effort state cache
+			ui.Info("Run 'stellar-go-cli report generate' to produce a compliance report.")
 
 			return nil
 		},
@@ -532,8 +535,8 @@ func newSwapScanCmd(cfg *config.Config) *Command {
 
 			// Start server in background
 			go func() {
-				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					// Server closed
+				if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					ui.Warn(fmt.Sprintf("metrics server stopped: %v", err))
 				}
 			}()
 
@@ -906,8 +909,8 @@ func newSwapArbitrageAllCmd(cfg *config.Config) *Command {
 				spin.Stop(true, "Leg B complete - received "+quoteB.ExpectedAmount+" "+best.BaseAsset)
 
 				// Calculate actual profit
-				finalAmount, _ := strconv.ParseFloat(quoteB.ExpectedAmount, 64)
-				startAmount, _ := strconv.ParseFloat(best.TestAmount, 64)
+				finalAmount := parseFloatOr(quoteB.ExpectedAmount)
+				startAmount := parseFloatOr(best.TestAmount)
 				actualProfit := finalAmount - startAmount
 
 				ui.SectionLabel("Arbitrage Complete")
@@ -916,7 +919,7 @@ func newSwapArbitrageAllCmd(cfg *config.Config) *Command {
 				ui.KVColor("Actual Profit", fmt.Sprintf("%.7f %s", actualProfit, best.BaseAsset), ui.BrightGreen)
 
 				// Save payments for reporting
-				config.SaveState("payment_latest", paymentB)
+				config.SaveState("payment_latest", paymentB) //nolint:errcheck // best-effort state cache
 			}
 
 			return nil
@@ -1061,7 +1064,7 @@ func runContinuousArbitrage(cfg *config.Config, net models.Network, amount, base
 			ui.Error(fmt.Sprintf("Scan %d error: %v", scanNum, err))
 		} else if result != nil && result.EstimatedNetXLM >= minProfit {
 			// Sanity check: skip unrealistically high profits (>3%) as they're likely stale quotes
-			amountFloat, _ := strconv.ParseFloat(amount, 64)
+			amountFloat := parseFloatOr(amount)
 			profitPct := result.EstimatedNetXLM / amountFloat
 			if profitPct > 0.03 {
 				ui.Warn(fmt.Sprintf("Scan %d: Suspicious profit %.2f%% — likely stale quote, skipping", scanNum, profitPct*100))
@@ -1277,7 +1280,7 @@ func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAs
 		return result, fmt.Errorf("leg B quote expired (age: %.1fs)", result.LegB.Age())
 	}
 
-	amountFloat, _ := strconv.ParseFloat(amount, 64)
+	amountFloat := parseFloatOr(amount)
 	var payments []*models.Payment
 	if useSim {
 		sim := swap.NewSimulatedService()
@@ -1319,7 +1322,7 @@ func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAs
 		printBalanceComparison(result)
 	}
 
-	config.SaveState("payment_latest", payments[len(payments)-1])
+	config.SaveState("payment_latest", payments[len(payments)-1]) //nolint:errcheck // best-effort state cache
 	return result, nil
 }
 
@@ -1392,8 +1395,8 @@ func printBalanceComparison(result *models.SwapRoundTripResult) {
 				balAfter = "0.0000000"
 			}
 
-			beforeVal, _ := strconv.ParseFloat(balBefore, 64)
-			afterVal, _ := strconv.ParseFloat(balAfter, 64)
+			beforeVal := parseFloatOr(balBefore)
+			afterVal := parseFloatOr(balAfter)
 			netDelta := afterVal - beforeVal
 
 			t.AddRow(
@@ -1422,8 +1425,8 @@ func printBalanceComparison(result *models.SwapRoundTripResult) {
 				balAfter = "0.0000000"
 			}
 
-			beforeVal, _ := strconv.ParseFloat(balBefore, 64)
-			afterVal, _ := strconv.ParseFloat(balAfter, 64)
+			beforeVal := parseFloatOr(balBefore)
+			afterVal := parseFloatOr(balAfter)
 			delta := afterVal - beforeVal
 
 			t.AddRow(ui.Teal_(code), formatBalance(balBefore), formatBalance(balAfter), formatDelta(delta))
@@ -1494,7 +1497,7 @@ func newSwapAssetsCmd(cfg *config.Config) *Command {
 
 			fmt.Println()
 			ui.Info("Note: To receive non-XLM assets, you must have an established trustline.")
-			ui.Info("Run 'mozartpay asset trust --code USDC --issuer <issuer>' to create a trustline.")
+			ui.Info("Run 'stellar-go-cli asset trust --code USDC --issuer <issuer>' to create a trustline.")
 
 			return nil
 		},

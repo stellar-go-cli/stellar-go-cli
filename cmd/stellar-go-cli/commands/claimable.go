@@ -7,9 +7,9 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/claimables"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newClaimableCmd(cfg *config.Config) *Command {
@@ -98,7 +98,7 @@ func newClaimableListCmd(cfg *config.Config) *Command {
 			}
 			ui.Separator()
 
-			ui.Info(fmt.Sprintf("Run 'mozartpay claimable accept --id <BALANCE_ID>' to claim a balance"))
+			ui.Info("Run 'stellar-go-cli claimable accept --id <BALANCE_ID>' to claim a balance")
 			return nil
 		},
 	}
@@ -433,7 +433,7 @@ func newClaimableDeclineAllCmd(cfg *config.Config) *Command {
 					}
 					ui.KV(fmt.Sprintf("  %d", i+1), fmt.Sprintf("%s %s - %s", b.Amount, asset, skipReasons[i]))
 				}
-				ui.Info("To decline these, first establish trustlines: mozartpay asset trust --code <CODE> --issuer <ISSUER>")
+				ui.Info("To decline these, first establish trustlines: stellar-go-cli asset trust --code <CODE> --issuer <ISSUER>")
 			}
 
 			return nil

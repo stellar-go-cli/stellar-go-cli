@@ -81,7 +81,7 @@ func newIntTansuListCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Projects")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -120,7 +120,7 @@ func newIntTansuShowCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Project")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -159,7 +159,7 @@ func newIntTansuCommitCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Commit")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -205,7 +205,7 @@ func newIntTansuEvidenceCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Evidence")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -244,7 +244,7 @@ func newIntTansuSubProjectsCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Sub-Projects")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -283,7 +283,7 @@ func newIntTansuThresholdCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Attestation Threshold")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -329,7 +329,7 @@ func newIntTansuFinalityCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Attestation Finality")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -375,7 +375,7 @@ func newIntTansuAttestationsCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Attestations")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -415,7 +415,7 @@ func newIntTansuProposalsCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Proposals")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -455,7 +455,7 @@ func newIntTansuProposalCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Proposal")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -495,7 +495,7 @@ func newIntTansuCoiCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Conflict of Interest")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -532,7 +532,7 @@ func newIntTansuMemberCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Member")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -571,7 +571,7 @@ func newIntTansuBadgesCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Badges")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -616,7 +616,7 @@ func newIntTansuWeightCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Voting Weight")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -655,7 +655,7 @@ func newIntTansuAnonConfigCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Anonymous Voting Config")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -683,7 +683,7 @@ func newIntTansuAdminsCmd(cfg *config.Config) *Command {
 			ui.Header("Tansu Admins Config")
 
 			client := newTansuClient(cfg)
-			defer client.Close()
+			defer client.Close() //nolint:errcheck // RPC client cleanup
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()

@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/soroban"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
 	"github.com/stellar/go/xdr"
 	"golang.org/x/crypto/sha3"
 )
@@ -194,7 +194,7 @@ func ProjectNameToKey(name string) ([]byte, error) {
 		return nil, fmt.Errorf("project name too long (max 30 chars)")
 	}
 	for _, b := range []byte(name) {
-		if !((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')) {
+		if (b < 'a' || b > 'z') && (b < 'A' || b > 'Z') && (b < '0' || b > '9') {
 			return nil, fmt.Errorf("project name contains invalid characters (only alphanumeric allowed)")
 		}
 	}

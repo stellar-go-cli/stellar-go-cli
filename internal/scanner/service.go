@@ -7,12 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/swap"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
-
-const twoPathPaymentBaseFeesXLM = 2 * 0.00001 // 2 txs at 0.00001 XLM each
 
 // Service handles arbitrage scanning and Prometheus metrics
 type Service struct {
@@ -271,7 +269,7 @@ func (s *Service) RunScanAndServe(port int, block bool) ([]ScanResult, error) {
 	// If blocking, keep server running for a short time
 	if block {
 		time.Sleep(30 * time.Second)
-		server.Shutdown(context.Background())
+		server.Shutdown(context.Background()) //nolint:errcheck // best-effort shutdown
 	}
 
 	return results, nil

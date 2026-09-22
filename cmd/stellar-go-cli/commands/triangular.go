@@ -1,3 +1,5 @@
+//go:build extras
+
 package commands
 
 import (
@@ -5,9 +7,9 @@ import (
 	"fmt"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newTriangularCmd(cfg *config.Config) *Command {

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/trading"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newTradeCmd(cfg *config.Config) *Command {
@@ -55,15 +55,15 @@ func newTradeStrategyCmd(cfg *config.Config) *Command {
 		Short: "Create a new trading strategy",
 		Long: "Create and configure an automated trading strategy. Examples:\n\n" +
 			"Grid Trading:\n" +
-			"  mozartpay trade strategy --type grid_trading --name \"XLM Grid\" --params \"upper_price=0.12,lower_price=0.10,num_grids=10\"\n\n" +
+			"  stellar-go-cli trade strategy --type grid_trading --name \"XLM Grid\" --params \"upper_price=0.12,lower_price=0.10,num_grids=10\"\n\n" +
 			"Mean Reversion:\n" +
-			"  mozartpay trade strategy --type mean_reversion --name \"Bollinger Bounce\" --params \"lookback_periods=20,std_dev_threshold=2.0\"\n\n" +
+			"  stellar-go-cli trade strategy --type mean_reversion --name \"Bollinger Bounce\" --params \"lookback_periods=20,std_dev_threshold=2.0\"\n\n" +
 			"DCA:\n" +
-			"  mozartpay trade strategy --type dca --name \"Daily DCA\" --params \"amount_per_order=10,interval_hours=24\"\n\n" +
+			"  stellar-go-cli trade strategy --type dca --name \"Daily DCA\" --params \"amount_per_order=10,interval_hours=24\"\n\n" +
 			"Momentum:\n" +
-			"  mozartpay trade strategy --type momentum --name \"MA Cross\" --params \"short_ma_periods=10,long_ma_periods=30\"\n\n" +
+			"  stellar-go-cli trade strategy --type momentum --name \"MA Cross\" --params \"short_ma_periods=10,long_ma_periods=30\"\n\n" +
 			"Scalping:\n" +
-			"  mozartpay trade strategy --type scalping --name \"RSI Scalp\" --params \"rsi_period=14\"",
+			"  stellar-go-cli trade strategy --type scalping --name \"RSI Scalp\" --params \"rsi_period=14\"",
 		Flags: fs,
 		Run: func(c *Command, args []string) error {
 			ui.Header("Create Trading Strategy")
@@ -157,7 +157,7 @@ func newTradeStrategyCmd(cfg *config.Config) *Command {
 			ui.KV("Take Profit", fmt.Sprintf("%.1f%%", strategy.RiskLimits.TakeProfitPercent))
 
 			fmt.Println()
-			ui.Info(fmt.Sprintf("Start the strategy with: mozartpay trade start %s", strategy.ID))
+			ui.Info(fmt.Sprintf("Start the strategy with: stellar-go-cli trade start %s", strategy.ID))
 
 			return nil
 		},
@@ -182,7 +182,7 @@ func newTradeListCmd(cfg *config.Config) *Command {
 
 			if len(strategies) == 0 {
 				ui.Info("No strategies configured")
-				ui.Info("Create one with: mozartpay trade strategy --type <type> --name <name>")
+				ui.Info("Create one with: stellar-go-cli trade strategy --type <type> --name <name>")
 				return nil
 			}
 
@@ -218,7 +218,7 @@ func newTradeListCmd(cfg *config.Config) *Command {
 			t.Print()
 
 			fmt.Println()
-			ui.Info("Use 'mozartpay trade status <id>' for detailed strategy info")
+			ui.Info("Use 'stellar-go-cli trade status <id>' for detailed strategy info")
 
 			return nil
 		},

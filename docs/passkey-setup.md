@@ -1,6 +1,6 @@
 # Passkey Setup Guide for wwWallet
 
-This guide covers setting up WebAuthn passkey authentication with wwWallet in MozartPay CLI.
+This guide covers setting up WebAuthn passkey authentication with wwWallet in Stellar Go CLI.
 
 ## What is wwWallet?
 
@@ -15,7 +15,7 @@ wwWallet is a WebAuthn-based wallet solution that uses hardware-backed passkeys 
 - **Browser**: Modern browser with WebAuthn support
 
 ### Software Requirements
-- MozartPay CLI v0.1.0-mvp or later
+- Stellar Go CLI v0.1.0-mvp or later
 - Go 1.22+ (if building from source)
 
 ## Quick Start
@@ -27,7 +27,7 @@ wwWallet is a WebAuthn-based wallet solution that uses hardware-backed passkeys 
 make build
 
 # Start interactive wallet setup
-./mozartpay wallet connect
+./stellar-go-cli wallet connect
 ```
 
 When prompted:
@@ -39,13 +39,13 @@ When prompted:
 
 ```bash
 # Create wwWallet with passkey
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet --passkey
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet --passkey
 
 # Fund the wallet
-./mozartpay wallet fund
+./stellar-go-cli wallet fund
 
 # Show wallet details
-./mozartpay wallet show
+./stellar-go-cli wallet show
 ```
 
 ### Method 3: Using Scripts
@@ -64,7 +64,7 @@ chmod +x scripts/*.sh
 ### Step 1: Initialize wwWallet
 
 ```bash
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 ```
 
 **Expected Output:**
@@ -91,7 +91,7 @@ The system will simulate a WebAuthn ceremony and create:
 ### Step 3: Wallet Verification
 
 ```bash
-./mozartpay wallet show
+./stellar-go-cli wallet show
 ```
 
 **Expected Output:**
@@ -114,7 +114,7 @@ Origin: https://wwwallet.app
 ### Step 4: Fund Your Wallet
 
 ```bash
-./mozartpay wallet fund
+./stellar-go-cli wallet fund
 ```
 
 This will request testnet funds from the Stellar Friendbot faucet.
@@ -124,22 +124,22 @@ This will request testnet funds from the Stellar Friendbot faucet.
 ### View Passkey Details
 
 ```bash
-./mozartpay wallet show
+./stellar-go-cli wallet show
 # Shows passkey credential information
 ```
 
 ### Export Wallet (Backup)
 
 ```bash
-./mozartpay wallet export --private
+./stellar-go-cli wallet export --private
 # ⚠️  Use with caution - shows sensitive information
 ```
 
 ### Switch Between Wallets
 
 ```bash
-./mozartpay wallet list
-./mozartpay wallet switch <address>
+./stellar-go-cli wallet list
+./stellar-go-cli wallet switch <address>
 ```
 
 ## Security Best Practices
@@ -173,7 +173,7 @@ If you lose access to your passkey:
 
 #### "Wallet not funded"
 **Solution:**
-- Run `./mozartpay wallet fund`
+- Run `./stellar-go-cli wallet fund`
 - Check network connectivity
 - Verify you're using testnet
 
@@ -188,7 +188,7 @@ If you lose access to your passkey:
 Enable debug logging for troubleshooting:
 
 ```bash
-./mozartpay wallet connect --provider wwwallet --debug
+./stellar-go-cli wallet connect --provider wwwallet --debug
 ```
 
 ### Reset Passkey
@@ -197,11 +197,11 @@ If you need to reset your passkey:
 
 ```bash
 # Create a new wwWallet (old one remains inactive)
-./mozartpay wallet connect --provider wwwallet
+./stellar-go-cli wallet connect --provider wwwallet
 
 # Or remove old wallet and create new one
-./mozartpay wallet list
-./mozartpay wallet connect --provider wwwallet
+./stellar-go-cli wallet list
+./stellar-go-cli wallet connect --provider wwwallet
 ```
 
 ## Advanced Configuration
@@ -210,7 +210,7 @@ If you need to reset your passkey:
 
 ```bash
 # Mainnet setup (when ready)
-./mozartpay wallet connect --provider wwwallet --network stellar-mainnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-mainnet
 ```
 
 ### Multiple Passkeys
@@ -219,10 +219,10 @@ You can create multiple wwWallet instances with different passkeys:
 
 ```bash
 # First wallet
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 
 # Second wallet (different passkey)
-./mozartpay wallet connect --provider wwwallet --network stellar-testnet
+./stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet
 ```
 
 ## Integration with Other Features
@@ -233,10 +233,10 @@ Your wwWallet can be linked to Decentralized Identifiers:
 
 ```bash
 # Create DID first
-./mozartpay did create --method key
+./stellar-go-cli did create --method key
 
 # Then connect wallet (will auto-link)
-./mozartpay wallet connect --provider wwwallet
+./stellar-go-cli wallet connect --provider wwwallet
 ```
 
 ### Asset Creation
@@ -244,7 +244,7 @@ Your wwWallet can be linked to Decentralized Identifiers:
 Use your wwWallet for asset issuance:
 
 ```bash
-./mozartpay asset create-ft --name "MyToken" --symbol "MTK"
+./stellar-go-cli asset create-ft --name "MyToken" --symbol "MTK"
 ```
 
 ### Payment Operations
@@ -252,7 +252,7 @@ Use your wwWallet for asset issuance:
 Send payments using your wwWallet:
 
 ```bash
-./mozartpay pay send --to <address> --amount 10 --asset XLM
+./stellar-go-cli pay send --to <address> --amount 10 --asset XLM
 ```
 
 ## Developer Information
@@ -273,7 +273,7 @@ type PasskeyCredential struct {
 
 Passkey credentials are stored locally at:
 ```
-~/.mozartpay/state/wallets/<address>.json
+~/.stellar-go-cli/state/wallets/<address>.json
 ```
 
 ### WebAuthn Flow
@@ -290,7 +290,7 @@ If you encounter issues:
 1. Check this guide for common solutions
 2. Enable debug mode for detailed logs
 3. Review the troubleshooting section
-4. Check the MozartPay documentation
+4. Check the Stellar Go CLI documentation
 
 ## Next Steps
 

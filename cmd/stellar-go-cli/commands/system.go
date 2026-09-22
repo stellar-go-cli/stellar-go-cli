@@ -8,9 +8,9 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/integrations"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 // ─── version ─────────────────────────────────
@@ -18,7 +18,7 @@ import (
 func newVersionCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "version",
-		Short: "Show MozartPay CLI version and build info",
+		Short: "Show Stellar Go CLI version and build info",
 		Run: func(c *Command, args []string) error {
 			ui.PrintBanner()
 			ui.KV("Version", config.Version)
@@ -37,17 +37,17 @@ func newVersionCmd(cfg *config.Config) *Command {
 func newInitCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "init",
-		Short: "Initialize MozartPay CLI configuration",
+		Short: "Initialize Stellar Go CLI configuration",
 		Run: func(c *Command, args []string) error {
 			ui.PrintBanner()
-			ui.Header("Initializing MozartPay CLI")
+			ui.Header("Initializing Stellar Go CLI")
 
 			steps := []struct {
 				label string
 				delay time.Duration
 				fn    func() error
 			}{
-				{"Creating config directory (~/.mozartpay)", 200 * time.Millisecond, nil},
+				{"Creating config directory (~/.stellar-go-cli)", 200 * time.Millisecond, nil},
 				{"Writing default configuration", 200 * time.Millisecond, func() error {
 					return config.Save(cfg)
 				}},
@@ -72,7 +72,7 @@ func newInitCmd(cfg *config.Config) *Command {
 
 			fmt.Println()
 			ui.Separator()
-			ui.KV("Config Dir", "~/.mozartpay/")
+			ui.KV("Config Dir", "~/.stellar-go-cli/")
 			ui.KV("Network", cfg.Network)
 			ui.KV("DID Method", cfg.DIDMethod)
 			ui.KV("Wallet", cfg.WalletType)
@@ -80,12 +80,12 @@ func newInitCmd(cfg *config.Config) *Command {
 			fmt.Println()
 			ui.Info("Quick start:")
 			fmt.Println()
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("mozartpay did attest --method ebsi --vc national-id --name \"Your Name\""))
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("mozartpay wallet connect --provider wwwallet --network stellar-testnet"))
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("mozartpay wallet fund --network stellar-testnet"))
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("mozartpay asset create-ft --name \"MyToken\" --symbol MTK --with-score --with-carbon"))
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("mozartpay pay send --to <address> --amount 10 --asset USDC --rail x402"))
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("mozartpay report generate --vc-attach"))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli did attest --method ebsi --vc national-id --name \"Your Name\""))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet"))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli wallet fund --network stellar-testnet"))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli asset create-ft --name \"MyToken\" --symbol MTK --with-score --with-carbon"))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli pay send --to <address> --amount 10 --asset USDC --rail x402"))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli report generate --vc-attach"))
 			fmt.Println()
 
 			return nil
@@ -121,13 +121,13 @@ func newStatusCmd(cfg *config.Config) *Command {
 			if activeDID != "" {
 				ui.KVColor("Active DID", truncateStr(activeDID, 50)+"...", ui.BrightGreen)
 			} else {
-				ui.KVColor("Active DID", "none — run 'mozartpay did attest'", ui.Dim)
+				ui.KVColor("Active DID", "none — run 'stellar-go-cli did attest'", ui.Dim)
 			}
 
 			if cfg.ActiveAddress != "" {
 				ui.KVColor("Active Address", cfg.ActiveAddress, ui.BrightGreen)
 			} else {
-				ui.KVColor("Active Address", "none — run 'mozartpay wallet connect'", ui.Dim)
+				ui.KVColor("Active Address", "none — run 'stellar-go-cli wallet connect'", ui.Dim)
 			}
 
 			ui.KV("Network", string(cfg.Network))
@@ -186,7 +186,7 @@ func newStatusCmd(cfg *config.Config) *Command {
 func newFlowCmd(cfg *config.Config) *Command {
 	return &Command{
 		Name:  "flow",
-		Short: "Print the Orchestrated Agreements component flow diagram",
+		Short: "Print the Stellar Go CLI component flow diagram",
 		Run: func(c *Command, args []string) error {
 			ui.PrintBanner()
 			printFlow()
@@ -232,7 +232,7 @@ func printFlow() {
 	}
 
 	fmt.Println()
-	fmt.Println(ui.Bold_("  Orchestrated Agreements — Component Flow"))
+	fmt.Println(ui.Bold_("  Stellar Go CLI — Component Flow"))
 	fmt.Println(ui.Dim_("  ─────────────────────────────────────────────────────"))
 	fmt.Println()
 
@@ -266,8 +266,8 @@ func printFlow() {
 	// Layer 4: Integrations
 	fmt.Println(ui.Dim_("  [04] INTEGRATIONS"))
 	fmt.Println()
-	fmt.Println(indentBlock(box("🔵 OA + 🌿 StellarCarbon + ⚡ x402 + 🌐 Tempo",
-		"Orchestrated Agreement score · Carbon credits\nHTTP 402 pay-per-use · FX rails", ui.Cyan)))
+	fmt.Println(indentBlock(box("🌿 StellarCarbon + ⚡ x402 + 🌐 Tempo",
+		"Carbon credits · HTTP 402 pay-per-use\nFX rails", ui.Cyan)))
 	fmt.Println()
 
 	fmt.Print(arrow("transaction executed"))

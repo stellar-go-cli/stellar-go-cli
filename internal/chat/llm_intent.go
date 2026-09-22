@@ -1,4 +1,4 @@
-// Package chat provides an interactive chat interface for MozartPay CLI
+// Package chat provides an interactive chat interface for Stellar Go CLI
 package chat
 
 import (
@@ -153,7 +153,6 @@ func (r *LLMIntentRecognizer) Close() error {
 // extractJSON helper to find JSON in text
 func extractJSON(output string) string {
 	start := -1
-	end := -1
 	depth := 0
 
 	for i, ch := range output {
@@ -166,8 +165,7 @@ func extractJSON(output string) string {
 		case '}':
 			depth--
 			if depth == 0 && start != -1 {
-				end = i + 1
-				return output[start:end]
+				return output[start : i+1]
 			}
 		}
 	}

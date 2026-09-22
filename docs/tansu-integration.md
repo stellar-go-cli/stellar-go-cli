@@ -79,7 +79,7 @@ Multiple badges sum for total voting weight. Three voting weight modes exist:
 
 ### Read-Only Functions (Soroban `SimulateOnly`)
 
-These functions require no authentication and no transaction submission. MozartPay calls them via `internal/soroban/` with a dummy keypair.
+These functions require no authentication and no transaction submission. Stellar Go CLI calls them via `pkg/soroban/` with a dummy keypair.
 
 #### VersioningTrait
 
@@ -119,7 +119,7 @@ These functions require no authentication and no transaction submission. MozartP
 
 ### Write Functions (Soroban `Invoke`)
 
-These functions require wallet signing and transaction submission. MozartPay uses the active wallet's private key via `internal/soroban/` `Invoke()`.
+These functions require wallet signing and transaction submission. Stellar Go CLI uses the active wallet's private key via `pkg/soroban/` `Invoke()`.
 
 #### VersioningTrait
 
@@ -312,7 +312,7 @@ Project keys are `keccak256(project_name)` → `Bytes`. The name must be:
 - Lowercase letters only
 - Unique on-chain
 
-MozartPay must compute this client-side to query specific projects by name.
+Stellar Go CLI must compute this client-side to query specific projects by name.
 
 ---
 
@@ -320,31 +320,31 @@ MozartPay must compute this client-side to query specific projects by name.
 
 ### Phase 1: Read-Only Integration (No Tansu coordination needed)
 
-**Goal**: MozartPay CLI can query Tansu contract state via Soroban RPC simulation calls.
+**Goal**: Stellar Go CLI can query Tansu contract state via Soroban RPC simulation calls.
 
 **Scope**:
 - Add `TansuConfig` to `internal/config/config.go` (contract ID, network, enabled flag)
-- Create `internal/integrations/tansu.go` client wrapping `internal/soroban/` `SimulateOnly()` calls
+- Create `internal/integrations/tansu.go` client wrapping `pkg/soroban/` `SimulateOnly()` calls
 - Add CLI commands under `cmd/stellar-go-cli/commands/tansu.go`
 - Expose MCP tools in `internal/mcp/tools.go` for AI assistant access
 
 **CLI Commands**:
 ```
-mozartpay tansu list --page <n>
-mozartpay tansu show --key <hex>
-mozartpay tansu commit --key <hex>
-mozartpay tansu evidence --key <hex> --commit <hash> --kind sbom|cve|attestation
-mozartpay tansu proposals --key <hex> --page <n>
-mozartpay tansu proposal --key <hex> --id <n>
-mozartpay tansu member --address <G...>
-mozartpay tansu badges --key <hex>
-mozartpay tansu weight --key <hex> --address <G...>
-mozartpay tansu finality --key <hex> --commit <hash>
-mozartpay tansu attestations --key <hex> --commit <hash>
-mozartpay tansu sub-projects --key <hex>
-mozartpay tansu threshold --key <hex>
-mozartpay tansu coi --key <hex> --proposal <n>
-mozartpay tansu admins
+stellar-go-cli tansu list --page <n>
+stellar-go-cli tansu show --key <hex>
+stellar-go-cli tansu commit --key <hex>
+stellar-go-cli tansu evidence --key <hex> --commit <hash> --kind sbom|cve|attestation
+stellar-go-cli tansu proposals --key <hex> --page <n>
+stellar-go-cli tansu proposal --key <hex> --id <n>
+stellar-go-cli tansu member --address <G...>
+stellar-go-cli tansu badges --key <hex>
+stellar-go-cli tansu weight --key <hex> --address <G...>
+stellar-go-cli tansu finality --key <hex> --commit <hash>
+stellar-go-cli tansu attestations --key <hex> --commit <hash>
+stellar-go-cli tansu sub-projects --key <hex>
+stellar-go-cli tansu threshold --key <hex>
+stellar-go-cli tansu coi --key <hex> --proposal <n>
+stellar-go-cli tansu admins
 ```
 
 **MCP Tools**:
@@ -360,7 +360,7 @@ mozartpay tansu admins
 **Implementation files**:
 - `internal/config/config.go` — Add `TansuConfig` struct to `IntegrationConfig`
 - `internal/integrations/tansu.go` — Tansu client with `SimulateOnly()` wrappers
-- `internal/models/types.go` — Go structs mirroring Tansu Rust types
+- `pkg/models/types.go` — Go structs mirroring Tansu Rust types
 - `cmd/stellar-go-cli/commands/tansu.go` — CLI command definitions
 - `internal/mcp/tools.go` — MCP tool definitions
 - `internal/mcp/handlers.go` — MCP tool handlers
@@ -369,7 +369,7 @@ mozartpay tansu admins
 
 ### Phase 2: Write Operations (Requires Tansu coordination)
 
-**Goal**: MozartPay CLI can register projects, create proposals, vote, and commit hashes on Tansu.
+**Goal**: Stellar Go CLI can register projects, create proposals, vote, and commit hashes on Tansu.
 
 **Scope**:
 - Extend `internal/integrations/tansu.go` with `Invoke()` wrappers
@@ -378,34 +378,34 @@ mozartpay tansu admins
 
 **CLI Commands**:
 ```
-mozartpay tansu register --name <name> --maintainers <addr1,addr2> --url <url> --ipfs <cid>
-mozartpay tansu commit-set --key <hex> --hash <sha>
-mozartpay tansu set-evidence --key <hex> --commit <hash> --kind sbom --cid <ipfs-cid>
-mozartpay tansu create-proposal --key <hex> --title <title> --ipfs <cid> --voting-ends <unix> --public
-mozartpay tansu vote --key <hex> --proposal <id> --choice approve|reject|abstain --weight <n>
-mozartpay tansu execute --key <hex> --proposal <id>
-mozartpay tansu add-member --address <G...> --meta <cid>
-mozartpay tansu set-badges --key <hex> --member <addr> --badges Developer,Community
-mozartpay tansu attest --key <hex> --commit <hash> --note <cid>
+stellar-go-cli tansu register --name <name> --maintainers <addr1,addr2> --url <url> --ipfs <cid>
+stellar-go-cli tansu commit-set --key <hex> --hash <sha>
+stellar-go-cli tansu set-evidence --key <hex> --commit <hash> --kind sbom --cid <ipfs-cid>
+stellar-go-cli tansu create-proposal --key <hex> --title <title> --ipfs <cid> --voting-ends <unix> --public
+stellar-go-cli tansu vote --key <hex> --proposal <id> --choice approve|reject|abstain --weight <n>
+stellar-go-cli tansu execute --key <hex> --proposal <id>
+stellar-go-cli tansu add-member --address <G...> --meta <cid>
+stellar-go-cli tansu set-badges --key <hex> --member <addr> --badges Developer,Community
+stellar-go-cli tansu attest --key <hex> --commit <hash> --note <cid>
 ```
 
-**Risk**: Low. Write operations are standard Soroban invocations. Collateral transfers go through the native XLM SAC, so MozartPay just needs sufficient wallet balance and proper signing.
+**Risk**: Low. Write operations are standard Soroban invocations. Collateral transfers go through the native XLM SAC, so Stellar Go CLI just needs sufficient wallet balance and proper signing.
 
 **Coordination needed**:
 - Confirm testnet contract ID remains stable
 - Understand any planned contract upgrades that might change function signatures
-- Align on outcome contract integration (Tansu proposals can invoke external contracts on execution — MozartPay OAs could be outcome contracts)
+- Align on outcome contract integration (Tansu proposals can invoke external contracts on execution — contracts deployed via Stellar Go CLI could be outcome contracts)
 
 ### Phase 3: Deep Integration (Future)
 
-**Goal**: Tansu governance data enhances MozartPay's Orchestrated Agreements platform.
+**Goal**: Tansu governance data enhances Stellar Go CLI's asset and payment workflows.
 
 **Potential integrations**:
-- **OA Score enhancement**: Use Tansu project attestation finality and evidence records as trust signals in MozartPay's OA scoring algorithm
-- **DID/VC bridge**: Tansu member badges and git identity bindings could become Verifiable Credentials in MozartPay's DID layer
-- **Payment integration**: Tansu's donation flow could route through MozartPay's payment rails (x402 micropayments, direct payments) with ISO 20022 compliance reporting
-- **Outcome contracts**: MozartPay OAs could be registered as Tansu proposal outcome contracts — when a governance proposal passes, it automatically executes an OA payment
-- **Compliance reporting**: Tansu project governance events could be included in MozartPay's ISO 20022 pacs.008 reports for funded projects
+- **Asset trust signals**: Use Tansu project attestation finality and evidence records as inputs to an asset scoring model
+- **DID/VC bridge**: Tansu member badges and git identity bindings could become Verifiable Credentials in Stellar Go CLI's DID layer
+- **Payment integration**: Tansu's donation flow could route through Stellar Go CLI's payment rails (x402 micropayments, direct payments) with ISO 20022 compliance reporting
+- **Outcome contracts**: Contracts deployed via Stellar Go CLI could be registered as Tansu proposal outcome contracts — when a governance proposal passes, it automatically executes a payment
+- **Compliance reporting**: Tansu project governance events could be included in Stellar Go CLI's ISO 20022 pacs.008 reports for funded projects
 
 **Risk**: Medium. Requires contract-to-contract interaction design and alignment with Tansu's roadmap.
 

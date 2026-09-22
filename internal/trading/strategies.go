@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 // executeArbitrageStrategy checks for XLM↔USDC arbitrage opportunities

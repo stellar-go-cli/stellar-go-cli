@@ -1,7 +1,7 @@
 # Wallet Operations Skills
 
 ## Overview
-Comprehensive wallet management capabilities for the MozartPay platform, including connection, import, funding, and maintenance of wallets across different providers and networks.
+Comprehensive wallet management capabilities for the Stellar Go CLI platform, including connection, import, funding, and maintenance of wallets across different providers and networks.
 
 ## Skills
 

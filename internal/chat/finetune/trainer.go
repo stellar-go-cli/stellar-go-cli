@@ -229,7 +229,7 @@ func (t *Trainer) runTraining(job *TrainingJob) {
 		job.Error = fmt.Sprintf("generate script: %v", err)
 		// Write error to file for debugging
 		errPath := filepath.Join(job.OutputPath, "error.log")
-		os.WriteFile(errPath, []byte(job.Error), 0644)
+		os.WriteFile(errPath, []byte(job.Error), 0644) //nolint:errcheck // best-effort debug artifact
 		return
 	}
 
@@ -249,7 +249,7 @@ func (t *Trainer) runTraining(job *TrainingJob) {
 		job.Error = fmt.Sprintf("create log file: %v", err)
 		return
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }() //nolint:errcheck // best-effort close; writes are streamed
 
 	cmd := exec.Command(t.pythonPath, scriptPath)
 	cmd.Dir = job.OutputPath

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/models"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/payments"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 )
 
 func newPayCmd(cfg *config.Config) *Command {
@@ -62,7 +62,7 @@ func newPaySendCmd(cfg *config.Config) *Command {
 			from := cfg.ActiveAddress
 			if from == "" {
 				from = "G" + "0000000000000000000000000000000000000000000000000000000"
-				ui.Warn("No active account. Using placeholder. Run 'mozartpay wallet connect'.")
+				ui.Warn("No active account. Using placeholder. Run 'stellar-go-cli wallet connect'.")
 			}
 
 			r := models.PaymentRail(*rail)
@@ -84,7 +84,7 @@ func newPaySendCmd(cfg *config.Config) *Command {
 					}
 					ui.Info(fmt.Sprintf("VC attached: %s", vcData.ID))
 				} else {
-					ui.Warn("No saved VC found. Run 'mozartpay did attest' first.")
+					ui.Warn("No saved VC found. Run 'stellar-go-cli did attest' first.")
 				}
 			}
 
@@ -160,8 +160,8 @@ func newPaySendCmd(cfg *config.Config) *Command {
 			ui.Separator()
 
 			// Save payment for reporting
-			config.SaveState("payment_latest", payment)
-			ui.Info("Run 'mozartpay report generate' to produce a compliance report.")
+			config.SaveState("payment_latest", payment) //nolint:errcheck // best-effort state cache
+			ui.Info("Run 'stellar-go-cli report generate' to produce a compliance report.")
 
 			return nil
 		},
@@ -207,7 +207,7 @@ func newPayQuoteCmd(cfg *config.Config) *Command {
 
 func newPayX402Cmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("x402", flag.ContinueOnError)
-	resource := fs.String("resource", "https://api.mozartpay.com/data/v1/price-feed", "Resource URL to pay for")
+	resource := fs.String("resource", "https://api.example.com/data/v1/price-feed", "Resource URL to pay for")
 	price := fs.Float64("price", 0.001, "Price in asset units")
 	asset := fs.String("asset", "XLM", "Payment asset")
 	to := fs.String("to", "", "Recipient address (required)")
@@ -271,7 +271,7 @@ func newPayX402Cmd(cfg *config.Config) *Command {
 			ui.KVColor("Settled", fmt.Sprintf("%s %s", fmt.Sprintf("%.6f", req.Price), req.Asset), ui.BrightGreen)
 			ui.KV("Fee", payment.Fee)
 
-			config.SaveState("payment_latest", payment)
+			config.SaveState("payment_latest", payment) //nolint:errcheck // best-effort state cache
 			return nil
 		},
 	}
@@ -312,7 +312,7 @@ func newPayZKCmd(cfg *config.Config) *Command {
 			from := cfg.ActiveAddress
 			if from == "" {
 				from = "G" + "0000000000000000000000000000000000000000000000000000000"
-				ui.Warn("No active account. Using placeholder. Run 'mozartpay wallet connect'.")
+				ui.Warn("No active account. Using placeholder. Run 'stellar-go-cli wallet connect'.")
 			}
 
 			net := models.Network(*network)
@@ -321,7 +321,10 @@ func newPayZKCmd(cfg *config.Config) *Command {
 			ui.PrintStep(1, "Building ZK Proof Request")
 
 			// Build ZK proof request
-			amountFloat, _ := strconv.ParseFloat(*amount, 64)
+			amountFloat, perr := strconv.ParseFloat(*amount, 64)
+			if perr != nil {
+				return fmt.Errorf("invalid amount %q: %w", *amount, perr)
+			}
 			zkReq := svc.BuildZKProofRequest(*resource, *asset, from, *to, amountFloat, *privacy)
 
 			ui.SectionLabel("ZK Request Details")
@@ -388,8 +391,8 @@ func newPayZKCmd(cfg *config.Config) *Command {
 				ui.KV("On-Chain Ref", verification.OnChainRef)
 			}
 
-			config.SaveState("payment_latest", payment)
-			ui.Info("Run 'mozartpay report generate' to produce a compliance report.")
+			config.SaveState("payment_latest", payment) //nolint:errcheck // best-effort state cache
+			ui.Info("Run 'stellar-go-cli report generate' to produce a compliance report.")
 
 			return nil
 		},

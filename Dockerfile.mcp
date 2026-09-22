@@ -27,7 +27,7 @@ WORKDIR /root/
 COPY --from=builder /app/stellar-go-cli .
 
 # Create config directory
-RUN mkdir -p /root/.mozartpay
+RUN mkdir -p /root/.stellar-go-cli
 
 # Expose port for SSE transport
 EXPOSE 3000

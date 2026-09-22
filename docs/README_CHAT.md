@@ -1,6 +1,6 @@
-# MozartPay Chat Interface
+# Stellar Go CLI Chat Interface
 
-A conversational AI interface for the MozartPay CLI that uses natural language processing to understand user commands and execute them via the MCP (Model Context Protocol) server.
+A conversational AI interface for the Stellar Go CLI that uses natural language processing to understand user commands and execute them via the MCP (Model Context Protocol) server.
 
 ## Features
 
@@ -18,7 +18,7 @@ A conversational AI interface for the MozartPay CLI that uses natural language p
 ./chat.sh
 
 # Or run directly
-python3 mozartpay_chat.py
+python3 stellar_go_cli_chat.py
 ```
 
 ## Natural Language Commands
@@ -55,7 +55,7 @@ python3 mozartpay_chat.py
 
 ```
 💬 You: hello
-🤖 Assistant: 👋 Hello! I'm your MozartPay assistant. I can help you with:
+🤖 Assistant: 👋 Hello! I'm your Stellar Go CLI assistant. I can help you with:
 • Wallet management (list, balance, assets)
 • Asset swaps and quotes
 • Payments and transfers
@@ -104,7 +104,7 @@ Try asking: 'show my wallet balance' or 'swap 100 XLM to USDC'
 The chat interface consists of:
 
 1. **Intent Parser** - Natural language understanding module
-2. **MCP Client** - Communicates with MozartPay MCP server
+2. **MCP Client** - Communicates with Stellar Go CLI MCP server
 3. **Response Formatter** - Formats responses for readability
 4. **Context Manager** - Maintains conversation history
 
@@ -176,11 +176,11 @@ elif intent == 'wallet_create':
 
 ## Troubleshooting
 
-**"mozartpay binary not found"**
+**"stellar-go-cli binary not found"**
 - Run `go build ./cmd/stellar-go-cli` first
 
 **"Failed to initialize MCP server"**
-- Check if mozartpay is running properly
+- Check if stellar-go-cli is running properly
 - Verify binary permissions
 
 **"I don't understand" responses**
@@ -216,4 +216,4 @@ The chat interface can be integrated with:
 | Context | None | Maintained |
 | Accessibility | Command-line knowledge | Natural language |
 
-The chat interface makes MozartPay accessible to users who prefer conversational interactions over traditional CLI commands.
+The chat interface makes Stellar Go CLI accessible to users who prefer conversational interactions over traditional CLI commands.

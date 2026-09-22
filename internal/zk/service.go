@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,7 @@ type Service struct {
 
 // NewService creates a new ZK service
 func NewService() *Service {
-	baseDir := filepath.Join(os.Getenv("HOME"), ".mozartpay", "zk")
+	baseDir := filepath.Join(os.Getenv("HOME"), ".stellar-go-cli", "zk")
 	return &Service{
 		circuitPath:      filepath.Join(baseDir, "circuit.noir"),
 		compiledPath:     filepath.Join(baseDir, "circuit.json"),
@@ -99,7 +98,7 @@ func (s *Service) GeneratePaymentProof(inputs PaymentInputs) (*ProofData, error)
 	}
 
 	// Cache the proof
-	config.SaveState("zk_proof_latest", proofData)
+	config.SaveState("zk_proof_latest", proofData) //nolint:errcheck // best-effort cache
 
 	return proofData, nil
 }
@@ -161,7 +160,7 @@ fn main(
     constrain network_id == 1;
 }
 `
-		if err := ioutil.WriteFile(s.circuitPath, []byte(basicCircuit), 0644); err != nil {
+		if err := os.WriteFile(s.circuitPath, []byte(basicCircuit), 0644); err != nil {
 			return fmt.Errorf("failed to create circuit file: %w", err)
 		}
 	}
@@ -182,7 +181,7 @@ func (s *Service) executeNoirCommand(cmd string, args ...string) (string, error)
 		time.Sleep(2 * time.Second)
 		// Create mock compiled file
 		mockCompiled := `{"name": "circuit", "hash": "mock_hash"}`
-		err := ioutil.WriteFile(s.compiledPath, []byte(mockCompiled), 0644)
+		err := os.WriteFile(s.compiledPath, []byte(mockCompiled), 0644)
 		return "Compilation completed", err
 
 	case "prove":
@@ -248,7 +247,7 @@ func (s *Service) writeToml(path string, data map[string]interface{}) error {
 	for key, value := range data {
 		lines = append(lines, fmt.Sprintf("%s = %v", key, value))
 	}
-	return ioutil.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }
 
 // GetCircuitHash returns the compiled circuit hash

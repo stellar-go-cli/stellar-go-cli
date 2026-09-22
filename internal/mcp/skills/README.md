@@ -1,12 +1,12 @@
 # Skills Framework Index
 
 ## Overview
-Comprehensive index of all MozartPay MCP skills, organized by category and capability, enabling AI assistants to quickly locate and utilize appropriate skills for user interactions.
+Comprehensive index of all Stellar Go CLI MCP skills, organized by category and capability, enabling AI assistants to quickly locate and utilize appropriate skills for user interactions.
 
 ## Skills Directory Structure
 
 ```
-mozartpay/internal/mcp/skills/
+stellar-go-cli/internal/mcp/skills/
 ├── core/                    # Core operational skills
 │   ├── wallet_operations.md
 │   ├── swap_operations.md
@@ -437,4 +437,4 @@ User: "send 1000 USDC" (insufficient balance)
 - **Educational Integration**: Learning opportunities throughout
 - **Completion Metrics**: Clear success indicators
 
-This skills framework provides the foundation for intelligent, context-aware natural language interactions with the MozartPay platform.
+This skills framework provides the foundation for intelligent, context-aware natural language interactions with the Stellar Go CLI platform.

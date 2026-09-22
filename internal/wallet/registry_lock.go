@@ -15,9 +15,12 @@ type registryLock struct {
 
 // newRegistryLock creates a lock for the wallet registry
 func newRegistryLock() *registryLock {
-	stateDir, _ := os.UserHomeDir()
+	stateDir, err := os.UserHomeDir()
+	if err != nil {
+		stateDir = os.TempDir()
+	}
 	return &registryLock{
-		lockPath: filepath.Join(stateDir, ".mozartpay", "state", "wallets.lock"),
+		lockPath: filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets.lock"),
 	}
 }
 
@@ -48,8 +51,8 @@ func (l *registryLock) Lock() error {
 			file, err := os.OpenFile(l.lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 			if err == nil {
 				// Write PID to lock file for debugging
-				fmt.Fprintf(file, "%d", os.Getpid())
-				file.Close()
+				fmt.Fprintf(file, "%d", os.Getpid()) //nolint:errcheck // debugging metadata only
+				file.Close()                         //nolint:errcheck // lock already acquired
 				l.locked = true
 				return nil
 			}
