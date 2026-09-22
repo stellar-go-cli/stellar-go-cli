@@ -3,11 +3,15 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 )
 
 const (
@@ -103,8 +107,11 @@ func ConfigDir() (string, error) {
 	return dir, nil
 }
 
-// migrateLegacyDir renames the legacy ~/.mozartpay config directory to the
-// current location on first run. One-release migration; remove in a later release.
+// migrateLegacyDir copies the legacy ~/.mozartpay config directory to the
+// current location on first run. It copies rather than renames so that the
+// still-shipping mozartpay binary keeps working against ~/.mozartpay —
+// renaming would silently move its wallet keys out from under it.
+// One-release migration; remove in a later release.
 func migrateLegacyDir(home, dir string) {
 	legacy := filepath.Join(home, LegacyConfigDir)
 	if _, err := os.Stat(legacy); err != nil {
@@ -113,10 +120,54 @@ func migrateLegacyDir(home, dir string) {
 	if _, err := os.Stat(dir); err == nil {
 		return
 	}
-	// Best-effort migration; on failure the user can rename the directory manually.
-	if err := os.Rename(legacy, dir); err != nil {
+	// Best-effort migration; on failure the user can copy the directory manually.
+	if err := copyDir(legacy, dir); err != nil {
 		log.Printf("could not migrate legacy config dir %s: %v", legacy, err)
+		return
 	}
+	ui.Warn(fmt.Sprintf("migrated config from legacy directory %s to %s — the legacy directory was left in place and can be removed manually once mozartpay is no longer needed", legacy, dir))
+}
+
+// copyDir recursively copies a directory tree, preserving file permissions.
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		return copyFile(path, target, info.Mode())
+	})
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func Load() (*Config, error) {

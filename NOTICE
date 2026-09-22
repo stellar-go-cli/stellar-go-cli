@@ -1,0 +1,11 @@
+Stellar Go CLI
+Copyright 2023–2026 Olvis E. Gil Ríos / contributors
+
+This repository bundles ISO 20022 XML schemas (messages/*.xsd) produced by
+the ISO 20022 Registration Authority and published at https://www.iso20022.org.
+They are reproduced under the ISO 20022 Intellectual Property Right Policy,
+which permits free use and reproduction by all interested users.
+
+This repository is not the official ISO 20022 site. The sole source of
+up-to-date materials and information on ISO 20022 message standards and the
+Repository is https://www.iso20022.org/.

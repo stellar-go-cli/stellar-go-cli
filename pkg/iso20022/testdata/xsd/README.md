@@ -9,6 +9,10 @@ be downloaded from https://www.iso20022.org (catalogue → message →
 "XML schema"; registration required). `*.xsd` in this directory is
 gitignored.
 
+The schemas are ISO 20022 Registration Authority material reproduced under
+the ISO 20022 Intellectual Property Right Policy — see `messages/README.md`
+and the `NOTICE` file at the repository root for the attribution statement.
+
 Expected filenames:
 
 | File                  | Message                          |
