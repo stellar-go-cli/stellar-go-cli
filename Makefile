@@ -1,7 +1,7 @@
 BINARY     = stellar-go-cli
 MODULE     = github.com/stellar-go-cli/stellar-go-cli
 CMD        = ./cmd/stellar-go-cli
-VERSION    = 0.1.0
+VERSION    = 0.2.0
 BUILD_DIR  = ./dist
 GOFLAGS    =
 
