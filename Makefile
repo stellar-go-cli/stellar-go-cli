@@ -29,17 +29,21 @@ install:
 	@go install $(GOFLAGS) $(LDFLAGS) $(CMD)
 	@echo "✓ Installed to $$(go env GOPATH)/bin/$(BINARY)"
 
-## test: Run all tests
+## test: Run all tests (both modules)
 test:
-	@echo "→ Running tests..."
+	@echo "→ Running tests (pkg library module)..."
+	@cd pkg && go test ./... -v
+	@echo "→ Running tests (CLI module)..."
 	@go test ./... -v
 
 ## lint: Run go vet + golangci-lint
 lint:
 	@echo "→ Linting..."
 	@go vet ./...
+	@cd pkg && go vet ./...
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run; \
+		(cd pkg && golangci-lint run); \
 	else \
 		echo "⚠️  golangci-lint not installed, skipping. Install with: brew install golangci-lint"; \
 	fi
@@ -50,6 +54,7 @@ security:
 	@echo "→ Running security scan..."
 	@if command -v gosec >/dev/null 2>&1; then \
 		gosec ./...; \
+		(cd pkg && gosec ./...); \
 	else \
 		echo "⚠️  gosec not installed. Install with: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 		exit 0; \
@@ -61,17 +66,18 @@ clean:
 	@rm -rf $(BUILD_DIR)
 	@echo "✓ Cleaned"
 
-## tidy: Tidy go.mod
+## tidy: Tidy go.mod (both modules)
 tidy:
+	@cd pkg && go mod tidy
 	@go mod tidy
 
 ## xsd: Copy ISO 20022 XSDs from messages/ into testdata (enables TestXSDValidation_*)
 xsd:
 	@mkdir -p pkg/iso20022/testdata/xsd
-	@cp messages/pacs.008.001.14.xsd messages/pacs.002.001.16.xsd \
-		messages/pacs.004.001.15.xsd messages/pacs.009.001.13.xsd \
-		messages/pain.001.001.13.xsd messages/camt.054.001.14.xsd \
-		pkg/iso20022/testdata/xsd/
+	@for f in pacs.008.001.14 pacs.002.001.16 pacs.004.001.15 pacs.009.001.13 \
+		pain.001.001.13 pain.002.001.10 camt.054.001.14 camt.053.001.13; do \
+		if [ -f messages/$$f.xsd ]; then cp messages/$$f.xsd pkg/iso20022/testdata/xsd/; fi; \
+	done
 	@echo "✓ XSDs copied to pkg/iso20022/testdata/xsd/"
 
 # ─── Demo targets ────────────────────────────

@@ -101,6 +101,41 @@ func (s *Service) FormatPacs009(report *models.TransactionReport) (string, error
 	return iso20022.BuildPacs009(report.Payment, nil)
 }
 
+// FormatPain001 generates a pain.001 customer credit transfer initiation
+func (s *Service) FormatPain001(report *models.TransactionReport) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildPain001([]*iso20022.CreditTransferInstruction{{Payment: report.Payment}}, nil)
+}
+
+// FormatPain002 generates a pain.002 customer payment status report
+func (s *Service) FormatPain002(report *models.TransactionReport, status iso20022.TransactionStatus, reasonCode string) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildPain002(report.Payment, &iso20022.Pain002Options{
+		Status:     status,
+		ReasonCode: reasonCode,
+	})
+}
+
+// FormatCamt053 generates a camt.053 bank statement
+func (s *Service) FormatCamt053(report *models.TransactionReport) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildCamt053([]*iso20022.CreditTransferInstruction{{Payment: report.Payment}}, nil)
+}
+
+// FormatCamt054 generates a camt.054 debit/credit notification
+func (s *Service) FormatCamt054(report *models.TransactionReport) (string, error) {
+	if report.Payment == nil {
+		return "", fmt.Errorf("no payment data")
+	}
+	return iso20022.BuildCamt054([]*iso20022.CreditTransferInstruction{{Payment: report.Payment}}, nil)
+}
+
 // FormatSummary renders a human-readable text summary
 func (s *Service) FormatSummary(report *models.TransactionReport) string {
 	var sb strings.Builder

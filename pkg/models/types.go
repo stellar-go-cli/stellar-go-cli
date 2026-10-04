@@ -495,13 +495,14 @@ func (q *SwapQuote) Age() float64 {
 }
 
 type SwapRequest struct {
-	SourceAsset string   `json:"sourceAsset"`
-	DestAsset   string   `json:"destAsset"`
-	Amount      string   `json:"amount"`
-	SwapType    SwapType `json:"swapType"`
-	MaxSlippage float64  `json:"maxSlippage"` // Percentage (e.g., 1.0 = 1%)
-	Destination string   `json:"destination"` // Optional: defaults to self
-	Memo        string   `json:"memo,omitempty"`
+	SourceAsset   string   `json:"sourceAsset"`
+	DestAsset     string   `json:"destAsset"`
+	Amount        string   `json:"amount"`
+	SwapType      SwapType `json:"swapType"`
+	MaxSlippage   float64  `json:"maxSlippage"`             // Percentage (e.g., 1.0 = 1%)
+	Destination   string   `json:"destination"`             // Optional: defaults to self
+	SourceAccount string   `json:"sourceAccount,omitempty"` // Optional: required for strict-receive when no signer is configured
+	Memo          string   `json:"memo,omitempty"`
 }
 
 // SwapRoundTripResult summarizes a paper XLM→USDC→XLM path round trip and estimated net (after two base fees).

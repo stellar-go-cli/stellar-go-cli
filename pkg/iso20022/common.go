@@ -16,6 +16,8 @@ const (
 	NSPacs004 = "urn:iso:std:iso:20022:tech:xsd:pacs.004.001.15"
 	NSPacs009 = "urn:iso:std:iso:20022:tech:xsd:pacs.009.001.13"
 	NSPain001 = "urn:iso:std:iso:20022:tech:xsd:pain.001.001.13"
+	NSPain002 = "urn:iso:std:iso:20022:tech:xsd:pain.002.001.10"
+	NSCamt053 = "urn:iso:std:iso:20022:tech:xsd:camt.053.001.13"
 	NSCamt054 = "urn:iso:std:iso:20022:tech:xsd:camt.054.001.14"
 )
 

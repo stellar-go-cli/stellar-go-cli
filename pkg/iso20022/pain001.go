@@ -147,6 +147,68 @@ type Pain001Options struct {
 	PurposeCode     string
 }
 
+// pain001Head builds the GrpHdr and the PmtInf header (all PmtInf fields
+// except CdtTrfTxInf) — shared by BuildPain001 and Pain001StreamWriter.
+// first is the seed payment used for ReqdExctnDt/debtor fallbacks; may be an
+// empty payment for fully opted callers.
+func pain001Head(first *models.Payment, firstDebtor *Party, opts *Pain001Options, msgID, creDtTm string, totals BatchTotals) (GroupHeader114, PaymentInstruction51) {
+
+	grpHdr := GroupHeader114{
+		MsgId:    msgID,
+		CreDtTm:  creDtTm,
+		NbOfTxs:  fmt.Sprintf("%d", totals.NbOfTxs),
+		CtrlSum:  totals.CtrlSum,
+		InitgPty: partyIdentification(opts.InitiatingParty, "NOTPROVIDED"),
+	}
+
+	pmtInfID := opts.PmtInfID
+	if pmtInfID == "" {
+		pmtInfID = msgID + "-1"
+	}
+	reqdDt := opts.ReqdExctnDt
+	if reqdDt == "" {
+		reqdDt = first.CreatedAt.UTC().Format("2006-01-02")
+		if reqdDt == "0001-01-01" {
+			reqdDt = time.Now().UTC().Format("2006-01-02")
+		}
+	}
+
+	// Debtor: explicit opts party, else the first instruction's, else
+	// NOTPROVIDED fallbacks — pain.001 requires Dbtr/DbtrAcct/DbtrAgt.
+	dbtr := opts.Debtor
+	if dbtr == nil {
+		dbtr = firstDebtor
+	}
+	dbtrNm := safeTruncate(first.From, 16)
+	if dbtrNm == "" {
+		dbtrNm = "NOTPROVIDED"
+	}
+
+	pmtInf := PaymentInstruction51{
+		PmtInfId:    pmtInfID,
+		PmtMtd:      "TRF",
+		BtchBookg:   opts.BatchBooking,
+		NbOfTxs:     grpHdr.NbOfTxs,
+		CtrlSum:     totals.CtrlSum,
+		ReqdExctnDt: &DateAndDateTime2Choice{Dt: reqdDt},
+		Dbtr:        partyIdentification(dbtr, dbtrNm),
+		DbtrAgt:     debtorAgentPain(dbtr, first),
+		ChrgBr:      opts.ChargeBearer,
+	}
+	pmtInf.DbtrAcct = partyAccount(dbtr)
+	if pmtInf.DbtrAcct == nil {
+		// DbtrAcct is mandatory — fall back to the funding address, which
+		// partyAccount routes to Prxy since it exceeds Othr/Id's Max34Text.
+		from := first.From
+		if from == "" {
+			from = "NOTPROVIDED"
+		}
+		pmtInf.DbtrAcct = partyAccount(&Party{AcctID: from})
+	}
+
+	return grpHdr, pmtInf
+}
+
 // BuildPain001 builds a pain.001.001.13 customer credit transfer initiation:
 // one PmtInf (single debtor) containing one CdtTrfTxInf per instruction.
 // NbOfTxs and CtrlSum are computed from the batch.
@@ -165,63 +227,15 @@ func BuildPain001(instrs []*CreditTransferInstruction, opts *Pain001Options) (st
 	}
 	creDtTm := time.Now().UTC().Format(time.RFC3339)
 
-	amounts := make([]string, 0, len(instrs))
-	for _, instr := range instrs {
-		amounts = append(amounts, normalizeAmount(instr.Payment.Amount))
-	}
-	ctrlSum, err := sumAmounts(amounts)
+	totals, err := ComputeBatchTotals(instrs)
 	if err != nil {
 		return "", fmt.Errorf("BuildPain001: %w", err)
 	}
-	nbOfTxs := fmt.Sprintf("%d", len(instrs))
+
+	grpHdr, pmtInf := pain001Head(first, instrs[0].Debtor, opts, msgID, creDtTm, totals)
 
 	doc := &Pain001Document{Xmlns: NSPain001}
-	doc.CstmrCdtTrfInitn.GrpHdr = GroupHeader114{
-		MsgId:    msgID,
-		CreDtTm:  creDtTm,
-		NbOfTxs:  nbOfTxs,
-		CtrlSum:  ctrlSum,
-		InitgPty: partyIdentification(opts.InitiatingParty, "NOTPROVIDED"),
-	}
-
-	pmtInfID := opts.PmtInfID
-	if pmtInfID == "" {
-		pmtInfID = msgID + "-1"
-	}
-	reqdDt := opts.ReqdExctnDt
-	if reqdDt == "" {
-		reqdDt = first.CreatedAt.UTC().Format("2006-01-02")
-	}
-
-	// Debtor: explicit opts party, else the first instruction's, else
-	// NOTPROVIDED fallbacks — pain.001 requires Dbtr/DbtrAcct/DbtrAgt.
-	dbtr := opts.Debtor
-	if dbtr == nil {
-		dbtr = instrs[0].Debtor
-	}
-	dbtrNm := safeTruncate(first.From, 16)
-
-	pmtInf := PaymentInstruction51{
-		PmtInfId:    pmtInfID,
-		PmtMtd:      "TRF",
-		BtchBookg:   opts.BatchBooking,
-		NbOfTxs:     nbOfTxs,
-		CtrlSum:     ctrlSum,
-		ReqdExctnDt: &DateAndDateTime2Choice{Dt: reqdDt},
-		Dbtr:        partyIdentification(dbtr, dbtrNm),
-		DbtrAgt:     debtorAgentPain(dbtr, first),
-		ChrgBr:      opts.ChargeBearer,
-	}
-	pmtInf.DbtrAcct = partyAccount(dbtr)
-	if pmtInf.DbtrAcct == nil {
-		// DbtrAcct is mandatory — fall back to the funding address, which
-		// partyAccount routes to Prxy since it exceeds Othr/Id's Max34Text.
-		from := first.From
-		if from == "" {
-			from = "NOTPROVIDED"
-		}
-		pmtInf.DbtrAcct = partyAccount(&Party{AcctID: from})
-	}
+	doc.CstmrCdtTrfInitn.GrpHdr = grpHdr
 
 	txns := make([]CreditTransferTransaction76, 0, len(instrs))
 	for _, instr := range instrs {

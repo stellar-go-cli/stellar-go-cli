@@ -88,6 +88,7 @@ type Pacs008BatchOptions struct {
 	MsgID        string
 	BatchBooking *bool
 	Debtor       *Party
+	CreDtTm      string // GrpHdr CreDtTm (RFC3339) — defaults to the first payment's date
 }
 
 // BuildPacs008 builds a pacs.008.001.14 XML from a single Payment model.
@@ -118,9 +119,37 @@ func BuildPacs008Batch(instrs []*CreditTransferInstruction, opts *Pacs008BatchOp
 	return buildPacs008(instrs, opts)
 }
 
+// pacs008GrpHdr builds the GrpHdr for a pacs.008 batch — shared by
+// buildPacs008 and Pacs008StreamWriter.
+func pacs008GrpHdr(opts *Pacs008BatchOptions, msgID, creDtTm string, totals BatchTotals) GroupHeader131 {
+	hdr := GroupHeader131{
+		MsgId:   msgID,
+		CreDtTm: creDtTm,
+		SttlmInf: &SettlementInstruction15{
+			SttlmMtd: "CLRG",
+		},
+		BtchBookg: opts.BatchBooking,
+		NbOfTxs:   fmt.Sprintf("%d", totals.NbOfTxs),
+		CtrlSum:   totals.CtrlSum,
+	}
+	if totals.SingleCcy != "" {
+		hdr.TtlIntrBkSttlmAmt = &ActiveOrHistoricCurrencyAndAmount{Ccy: totals.SingleCcy, Value: totals.CtrlSum}
+	}
+	if opts.InstgBIC != "" {
+		hdr.InstgAgt = agentByBIC(opts.InstgBIC)
+	}
+	if opts.InstdBIC != "" {
+		hdr.InstdAgt = agentByBIC(opts.InstdBIC)
+	}
+	return hdr
+}
+
 func buildPacs008(instrs []*CreditTransferInstruction, opts *Pacs008BatchOptions) (string, error) {
 	first := instrs[0].Payment
-	creDtTm := first.CreatedAt.UTC().Format(time.RFC3339)
+	creDtTm := opts.CreDtTm
+	if creDtTm == "" {
+		creDtTm = first.CreatedAt.UTC().Format(time.RFC3339)
+	}
 	sttlmDt := first.CreatedAt.UTC().Format("2006-01-02")
 
 	msgID := opts.MsgID
@@ -128,26 +157,12 @@ func buildPacs008(instrs []*CreditTransferInstruction, opts *Pacs008BatchOptions
 		msgID = "SGC1" + safeTruncate(first.ID, 8)
 	}
 
-	doc := &Pacs008Document{Xmlns: NSPacs008}
-	doc.FIToFICstmrCdtTrf.GrpHdr = GroupHeader131{
-		MsgId:   msgID,
-		CreDtTm: creDtTm,
-		SttlmInf: &SettlementInstruction15{
-			SttlmMtd: "CLRG",
-		},
-		BtchBookg: opts.BatchBooking,
-	}
+	totals, _ := ComputeBatchTotals(instrs) //nolint:errcheck // zero totals degrade gracefully (no CtrlSum)
 
-	if opts.InstgBIC != "" {
-		doc.FIToFICstmrCdtTrf.GrpHdr.InstgAgt = agentByBIC(opts.InstgBIC)
-	}
-	if opts.InstdBIC != "" {
-		doc.FIToFICstmrCdtTrf.GrpHdr.InstdAgt = agentByBIC(opts.InstdBIC)
-	}
+	doc := &Pacs008Document{Xmlns: NSPacs008}
+	doc.FIToFICstmrCdtTrf.GrpHdr = pacs008GrpHdr(opts, msgID, creDtTm, totals)
 
 	txns := make([]CreditTransferTransaction73, 0, len(instrs))
-	amounts := make([]string, 0, len(instrs))
-	ccys := map[string]bool{}
 	for _, instr := range instrs {
 		p := instr.Payment
 		txID := opts.TxID
@@ -160,21 +175,8 @@ func buildPacs008(instrs []*CreditTransferInstruction, opts *Pacs008BatchOptions
 		}
 		txInf := pacs008TxInf(instr, &opts.Pacs008Options, opts.Debtor, txID, uetr, sttlmDt)
 		txns = append(txns, *txInf)
-		amounts = append(amounts, normalizeAmount(p.Amount))
-		ccys[txInf.IntrBkSttlmAmt.Ccy] = true
 	}
 	doc.FIToFICstmrCdtTrf.CdtTrfTxInf = txns
-
-	hdr := &doc.FIToFICstmrCdtTrf.GrpHdr
-	hdr.NbOfTxs = fmt.Sprintf("%d", len(txns))
-	if sum, err := sumAmounts(amounts); err == nil {
-		hdr.CtrlSum = sum
-		if len(ccys) == 1 {
-			for ccy := range ccys {
-				hdr.TtlIntrBkSttlmAmt = &ActiveOrHistoricCurrencyAndAmount{Ccy: ccy, Value: sum}
-			}
-		}
-	}
 
 	return MarshalXML(doc, NSPacs008)
 }

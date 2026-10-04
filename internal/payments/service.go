@@ -491,14 +491,14 @@ func (s *Service) paySwap(from, to, amount, asset string, net models.Network, me
 	}
 
 	// Check if keypair exists
-	_, err := s.loadStellarKeypair()
+	kp, err := wallet.LoadStellarKeypairForSwap()
 	if err != nil {
 		// No real keypair — fall back to simulated swap
 		return s.paySwapSimulated(from, to, amount, asset, net, memo)
 	}
 
 	// Initialize swap service
-	swapService := swap.NewService(net)
+	swapService := swap.NewService(net, swap.WithKeypair(kp))
 
 	// Parse asset pair from memo or use defaults
 	// Expected format: "from XLM to USDC" or just use default swap

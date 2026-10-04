@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
@@ -25,10 +26,11 @@ func atof(s string) float64 {
 }
 
 func NewStellarExchange(network models.Network) *StellarExchange {
+	swapSvc, _ := wallet.NewSwapService(network)
 	return &StellarExchange{
 		name:      "stellar",
 		network:   network,
-		swapSvc:   swap.NewService(network),
+		swapSvc:   swapSvc,
 		connected: false,
 	}
 }

@@ -17,14 +17,27 @@ The reusable building blocks are public Go packages under `pkg/` (importable by 
 ```bash
 make build              # Build CLI binary → dist/stellar-go-cli
 make install            # Install to $GOPATH/bin
-make test               # Run all tests
-make lint               # go vet + golangci-lint
-make security           # gosec security scanner
+make test               # Run all tests (both modules — see below)
+make lint               # go vet + golangci-lint (both modules)
+make security           # gosec security scanner (both modules)
+make tidy               # go mod tidy (both modules)
 go build ./...          # Build all packages (default feature set)
 go build -tags extras ./...   # Build including extras-only commands
 go vet ./...
-go mod tidy
 ```
+
+### Two Go modules
+
+The repo has two Go modules:
+
+- **Root module** `github.com/stellar-go-cli/stellar-go-cli` — CLI and internals (`cmd/`, `internal/`)
+- **Library module** `github.com/stellar-go-cli/stellar-go-cli/pkg` — the public `pkg/` packages (`pkg/go.mod`, deps: `stellar/go` + `piprate/json-gold` only). The root module consumes it via `replace => ./pkg`.
+
+Consequences:
+
+- `go test ./...` at the root does **not** run `pkg/` tests — use `make test` or `cd pkg && go test ./...`
+- **`pkg/` must never import `internal/`** — it is a standalone public library
+- **Releases**: the library is versioned with `pkg/vX.Y.Z` git tags (consumers `go get ...@pkg/v0.1.0`); CLI binary releases keep `vX.Y.Z` tags
 
 Non-core command groups (`chat`, `chat_finetune`, `terminal`, `triangular`, `exchange`) live behind the `extras` build tag. Registration goes through `registerExtras` in `cmd/stellar-go-cli/commands/extras.go` (with a `!extras` stub in `extras_disabled.go`).
 

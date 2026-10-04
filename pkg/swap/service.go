@@ -8,15 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/zk"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go/clients/horizonclient"
 	"github.com/stellar/go/keypair"
 	"github.com/stellar/go/network"
 	"github.com/stellar/go/protocols/horizon"
+	"github.com/stellar/go/strkey"
 	"github.com/stellar/go/txnbuild"
 )
 
@@ -51,6 +49,59 @@ type Service struct {
 	passphrase string
 	assets     map[string]AssetConfig
 	baseFee    int64
+	signer     Signer
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithClient overrides the Horizon client (e.g. a self-hosted Horizon).
+func WithClient(c *horizonclient.Client) Option {
+	return func(s *Service) {
+		if c != nil {
+			s.client = c
+		}
+	}
+}
+
+// WithPassphrase overrides the network passphrase (required when WithClient
+// points at a non-default network).
+func WithPassphrase(p string) Option {
+	return func(s *Service) {
+		if p != "" {
+			s.passphrase = p
+		}
+	}
+}
+
+// WithAssets merges additional assets into the service's asset registry.
+func WithAssets(assets map[string]AssetConfig) Option {
+	return func(s *Service) {
+		for k, v := range assets {
+			s.assets[k] = v
+		}
+	}
+}
+
+// WithSigner sets the signer used by Execute* methods. Quote-only and
+// BuildSwapTransaction flows do not need a signer.
+func WithSigner(signer Signer) Option {
+	return func(s *Service) { s.signer = signer }
+}
+
+// WithKeypair is sugar for WithSigner(KeypairSigner{kp}).
+func WithKeypair(kp *keypair.Full) Option {
+	return func(s *Service) {
+		if kp != nil {
+			s.signer = KeypairSigner{KP: kp}
+		}
+	}
+}
+
+// WithBaseFee overrides the per-operation fee (stroops) used for submitted
+// transactions.
+func WithBaseFee(stroops int64) Option {
+	return func(s *Service) { s.SetBaseFee(stroops) }
 }
 
 // SetBaseFee overrides the per-operation fee (stroops) used for submitted transactions.
@@ -67,28 +118,56 @@ func (s *Service) feeStroops() int64 {
 	return txnbuild.MinBaseFee
 }
 
-func NewService(net models.Network) *Service {
+// Signer returns the configured signer, or nil when the service is quote-only.
+func (s *Service) Signer() Signer { return s.signer }
+
+// Network returns the network this service targets.
+func (s *Service) Network() models.Network {
+	if s.passphrase == network.PublicNetworkPassphrase {
+		return models.NetworkStellarMainnet
+	}
+	return models.NetworkStellarTestnet
+}
+
+// NetworkPassphrase returns the Stellar network passphrase.
+func (s *Service) NetworkPassphrase() string { return s.passphrase }
+
+// NewService creates a swap service for the given network. Options inject a
+// custom Horizon client, passphrase, asset registry, base fee, or signer —
+// services without a signer can quote and build unsigned transactions but
+// cannot execute.
+func NewService(net models.Network, opts ...Option) *Service {
 	var client *horizonclient.Client
 	var passphrase string
-	var assets map[string]AssetConfig
+	var registry map[string]AssetConfig
 
 	switch net {
 	case models.NetworkStellarMainnet:
 		client = horizonclient.DefaultPublicNetClient
 		passphrase = network.PublicNetworkPassphrase
-		assets = MainnetAssets
+		registry = MainnetAssets
 	default:
 		client = horizonclient.DefaultTestNetClient
 		passphrase = network.TestNetworkPassphrase
-		assets = TestnetAssets
+		registry = TestnetAssets
 	}
 
-	return &Service{
+	// Copy the registry so WithAssets never mutates the package-level maps.
+	assets := make(map[string]AssetConfig, len(registry))
+	for k, v := range registry {
+		assets[k] = v
+	}
+
+	s := &Service{
 		client:     client,
 		passphrase: passphrase,
 		assets:     assets,
 		baseFee:    txnbuild.MinBaseFee,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // GetQuote fetches path payment quotes from Horizon
@@ -139,19 +218,29 @@ func (s *Service) GetQuote(req models.SwapRequest) (*models.SwapQuote, error) {
 	return quote, nil
 }
 
-// findPaths queries Horizon for available swap paths
-func (s *Service) findPaths(req models.SwapRequest) ([]models.SwapPath, error) {
-	sourceAsset := s.getAsset(req.SourceAsset)
-	destAsset := s.getAsset(req.DestAsset)
+// sourceAccount resolves the account used as tx source / Horizon
+// source_account: the explicit request value, else the signer's address.
+func (s *Service) sourceAccount(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	if s.signer != nil {
+		return s.signer.Address(), nil
+	}
+	return "", fmt.Errorf("no source account: set SwapRequest.SourceAccount or configure a signer with WithSigner")
+}
 
-	kp, err := s.LoadStellarKeypair()
+// findPaths queries Horizon for available swap paths. Strict-send quotes need
+// no account; strict-receive quotes resolve SourceAccount from the request or
+// the configured signer.
+func (s *Service) findPaths(req models.SwapRequest) ([]models.SwapPath, error) {
+	sourceAsset, err := s.resolveAsset(req.SourceAsset)
 	if err != nil {
 		return nil, err
 	}
-
-	dst := req.Destination
-	if dst == "" {
-		dst = kp.Address()
+	destAsset, err := s.resolveAsset(req.DestAsset)
+	if err != nil {
+		return nil, err
 	}
 
 	var pathsPage horizon.PathsPage
@@ -174,9 +263,17 @@ func (s *Service) findPaths(req models.SwapRequest) ([]models.SwapPath, error) {
 			return nil, fmt.Errorf("strict send paths: %w", err)
 		}
 	case models.SwapStrictReceive:
+		src, err := s.sourceAccount(req.SourceAccount)
+		if err != nil {
+			return nil, err
+		}
+		dst := req.Destination
+		if dst == "" {
+			dst = src
+		}
 		// For strict receive, find paths that can deliver the dest amount
 		pathsReq := horizonclient.PathsRequest{
-			SourceAccount:          kp.Address(),
+			SourceAccount:          src,
 			SourceAssets:           s.getAssetString(sourceAsset),
 			DestinationAccount:     dst,
 			DestinationAssetType:   s.getAssetType(destAsset),
@@ -251,94 +348,103 @@ func sortPathsBySwapType(swapType models.SwapType, paths []models.SwapPath) {
 	}
 }
 
-// ExecuteSwap builds and submits a path payment transaction
-func (s *Service) ExecuteSwap(quote *models.SwapQuote, maxSlippage float64, destination string) (*models.Payment, error) {
-	kp, err := s.LoadStellarKeypair()
+// buildSwapOperation builds the path payment operation for a quote, using the
+// best (first) path and dynamic slippage based on path complexity.
+func (s *Service) buildSwapOperation(quote *models.SwapQuote, maxSlippage float64, destination string) (txnbuild.Operation, error) {
+	sourceAsset, err := s.resolveAsset(quote.SourceAsset)
 	if err != nil {
-		return nil, fmt.Errorf("no stellar keypair: %w", err)
+		return nil, err
 	}
-
-	// Use sender as destination if not specified
-	if destination == "" {
-		destination = kp.Address()
-	}
-
-	// Fetch source account
-	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
-	})
+	destAsset, err := s.resolveAsset(quote.DestAsset)
 	if err != nil {
-		return nil, fmt.Errorf("horizon: account not found: %w", err)
+		return nil, err
 	}
-
-	// Check trustline for destination asset
-	if err := s.ensureTrustline(kp.Address(), quote.DestAsset); err != nil {
-		return nil, fmt.Errorf("trustline check failed: %w", err)
-	}
-
-	sourceAsset := s.getAsset(quote.SourceAsset)
-	destAsset := s.getAsset(quote.DestAsset)
-
-	// Use first (best) path
 	if len(quote.Paths) == 0 {
 		return nil, fmt.Errorf("no paths in quote")
 	}
 	bestPath := quote.Paths[0]
-	builtPath := s.buildPath(bestPath.Path)
-
-	var operation txnbuild.Operation
+	builtPath, err := s.buildPath(bestPath.Path)
+	if err != nil {
+		return nil, err
+	}
 
 	switch quote.SwapType {
 	case models.SwapStrictSend:
-		// Calculate dynamic slippage based on path complexity
 		dynamicSlippage := s.calculateDynamicSlippage(maxSlippage/100.0, bestPath.Path)
 		destMin := s.applySlippage(bestPath.DestAmount, dynamicSlippage, false)
-
-		operation = &txnbuild.PathPaymentStrictSend{
+		return &txnbuild.PathPaymentStrictSend{
 			SendAsset:   sourceAsset,
 			SendAmount:  quote.Amount,
 			DestAsset:   destAsset,
 			DestMin:     destMin,
 			Destination: destination,
 			Path:        builtPath,
-		}
-
+		}, nil
 	case models.SwapStrictReceive:
-		// Calculate dynamic slippage based on path complexity
 		dynamicSlippage := s.calculateDynamicSlippage(maxSlippage/100.0, bestPath.Path)
 		sendMax := s.applySlippage(bestPath.SourceAmount, dynamicSlippage, true)
-
-		operation = &txnbuild.PathPaymentStrictReceive{
+		return &txnbuild.PathPaymentStrictReceive{
 			SendAsset:   sourceAsset,
 			SendMax:     sendMax,
 			DestAsset:   destAsset,
 			DestAmount:  quote.Amount,
 			Destination: destination,
-			Path:        s.buildPath(bestPath.Path),
-		}
+			Path:        builtPath,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported swap type: %s", quote.SwapType)
 	}
+}
 
-	// Build transaction
-	txParams := txnbuild.TransactionParams{
-		SourceAccount:        &sourceAcct,
+// FetchAccount loads an account from Horizon for use as a transaction source.
+func (s *Service) FetchAccount(address string) (txnbuild.Account, error) {
+	acct, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: address})
+	if err != nil {
+		return nil, fmt.Errorf("horizon: account not found: %w", err)
+	}
+	return &acct, nil
+}
+
+// BuildSwapTransaction builds an unsigned path-payment transaction for a
+// quote. The caller supplies the source account (e.g. from FetchAccount or
+// txnbuild.SimpleAccount) and is responsible for signing and submission —
+// enabling non-custodial flows where a backend returns XDR for a wallet to
+// sign. No signer is required.
+func (s *Service) BuildSwapTransaction(quote *models.SwapQuote, source txnbuild.Account, maxSlippage float64, destination string) (*txnbuild.Transaction, error) {
+	op, err := s.buildSwapOperation(quote, maxSlippage, destination)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
+		SourceAccount:        source,
 		IncrementSequenceNum: true,
 		BaseFee:              s.feeStroops(),
 		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(60)},
-		Operations:           []txnbuild.Operation{operation},
-	}
-
-	tx, err := txnbuild.NewTransaction(txParams)
+		Operations:           []txnbuild.Operation{op},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("build transaction: %w", err)
 	}
+	return tx, nil
+}
 
-	// Sign
-	tx, err = tx.Sign(s.passphrase, kp)
+// BuildSwapTransactionXDR builds an unsigned swap transaction and returns it
+// as base64-encoded XDR for a wallet to sign.
+func (s *Service) BuildSwapTransactionXDR(quote *models.SwapQuote, source txnbuild.Account, maxSlippage float64, destination string) (string, error) {
+	tx, err := s.BuildSwapTransaction(quote, source, maxSlippage, destination)
 	if err != nil {
-		return nil, fmt.Errorf("sign transaction: %w", err)
+		return "", err
 	}
+	txB64, err := tx.Base64()
+	if err != nil {
+		return "", fmt.Errorf("serialize transaction: %w", err)
+	}
+	return txB64, nil
+}
 
-	// Submit
+// SubmitTransaction submits a signed transaction to Horizon, unwrapping
+// failure result codes into descriptive errors.
+func (s *Service) SubmitTransaction(tx *txnbuild.Transaction) (*horizon.Transaction, error) {
 	txB64, err := tx.Base64()
 	if err != nil {
 		return nil, fmt.Errorf("serialize transaction: %w", err)
@@ -349,15 +455,9 @@ func (s *Service) ExecuteSwap(quote *models.SwapQuote, maxSlippage float64, dest
 		if herr, ok := err.(*horizonclient.Error); ok {
 			rc, rcErr := herr.ResultCodes()
 			if rcErr == nil && rc != nil {
-				// Check for op_under_dest_min specifically
 				for _, opCode := range rc.OperationCodes {
 					if opCode == "op_under_dest_min" {
-						// Provide helpful suggestion for slippage issues
-						suggestedSlippage := maxSlippage * 1.5 // Suggest 50% higher slippage
-						if suggestedSlippage > 10.0 {
-							suggestedSlippage = 10.0
-						}
-						return nil, fmt.Errorf("tx failed — insufficient destination amount received. Try increasing --slippage to %.1f%% (current: %.1f%%). This error occurs when market conditions change between quote and execution", suggestedSlippage, maxSlippage)
+						return nil, fmt.Errorf("tx failed — insufficient destination amount received (op_under_dest_min). Market conditions changed between quote and execution — try increasing slippage")
 					}
 				}
 				return nil, fmt.Errorf("tx failed — code: %s, ops: %v", rc.TransactionCode, rc.OperationCodes)
@@ -366,21 +466,65 @@ func (s *Service) ExecuteSwap(quote *models.SwapQuote, maxSlippage float64, dest
 		}
 		return nil, fmt.Errorf("submit to Horizon: %w", err)
 	}
+	return &resp, nil
+}
+
+// ExecuteSwap builds, signs, and submits a path payment transaction. Requires
+// a signer (see WithSigner); for non-custodial flows use
+// BuildSwapTransaction instead.
+func (s *Service) ExecuteSwap(quote *models.SwapQuote, maxSlippage float64, destination string) (*models.Payment, error) {
+	if s.signer == nil {
+		return nil, fmt.Errorf("no signer configured: pass WithSigner to NewService")
+	}
+	src := s.signer.Address()
+
+	// Use sender as destination if not specified
+	if destination == "" {
+		destination = src
+	}
+
+	// Fetch source account
+	sourceAcct, err := s.FetchAccount(src)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check trustline for destination asset
+	if err := s.ensureTrustline(src, quote.DestAsset); err != nil {
+		return nil, fmt.Errorf("trustline check failed: %w", err)
+	}
+
+	tx, err := s.BuildSwapTransaction(quote, sourceAcct, maxSlippage, destination)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sign
+	tx, err = s.signer.Sign(tx, s.passphrase)
+	if err != nil {
+		return nil, fmt.Errorf("sign transaction: %w", err)
+	}
+
+	// Submit
+	resp, err := s.SubmitTransaction(tx)
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	confirmed := now.Add(5 * time.Second)
 
 	return &models.Payment{
 		ID:          "swap-" + resp.Hash[:12],
-		From:        kp.Address(),
+		From:        src,
 		To:          destination,
 		Amount:      quote.Amount,
 		Asset:       quote.SourceAsset,
 		Rail:        models.RailSwap,
 		Status:      models.PaymentConfirmed,
-		Network:     s.getNetwork(),
+		Network:     s.Network(),
 		Memo:        fmt.Sprintf("Swap %s→%s", quote.SourceAsset, quote.DestAsset),
-		FXRate:      fmt.Sprintf("%.6f", bestPath.Price),
+		FXRate:      fmt.Sprintf("%.6f", quote.Paths[0].Price),
 		Fee:         quote.NetworkFee,
 		TxHash:      resp.Hash,
 		LedgerSeq:   int64(resp.Ledger),
@@ -432,30 +576,39 @@ func (s *Service) getAssetIssuer(asset txnbuild.Asset) string {
 	return ca.Issuer
 }
 
-func (s *Service) getAsset(code string) txnbuild.Asset {
-	code = strings.ToUpper(strings.TrimSpace(code))
-	if code == "XLM" || code == "" {
-		return txnbuild.NativeAsset{}
+// resolveAsset converts an asset spec to a txnbuild.Asset:
+//
+//	"XLM" | "native" | ""  → native asset
+//	"CODE:ISSUER"           → credit asset (issuer must be a valid ed25519 address)
+//	"CODE"                  → looked up in the service's asset registry
+func (s *Service) resolveAsset(spec string) (txnbuild.Asset, error) {
+	spec = strings.TrimSpace(spec)
+	upper := strings.ToUpper(spec)
+	if upper == "" || upper == "XLM" || upper == "NATIVE" {
+		return txnbuild.NativeAsset{}, nil
 	}
-	cfg, ok := s.assets[code]
+	if i := strings.Index(spec, ":"); i > 0 {
+		code := strings.ToUpper(strings.TrimSpace(spec[:i]))
+		issuer := strings.TrimSpace(spec[i+1:])
+		if len(code) == 0 || len(code) > 12 {
+			return nil, fmt.Errorf("invalid asset code in %q", spec)
+		}
+		if !strkey.IsValidEd25519PublicKey(issuer) {
+			return nil, fmt.Errorf("invalid issuer address in %q", spec)
+		}
+		return txnbuild.CreditAsset{Code: code, Issuer: issuer}, nil
+	}
+	cfg, ok := s.assets[upper]
 	if !ok {
-		// Unknown asset - return CreditAsset without issuer
-		// This will fail validation later with a clear error
-		return txnbuild.CreditAsset{Code: code, Issuer: ""}
+		return nil, fmt.Errorf("unsupported asset %q (supported: %s)", spec, strings.Join(s.supportedCodes(), ", "))
 	}
-	return txnbuild.CreditAsset{Code: cfg.Code, Issuer: cfg.Issuer}
+	return txnbuild.CreditAsset{Code: cfg.Code, Issuer: cfg.Issuer}, nil
 }
 
-// validateAsset returns a clear error for assets not in the known-asset registry
-func (s *Service) validateAsset(code string) error {
-	upper := strings.ToUpper(strings.TrimSpace(code))
-	if upper == "" || upper == "XLM" {
-		return nil
-	}
-	if _, ok := s.assets[upper]; !ok {
-		return fmt.Errorf("unsupported asset %q (supported: %s)", code, strings.Join(s.supportedCodes(), ", "))
-	}
-	return nil
+// validateAsset returns a clear error for unresolvable asset specs.
+func (s *Service) validateAsset(spec string) error {
+	_, err := s.resolveAsset(spec)
+	return err
 }
 
 // supportedCodes returns the sorted list of known asset codes for this network
@@ -468,21 +621,21 @@ func (s *Service) supportedCodes() []string {
 	return codes
 }
 
-func (s *Service) buildPath(pathAssets []models.PathAsset) []txnbuild.Asset {
+func (s *Service) buildPath(pathAssets []models.PathAsset) ([]txnbuild.Asset, error) {
 	var path []txnbuild.Asset
 	for _, pa := range pathAssets {
-		if pa.Code == "XLM" || pa.Code == "" {
-			path = append(path, txnbuild.NativeAsset{})
-		} else if pa.Issuer != "" {
-			// Use the issuer from Horizon path
-			path = append(path, txnbuild.CreditAsset{Code: pa.Code, Issuer: pa.Issuer})
-		} else {
-			// Unknown asset without issuer - try to get from config
-			asset := s.getAsset(pa.Code)
-			path = append(path, asset)
+		spec := pa.Code
+		if pa.Issuer != "" {
+			// Use the issuer from the Horizon path
+			spec = pa.Code + ":" + pa.Issuer
 		}
+		asset, err := s.resolveAsset(spec)
+		if err != nil {
+			return nil, fmt.Errorf("path asset %q: %w", pa.Code, err)
+		}
+		path = append(path, asset)
 	}
-	return path
+	return path, nil
 }
 
 // atof parses s as a float64, returning 0 when s is not a number.
@@ -542,303 +695,18 @@ func (s *Service) calculateDynamicSlippage(baseSlippage float64, pathAssets []mo
 	return adjusted
 }
 
-func (s *Service) ensureTrustline(address, assetCode string) error {
-	if assetCode == "XLM" {
-		return nil
+func (s *Service) ensureTrustline(address, assetSpec string) error {
+	asset, err := s.resolveAsset(assetSpec)
+	if err != nil {
+		return err
 	}
-
-	// Check if trustline exists
-	_, ok := s.assets[assetCode]
-	if !ok {
-		return fmt.Errorf("unknown asset: %s", assetCode)
+	if asset.IsNative() {
+		return nil
 	}
 
 	// In production, we would check account balances and add trustline if needed
 	// For now, assume trustline exists or user has pre-established it
 	return nil
-}
-
-func (s *Service) getNetwork() models.Network {
-	if s.passphrase == network.PublicNetworkPassphrase {
-		return models.NetworkStellarMainnet
-	}
-	return models.NetworkStellarTestnet
-}
-
-func (s *Service) LoadStellarKeypair() (*keypair.Full, error) {
-	return wallet.LoadStellarKeypairForSwap()
-}
-
-// BuildZKSwapProofRequest creates a ZK proof request for a swap operation
-func (s *Service) BuildZKSwapProofRequest(quote *models.SwapQuote, payer, destination string, privacyLevel string) *models.ZKSwapRequest {
-	return &models.ZKSwapRequest{
-		ResourceURL:    "",
-		Amount:         0, // Will be set from quote
-		SourceAsset:    quote.SourceAsset,
-		DestAsset:      quote.DestAsset,
-		Payer:          payer,
-		Destination:    destination,
-		Nonce:          mpCrypto.RandomHex(16),
-		ExpiresAt:      time.Now().Add(10 * time.Minute).UTC(),
-		PrivacyLevel:   privacyLevel,
-		ComplianceHash: mpCrypto.Hash256([]byte(payer + destination + quote.SourceAsset + quote.DestAsset + quote.Amount)),
-		SwapType:       quote.SwapType,
-	}
-}
-
-// ExecuteZKSwap executes a swap with ZK proof privacy
-func (s *Service) ExecuteZKSwap(quote *models.SwapQuote, maxSlippage float64, destination string, privacyLevel string) (*models.Payment, error) {
-	// Load keypair for the specific address
-	kp, err := s.LoadStellarKeypair()
-	if err != nil {
-		return nil, fmt.Errorf("no stellar keypair: %w", err)
-	}
-
-	// Use sender as destination if not specified
-	if destination == "" {
-		destination = kp.Address()
-	}
-
-	// Initialize ZK service
-	zkService := zk.NewService()
-
-	// Generate ZK proof for swap
-	inputs := zk.PaymentInputs{
-		SenderPrivateKey: "MOCK_PRIVATE_KEY", // Would use actual private key
-		ReceiverAddress:  destination,
-		Amount:           quote.Amount,
-		Nonce:            mpCrypto.RandomHex(16),
-		NetworkID:        s.getNetworkID(),
-		MaxAmount:        "1000000", // 1M XLM max
-	}
-
-	proofData, err := zkService.GeneratePaymentProof(inputs)
-	if err != nil {
-		return nil, fmt.Errorf("ZK proof generation failed: %w", err)
-	}
-
-	// Verify proof locally first
-	verified, err := zkService.VerifyProofLocally(proofData)
-	if err != nil || !verified {
-		return nil, fmt.Errorf("local ZK proof verification failed: %w", err)
-	}
-
-	// Fetch source account
-	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("horizon: account not found for ZK swap: %w", err)
-	}
-
-	// Check trustline for destination asset
-	if err := s.ensureTrustline(kp.Address(), quote.DestAsset); err != nil {
-		return nil, fmt.Errorf("trustline check failed: %w", err)
-	}
-
-	sourceAsset := s.getAsset(quote.SourceAsset)
-	destAsset := s.getAsset(quote.DestAsset)
-
-	// Debug logging to diagnose op_malformed
-	fmt.Printf("[DEBUG] ExecuteZKSwap: source=%s, dest=%s\n", quote.SourceAsset, quote.DestAsset)
-	fmt.Printf("[DEBUG] Source asset: %s\n", s.getAssetString(sourceAsset))
-	fmt.Printf("[DEBUG] Dest asset: %s\n", s.getAssetString(destAsset))
-
-	// Use first (best) path that has valid issuers
-	if len(quote.Paths) == 0 {
-		return nil, fmt.Errorf("no paths in quote")
-	}
-
-	var bestPath *models.SwapPath
-	var builtPath []txnbuild.Asset
-
-	// Find first valid path, preferring direct paths (no intermediate assets)
-	for i, p := range quote.Paths {
-		fmt.Printf("[DEBUG] Checking Path[%d]: intermediate assets=%d\n", i, len(p.Path))
-		skipPath := false
-		for j, a := range p.Path {
-			fmt.Printf("[DEBUG]   Path[%d][%d]: Code=%s Issuer=%s\n", i, j, a.Code, a.Issuer)
-			// Skip paths with assets that have no issuer - causes op_malformed
-			if a.Code != "XLM" && a.Issuer == "" {
-				fmt.Printf("[DEBUG]   -> Skipping path (no issuer for %s)\n", a.Code)
-				skipPath = true
-				break
-			}
-		}
-		if skipPath {
-			continue
-		}
-
-		// Prefer direct paths (no intermediate assets)
-		if len(p.Path) == 0 {
-			fmt.Printf("[DEBUG]   -> Selected direct path (no intermediates)\n")
-			bestPath = &p
-			builtPath = []txnbuild.Asset{} // Empty path for direct swap
-			break
-		}
-
-		// If we haven't found a direct path yet, use this one
-		if bestPath == nil {
-			bestPath = &p
-			builtPath = s.buildPath(p.Path)
-			fmt.Printf("[DEBUG] Selected Path[%d] with %d intermediate assets\n", i, len(p.Path))
-		}
-	}
-
-	if bestPath == nil {
-		return nil, fmt.Errorf("no valid paths found (all paths have assets without issuers)")
-	}
-
-	fmt.Printf("[DEBUG] Built path length: %d\n", len(builtPath))
-	for i, asset := range builtPath {
-		fmt.Printf("[DEBUG] BuiltPath[%d]: %s\n", i, s.getAssetString(asset))
-	}
-
-	var operation txnbuild.Operation
-
-	switch quote.SwapType {
-	case models.SwapStrictSend:
-		destMin := s.applySlippage(bestPath.DestAmount, maxSlippage/100.0, false)
-		fmt.Printf("[DEBUG] StrictSend: SendAmount=%s DestMin=%s\n", quote.Amount, destMin)
-		fmt.Printf("[DEBUG] DestAmount from quote: %s\n", bestPath.DestAmount)
-		fmt.Printf("[DEBUG] Slippage percent: %.2f%%, decimal: %.4f\n", maxSlippage, maxSlippage/100.0)
-		operation = &txnbuild.PathPaymentStrictSend{
-			SendAsset:   sourceAsset,
-			SendAmount:  quote.Amount,
-			DestAsset:   destAsset,
-			DestMin:     destMin,
-			Destination: destination,
-			Path:        builtPath,
-		}
-	case models.SwapStrictReceive:
-		sendMax := s.applySlippage(bestPath.SourceAmount, maxSlippage/100.0, true)
-		fmt.Printf("[DEBUG] StrictReceive: SendMax=%s DestAmount=%s\n", sendMax, quote.Amount)
-		fmt.Printf("[DEBUG] Slippage percent: %.2f%%, decimal: %.4f\n", maxSlippage, maxSlippage/100.0)
-		operation = &txnbuild.PathPaymentStrictReceive{
-			SendAsset:   sourceAsset,
-			SendMax:     sendMax,
-			DestAsset:   destAsset,
-			DestAmount:  quote.Amount,
-			Destination: destination,
-			Path:        builtPath,
-		}
-	}
-
-	// Debug: Log operation details
-	fmt.Printf("[DEBUG] Operation type: %T\n", operation)
-	if pp, ok := operation.(*txnbuild.PathPaymentStrictSend); ok {
-		fmt.Printf("[DEBUG] PathPaymentStrictSend:\n")
-		fmt.Printf("[DEBUG]   SendAsset: %s\n", s.getAssetString(pp.SendAsset))
-		fmt.Printf("[DEBUG]   SendAmount: %s\n", pp.SendAmount)
-		fmt.Printf("[DEBUG]   DestAsset: %s\n", s.getAssetString(pp.DestAsset))
-		fmt.Printf("[DEBUG]   DestMin: %s\n", pp.DestMin)
-		fmt.Printf("[DEBUG]   Destination: %s\n", pp.Destination)
-		fmt.Printf("[DEBUG]   Path length: %d\n", len(pp.Path))
-	}
-	if pp, ok := operation.(*txnbuild.PathPaymentStrictReceive); ok {
-		fmt.Printf("[DEBUG] PathPaymentStrictReceive:\n")
-		fmt.Printf("[DEBUG]   SendAsset: %s\n", s.getAssetString(pp.SendAsset))
-		fmt.Printf("[DEBUG]   SendMax: %s\n", pp.SendMax)
-		fmt.Printf("[DEBUG]   DestAsset: %s\n", s.getAssetString(pp.DestAsset))
-		fmt.Printf("[DEBUG]   DestAmount: %s\n", pp.DestAmount)
-		fmt.Printf("[DEBUG]   Destination: %s\n", pp.Destination)
-		fmt.Printf("[DEBUG]   Path length: %d\n", len(pp.Path))
-	}
-
-	// Build transaction with path payment operation
-	txParams := txnbuild.TransactionParams{
-		SourceAccount:        &sourceAcct,
-		IncrementSequenceNum: true,
-		BaseFee:              txnbuild.MinBaseFee,
-		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(60)},
-		Operations:           []txnbuild.Operation{operation},
-	}
-
-	tx, err := txnbuild.NewTransaction(txParams)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build ZK swap transaction: %w", err)
-	}
-
-	// Sign transaction
-	tx, err = tx.Sign(s.passphrase, kp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign ZK swap transaction: %w", err)
-	}
-
-	// Serialize to base64 XDR
-	txB64, err := tx.Base64()
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize ZK swap transaction: %w", err)
-	}
-
-	// Debug: Log transaction XDR before submission
-	fmt.Printf("[DEBUG] Transaction XDR: %s\n", txB64)
-	txHash, err := tx.Hash(s.passphrase)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get transaction hash: %w", err)
-	}
-	fmt.Printf("[DEBUG] Transaction hash preview: %s\n", txHash[:16])
-
-	// Submit to Horizon
-	resp, err := s.client.SubmitTransactionXDR(txB64)
-	if err != nil {
-		if herr, ok := err.(*horizonclient.Error); ok {
-			fmt.Printf("[DEBUG] Horizon error details:\n")
-			fmt.Printf("[DEBUG]   Problem: %s\n", herr.Problem.Title)
-			fmt.Printf("[DEBUG]   Detail: %s\n", herr.Problem.Detail)
-			if rc, rcErr := herr.ResultCodes(); rcErr == nil && rc != nil {
-				fmt.Printf("[DEBUG]   Transaction code: %s\n", rc.TransactionCode)
-				fmt.Printf("[DEBUG]   Operation codes: %v\n", rc.OperationCodes)
-				return nil, fmt.Errorf("ZK swap transaction failed — code: %s, ops: %v",
-					rc.TransactionCode, rc.OperationCodes)
-			}
-			return nil, fmt.Errorf("ZK swap transaction failed: %s", herr.Problem.Title)
-		}
-		return nil, fmt.Errorf("submit ZK swap transaction to Horizon: %w", err)
-	}
-
-	now := time.Now().UTC()
-	confirmed := now.Add(10 * time.Second)
-
-	// Generate ZK verification data
-	verification := &models.ZKSwapVerification{
-		ProofID:          proofData.ProofHash,
-		CircuitType:      proofData.CircuitType,
-		Verified:         true,
-		VerificationTime: time.Duration(proofData.GeneratedAt.Sub(now)),
-		GasUsed:          proofData.GasUsed,
-		OnChainRef:       resp.Hash[:16],
-		TxHash:           resp.Hash,
-		CreatedAt:        now,
-	}
-
-	// Save verification data for compliance reporting
-	config.SaveState("zk_swap_verification_latest", verification) //nolint:errcheck // best-effort cache
-
-	return &models.Payment{
-		ID:          "zk-swap-" + resp.Hash[:12],
-		From:        kp.Address(),
-		To:          destination,
-		Amount:      quote.Amount,
-		Asset:       quote.SourceAsset,
-		Rail:        models.RailZK,
-		Status:      models.PaymentConfirmed,
-		Network:     s.getNetwork(),
-		Memo:        fmt.Sprintf("ZK Swap %s→%s", quote.SourceAsset, quote.DestAsset),
-		Fee:         "0.00005 XLM",
-		TxHash:      resp.Hash,
-		LedgerSeq:   int64(resp.Ledger),
-		CreatedAt:   now,
-		ConfirmedAt: &confirmed,
-	}, nil
-}
-
-// getNetworkID returns the network ID for ZK proof generation
-func (s *Service) getNetworkID() string {
-	if s.passphrase == network.PublicNetworkPassphrase {
-		return "1" // Mainnet
-	}
-	return "0" // Testnet
 }
 
 // AnalyzeRoundTrip quotes XLM→USDC then USDC→XLM (strict send) using Horizon best paths.
@@ -886,24 +754,21 @@ func getAccountSnapshot(acc horizon.Account) *models.AccountSnapshot {
 	return snapshot
 }
 
-// AnalyzeRoundTrip runs paper round-trip quotes (not on-chain). Requires configured Stellar keypair for Horizon path APIs.
-// Supports any asset pair as base/counter (e.g., XLM/USDC, XRF/USDC, XRF/XLM, etc.)
+// AnalyzeRoundTrip runs paper round-trip quotes (not on-chain). Supports any
+// resolvable asset pair as base/counter (e.g., XLM/USDC, XRF/USDC, XRF/XLM).
+// No signer is required — quotes are strict-send.
 func (s *Service) AnalyzeRoundTrip(amount, baseAsset, counterAsset, destination string) (*models.SwapRoundTripResult, error) {
-	kp, err := s.LoadStellarKeypair()
-	if err != nil {
-		return nil, err
-	}
 	dst := destination
-	if dst == "" {
-		dst = kp.Address()
+	if dst == "" && s.signer != nil {
+		dst = s.signer.Address()
 	}
 
 	// Validate base and counter assets
-	if _, ok := s.assets[baseAsset]; !ok && baseAsset != "XLM" {
-		return nil, fmt.Errorf("unsupported base asset: %s", baseAsset)
+	if _, err := s.resolveAsset(baseAsset); err != nil {
+		return nil, fmt.Errorf("unsupported base asset: %w", err)
 	}
-	if _, ok := s.assets[counterAsset]; !ok && counterAsset != "XLM" {
-		return nil, fmt.Errorf("unsupported counter asset: %s", counterAsset)
+	if _, err := s.resolveAsset(counterAsset); err != nil {
+		return nil, fmt.Errorf("unsupported counter asset: %w", err)
 	}
 
 	// Build leg A: baseAsset → counterAsset
@@ -975,16 +840,16 @@ func (s *Service) ExecuteRoundTrip(amount, slippage float64, destination string,
 	if res.EstimatedNetXLM < minProfitXLM {
 		return nil, fmt.Errorf("estimated net XLM %.7f is below minimum %.7f (won't execute)", res.EstimatedNetXLM, minProfitXLM)
 	}
-	kp, err := s.LoadStellarKeypair()
-	if err != nil {
-		return nil, err
+	if s.signer == nil {
+		return nil, fmt.Errorf("no signer configured: pass WithSigner to NewService")
 	}
+	src := s.signer.Address()
 	dst := destination
 	if dst == "" {
-		dst = kp.Address()
+		dst = src
 	}
 
-	acctBefore, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()})
+	acctBefore, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: src})
 	if err != nil {
 		return nil, fmt.Errorf("horizon account before leg A: %w", err)
 	}
@@ -1006,10 +871,8 @@ func (s *Service) ExecuteRoundTrip(amount, slippage float64, destination string,
 
 	// Get issuer for counter asset
 	var counterIssuer string
-	if counterAsset != "XLM" {
-		if cfg, ok := s.assets[counterAsset]; ok {
-			counterIssuer = cfg.Issuer
-		}
+	if a, err := s.resolveAsset(counterAsset); err == nil && !a.IsNative() {
+		counterIssuer = a.(txnbuild.CreditAsset).Issuer
 	}
 
 	// Track counter asset balance before leg A
@@ -1021,7 +884,7 @@ func (s *Service) ExecuteRoundTrip(amount, slippage float64, destination string,
 		return []*models.Payment{pay1}, fmt.Errorf("leg A execute: %w", err)
 	}
 
-	acctAfterLegA, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()})
+	acctAfterLegA, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: src})
 	if err != nil {
 		// Still return payment and before snapshot
 		return []*models.Payment{pay1}, fmt.Errorf("horizon account after leg A: %w", err)
@@ -1059,7 +922,7 @@ func (s *Service) ExecuteRoundTrip(amount, slippage float64, destination string,
 	}
 
 	// Capture final account snapshot after both legs complete
-	acctAfter, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()})
+	acctAfter, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: src})
 	if err != nil {
 		// Return payments but can't capture final snapshot
 		return []*models.Payment{pay1, pay2}, fmt.Errorf("horizon account after leg B: %w", err)
@@ -1099,20 +962,25 @@ func (s *Service) ExecuteRoundTripAtomic(amount float64, destination string, min
 	if res.LegA == nil || res.LegB == nil || len(res.LegA.Paths) == 0 || len(res.LegB.Paths) == 0 {
 		return nil, res, fmt.Errorf("no paths for atomic round trip")
 	}
-	kp, err := s.LoadStellarKeypair()
-	if err != nil {
-		return nil, res, err
+	if s.signer == nil {
+		return nil, res, fmt.Errorf("no signer configured: pass WithSigner to NewService")
 	}
+	src := s.signer.Address()
 	if destination == "" {
-		destination = kp.Address()
+		destination = src
 	}
 
-	counterCfg, ok := s.assets[counterAsset]
-	if !ok {
-		return nil, res, fmt.Errorf("unsupported counter asset: %s", counterAsset)
+	counterTxAsset, err := s.resolveAsset(counterAsset)
+	if err != nil {
+		return nil, res, fmt.Errorf("unsupported counter asset: %w", err)
+	}
+	counterHop := models.PathAsset{Code: "XLM"}
+	if !counterTxAsset.IsNative() {
+		ca := counterTxAsset.(txnbuild.CreditAsset)
+		counterHop = models.PathAsset{Code: ca.Code, Issuer: ca.Issuer}
 	}
 	hops := append([]models.PathAsset{}, res.LegA.Paths[0].Path...)
-	hops = append(hops, models.PathAsset{Code: counterCfg.Code, Issuer: counterCfg.Issuer})
+	hops = append(hops, counterHop)
 	hops = append(hops, res.LegB.Paths[0].Path...)
 	if len(hops) > 5 {
 		return nil, res, fmt.Errorf("combined path has %d hops (max 5)", len(hops))
@@ -1126,23 +994,33 @@ func (s *Service) ExecuteRoundTripAtomic(amount float64, destination string, min
 	// Round up to 7 decimals so DestMin never undercuts the required profit.
 	destMin = math.Ceil(destMin*1e7) / 1e7
 
-	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()})
+	sourceAcct, err := s.FetchAccount(src)
 	if err != nil {
-		return nil, res, fmt.Errorf("horizon account: %w", err)
+		return nil, res, err
 	}
-	res.SnapshotBefore = getAccountSnapshot(sourceAcct)
+	acctBefore, err := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: src})
+	if err == nil {
+		res.SnapshotBefore = getAccountSnapshot(acctBefore)
+	}
 
-	baseTx := s.getAsset(baseAsset)
+	baseTx, err := s.resolveAsset(baseAsset)
+	if err != nil {
+		return nil, res, fmt.Errorf("unsupported base asset: %w", err)
+	}
+	builtHops, err := s.buildPath(hops)
+	if err != nil {
+		return nil, res, err
+	}
 	op := &txnbuild.PathPaymentStrictSend{
 		SendAsset:   baseTx,
 		SendAmount:  fmt.Sprintf("%.7f", amount),
 		DestAsset:   baseTx,
 		DestMin:     fmt.Sprintf("%.7f", destMin),
 		Destination: destination,
-		Path:        s.buildPath(hops),
+		Path:        builtHops,
 	}
 	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
-		SourceAccount:        &sourceAcct,
+		SourceAccount:        sourceAcct,
 		IncrementSequenceNum: true,
 		BaseFee:              s.feeStroops(),
 		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(int64(atomicTxTimeout / time.Second))},
@@ -1151,7 +1029,7 @@ func (s *Service) ExecuteRoundTripAtomic(amount float64, destination string, min
 	if err != nil {
 		return nil, res, fmt.Errorf("build transaction: %w", err)
 	}
-	tx, err = tx.Sign(s.passphrase, kp)
+	tx, err = s.signer.Sign(tx, s.passphrase)
 	if err != nil {
 		return nil, res, fmt.Errorf("sign transaction: %w", err)
 	}
@@ -1192,20 +1070,20 @@ func (s *Service) ExecuteRoundTripAtomic(amount float64, destination string, min
 		return nil, res, fmt.Errorf("tx %s included but failed (result: %s)", resp.Hash, resp.ResultXdr)
 	}
 
-	if acctAfter, aerr := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: kp.Address()}); aerr == nil {
+	if acctAfter, aerr := s.client.AccountDetail(horizonclient.AccountRequest{AccountID: src}); aerr == nil {
 		res.SnapshotAfter = getAccountSnapshot(acctAfter)
 	}
 
 	now := time.Now().UTC()
 	return &models.Payment{
 		ID:          "arb-" + resp.Hash[:12],
-		From:        kp.Address(),
+		From:        src,
 		To:          destination,
 		Amount:      fmt.Sprintf("%.7f", amount),
 		Asset:       baseAsset,
 		Rail:        models.RailSwap,
 		Status:      models.PaymentConfirmed,
-		Network:     s.getNetwork(),
+		Network:     s.Network(),
 		Memo:        fmt.Sprintf("Atomic round trip %s→%s→%s", baseAsset, counterAsset, baseAsset),
 		Fee:         fmt.Sprintf("%.7f XLM", feeXLM),
 		TxHash:      resp.Hash,

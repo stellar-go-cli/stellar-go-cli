@@ -175,9 +175,9 @@ func newReportShowCmd(cfg *config.Config) *Command {
 
 func newReportISO20022Cmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("iso20022", flag.ContinueOnError)
-	msgType := fs.String("type", "pacs.008", "Message type: pacs.008 | pacs.002 | pacs.004 | pacs.009")
-	status := fs.String("status", "ACSC", "Transaction status for pacs.002 (ACSC|RJCT|PDNG)")
-	reasonCode := fs.String("reason", "", "Reason code for pacs.002/pacs.004")
+	msgType := fs.String("type", "pacs.008", "Message type: pacs.008 | pacs.002 | pacs.004 | pacs.009 | pain.001 | pain.002 | camt.053 | camt.054")
+	status := fs.String("status", "ACSC", "Transaction status for pacs.002/pain.002 (ACSC|RJCT|PDNG)")
+	reasonCode := fs.String("reason", "", "Reason code for pacs.002/pacs.004/pain.002")
 
 	return &Command{
 		Name:  "iso20022",
@@ -219,6 +219,18 @@ func newReportISO20022Cmd(cfg *config.Config) *Command {
 			case "pacs.009":
 				xmlStr, err = svc.FormatPacs009(&report)
 				ui.SectionLabel("pacs.009.001.13")
+			case "pain.001":
+				xmlStr, err = svc.FormatPain001(&report)
+				ui.SectionLabel("pain.001.001.13")
+			case "pain.002":
+				xmlStr, err = svc.FormatPain002(&report, iso20022.TransactionStatus(*status), *reasonCode)
+				ui.SectionLabel("pain.002.001.10")
+			case "camt.053":
+				xmlStr, err = svc.FormatCamt053(&report)
+				ui.SectionLabel("camt.053.001.13")
+			case "camt.054":
+				xmlStr, err = svc.FormatCamt054(&report)
+				ui.SectionLabel("camt.054.001.14")
 			default:
 				ui.Error(fmt.Sprintf("unsupported message type: %s", *msgType))
 				return fmt.Errorf("unsupported message type: %s", *msgType)

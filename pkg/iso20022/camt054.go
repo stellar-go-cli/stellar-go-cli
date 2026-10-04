@@ -195,7 +195,7 @@ func BuildCamt054(instrs []*CreditTransferInstruction, opts *Camt054Options) (st
 
 	entries := make([]ReportEntry16, 0, len(instrs))
 	for _, instr := range instrs {
-		entries = append(entries, *camt054Entry(instr, opts, cdtDbt, stsCd))
+		entries = append(entries, *camtEntry(instr, opts.OriginalMsgID, opts.PmtInfID, cdtDbt, stsCd))
 	}
 	ntfctn.Ntry = entries
 	doc.BkToCstmrDbtCdtNtfctn.Ntfctn = []AccountNotification25{ntfctn}
@@ -225,8 +225,9 @@ func notificationAccount(acct *Party, p *models.Payment) *CashAccount43 {
 	return a
 }
 
-// camt054Entry builds one Ntry for an instruction.
-func camt054Entry(instr *CreditTransferInstruction, opts *Camt054Options, cdtDbt, stsCd string) *ReportEntry16 {
+// camtEntry builds one Ntry for an instruction — shared by camt.054
+// notifications and camt.053 statements.
+func camtEntry(instr *CreditTransferInstruction, origMsgID, pmtInfID, cdtDbt, stsCd string) *ReportEntry16 {
 	p := instr.Payment
 	asset := paymentAsset(p)
 	ccy, assetSuppl := settlementCurrency(asset, p.AssetIssuer, p.Amount)
@@ -258,8 +259,8 @@ func camt054Entry(instr *CreditTransferInstruction, opts *Camt054Options, cdtDbt
 
 	txDtls := EntryTransaction16{
 		Refs: &TransactionReferences10{
-			MsgId:      opts.OriginalMsgID,
-			PmtInfId:   opts.PmtInfID,
+			MsgId:      origMsgID,
+			PmtInfId:   pmtInfID,
 			InstrId:    safeTruncate(p.ID, 35),
 			EndToEndId: endToEndID(p),
 			TxId:       safeTruncate(p.TxHash, 35),

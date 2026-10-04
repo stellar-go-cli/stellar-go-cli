@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
@@ -133,12 +134,12 @@ func (m *MonitorService) promptAndExecute(result *ScanResult) {
 	}
 
 	// Initialize swap service
-	swapSvc := swap.NewService(models.Network(m.config.Network))
-	_, keyErr := swapSvc.LoadStellarKeypair()
+	kp, keyErr := wallet.LoadStellarKeypairForSwap()
 	if keyErr != nil {
 		fmt.Printf("❌ Cannot execute: no Stellar keypair configured\n")
 		return
 	}
+	swapSvc := swap.NewService(models.Network(m.config.Network), swap.WithKeypair(kp))
 
 	// Execute Leg A
 	fmt.Printf("\n📤 Executing Leg A: %s → %s\n", result.BaseAsset, result.QuoteAsset)

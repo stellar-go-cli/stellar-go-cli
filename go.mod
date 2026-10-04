@@ -2,6 +2,8 @@ module github.com/stellar-go-cli/stellar-go-cli
 
 go 1.26.0
 
+replace github.com/stellar-go-cli/stellar-go-cli/pkg => ./pkg
+
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -9,11 +11,12 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-sqlite3 v1.14.37
-	github.com/piprate/json-gold v0.8.0
 	github.com/prometheus/client_golang v1.19.1
+	github.com/stellar-go-cli/stellar-go-cli/pkg v0.0.0-00010101000000-000000000000
 	github.com/stellar/go v0.0.0-20251210100531-aab2ea4aca88
 	golang.org/x/crypto v0.57.0
 	golang.org/x/term v0.46.0
+	golang.org/x/text v0.42.0
 )
 
 require (
@@ -46,6 +49,7 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
+	github.com/piprate/json-gold v0.8.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/pquerna/cachecontrol v0.2.0 // indirect
@@ -63,7 +67,6 @@ require (
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

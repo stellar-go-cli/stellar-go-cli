@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
@@ -55,8 +56,9 @@ func NewService(network models.Network) *Service {
 		history = nil
 	}
 
+	swapSvc, _ := wallet.NewSwapService(network)
 	return &Service{
-		swapSvc: swap.NewService(network),
+		swapSvc: swapSvc,
 		network: network,
 		history: history,
 		stats:   NewStatsCalculator(20),

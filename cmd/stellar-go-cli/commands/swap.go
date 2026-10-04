@@ -13,6 +13,7 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/zkswaps"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
@@ -72,8 +73,11 @@ func newSwapQuoteCmd(cfg *config.Config) *Command {
 			}
 
 			// Check for keypair and use appropriate service
+			kp, keypairErr := wallet.LoadStellarKeypairForSwap()
 			svc := swap.NewService(net)
-			_, keypairErr := svc.LoadStellarKeypair()
+			if keypairErr == nil {
+				svc = swap.NewService(net, swap.WithKeypair(kp))
+			}
 
 			var quote *models.SwapQuote
 			var err error
@@ -174,8 +178,11 @@ func newSwapExecuteCmd(cfg *config.Config) *Command {
 			}
 
 			// Initialize swap service and check for keypair
+			kp, keypairErr := wallet.LoadStellarKeypairForSwap()
 			svc := swap.NewService(net)
-			_, keypairErr := svc.LoadStellarKeypair()
+			if keypairErr == nil {
+				svc = swap.NewService(net, swap.WithKeypair(kp))
+			}
 
 			var useRealService bool
 			if keypairErr == nil {
@@ -314,8 +321,11 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			}
 
 			// Initialize swap service and check for keypair
+			kp, keypairErr := wallet.LoadStellarKeypairForSwap()
 			svc := swap.NewService(net)
-			_, keypairErr := svc.LoadStellarKeypair()
+			if keypairErr == nil {
+				svc = swap.NewService(net, swap.WithKeypair(kp))
+			}
 
 			var useRealService bool
 			if keypairErr == nil {
@@ -336,10 +346,6 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			// Get sender address
 			var fromAddr string
 			if useRealService {
-				kp, kerr := svc.LoadStellarKeypair()
-				if kerr != nil {
-					return fmt.Errorf("load keypair: %w", kerr)
-				}
 				fromAddr = kp.Address()
 			} else {
 				fromAddr = cfg.ActiveAddress
@@ -349,7 +355,7 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			}
 
 			// Build ZK proof request
-			zkReq := svc.BuildZKSwapProofRequest(&models.SwapQuote{
+			zkReq := zkswaps.BuildProofRequest(&models.SwapQuote{
 				SourceAsset: *from,
 				DestAsset:   *to,
 				Amount:      *amount,
@@ -423,7 +429,7 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			var payment *models.Payment
 
 			if useRealService {
-				payment, err = svc.ExecuteZKSwap(quote, *slippage, *destination, *privacy)
+				payment, err = zkswaps.Execute(svc, quote, *slippage, *destination, *privacy)
 			} else {
 				simSvc := swap.NewSimulatedService()
 				payment, err = simSvc.ExecuteSwap(quote, *slippage, *destination)
@@ -849,12 +855,12 @@ func newSwapArbitrageAllCmd(cfg *config.Config) *Command {
 				}
 
 				// Initialize swap service for execution
-				swapSvc := swap.NewService(net)
-				_, keyErr := swapSvc.LoadStellarKeypair()
+				kp, keyErr := wallet.LoadStellarKeypairForSwap()
 				if keyErr != nil {
 					ui.Error("No Stellar keypair configured - cannot execute")
 					return fmt.Errorf("wallet not configured: %w", keyErr)
 				}
+				swapSvc := swap.NewService(net, swap.WithKeypair(kp))
 
 				// Execute Leg A: Base -> Quote
 				ui.PrintStep(1, "Executing Leg A: "+best.BaseAsset+" -> "+best.QuoteAsset)
@@ -1192,11 +1198,15 @@ func snapshotBalance(s *models.AccountSnapshot, code string) (float64, bool) {
 
 // performArbitrageScan executes a single arbitrage scan and returns result
 func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAsset, counterAsset, destination string, slippage, minProfit float64, execute, simulated bool, output string, autoExecute bool, opts arbExecOpts) (*models.SwapRoundTripResult, error) {
-	svc := swap.NewService(net)
+	var svcOpts []swap.Option
 	if opts.baseFee > 0 {
-		svc.SetBaseFee(opts.baseFee)
+		svcOpts = append(svcOpts, swap.WithBaseFee(opts.baseFee))
 	}
-	_, keyErr := svc.LoadStellarKeypair()
+	kp, keyErr := wallet.LoadStellarKeypairForSwap()
+	if keyErr == nil {
+		svcOpts = append(svcOpts, swap.WithKeypair(kp))
+	}
+	svc := swap.NewService(net, svcOpts...)
 	useSim := simulated || keyErr != nil
 
 	var result *models.SwapRoundTripResult

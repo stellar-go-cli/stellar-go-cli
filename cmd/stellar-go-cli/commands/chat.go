@@ -55,7 +55,7 @@ The chat will guide you through complex operations step-by-step.`,
 			if cfg.Network == "" {
 				cfg.Network = string(models.NetworkStellarTestnet)
 			}
-			swapSvc = swap.NewService(models.Network(cfg.Network))
+			swapSvc, _ = wallet.NewSwapService(models.Network(cfg.Network))
 
 			// Initialize asset service
 			assetSvc := assets.NewService()

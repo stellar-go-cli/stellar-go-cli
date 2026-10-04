@@ -431,7 +431,7 @@ func (c *Chat) handleSwapQuote(params map[string]interface{}) string {
 	}
 
 	// Use config network as the authoritative source
-	swapSvc := swap.NewService(configNetwork)
+	swapSvc, _ := wallet.NewSwapService(configNetwork)
 
 	// Ensure wallet cache is populated
 	wallets, err := c.getWalletsFromRegistry()
@@ -491,7 +491,7 @@ func (c *Chat) handleExecuteSwap() string {
 
 	// Use config network as the authoritative source
 	configNetwork := models.Network(c.cfg.Network)
-	swapSvc := swap.NewService(configNetwork)
+	swapSvc, _ := wallet.NewSwapService(configNetwork)
 
 	// Convert internal SwapQuote to models.SwapQuote for execution
 	swapQuote := &models.SwapQuote{
@@ -1251,7 +1251,7 @@ func (c *Chat) getNetworkWallet(network models.Network) (*models.WalletEntry, er
 // refreshServicesForNetwork recreates services with the new network
 func (c *Chat) refreshServicesForNetwork(network models.Network) {
 	// Update swap service
-	c.swapSvc = swap.NewService(network)
+	c.swapSvc, _ = wallet.NewSwapService(network)
 
 	// Update triangular service
 	c.triangularSvc = triangular.NewService(network)

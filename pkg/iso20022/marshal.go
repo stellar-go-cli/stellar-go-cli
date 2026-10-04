@@ -47,5 +47,7 @@ const (
 	MsgPacs004 = "pacs.004"
 	MsgPacs009 = "pacs.009"
 	MsgPain001 = "pain.001"
+	MsgPain002 = "pain.002"
+	MsgCamt053 = "camt.053"
 	MsgCamt054 = "camt.054"
 )
