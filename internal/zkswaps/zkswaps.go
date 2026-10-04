@@ -12,7 +12,7 @@ import (
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
-	"github.com/stellar/go/network"
+	"github.com/stellar/go-stellar-sdk/network"
 )
 
 // BuildProofRequest creates a ZK proof request for a swap operation.

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/stellar/go/keypair"
-	rpc "github.com/stellar/go/protocols/rpc"
-	"github.com/stellar/go/txnbuild"
-	"github.com/stellar/go/xdr"
+	"github.com/stellar/go-stellar-sdk/keypair"
+	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
+	"github.com/stellar/go-stellar-sdk/txnbuild"
+	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
 // DeployResult contains the result of a contract deployment.

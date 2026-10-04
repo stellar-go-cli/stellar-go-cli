@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
-	"github.com/stellar/go/clients/horizonclient"
-	"github.com/stellar/go/network"
-	"github.com/stellar/go/protocols/horizon"
+	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
+	"github.com/stellar/go-stellar-sdk/network"
+	"github.com/stellar/go-stellar-sdk/protocols/horizon"
 )
 
 // Service provides liquidity pool operations via Horizon

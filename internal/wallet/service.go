@@ -22,10 +22,10 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
-	"github.com/stellar/go/clients/horizonclient"
-	"github.com/stellar/go/keypair"
-	"github.com/stellar/go/protocols/horizon/operations"
-	"github.com/stellar/go/txnbuild"
+	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
+	"github.com/stellar/go-stellar-sdk/keypair"
+	"github.com/stellar/go-stellar-sdk/protocols/horizon/operations"
+	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
 // Service manages wallet operations

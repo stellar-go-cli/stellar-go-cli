@@ -5,7 +5,7 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
-	"github.com/stellar/go/keypair"
+	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
 func ExampleNewService() {

@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	rpcclient "github.com/stellar/go/clients/rpcclient"
-	"github.com/stellar/go/keypair"
-	rpc "github.com/stellar/go/protocols/rpc"
-	"github.com/stellar/go/txnbuild"
-	"github.com/stellar/go/xdr"
+	rpcclient "github.com/stellar/go-stellar-sdk/clients/rpcclient"
+	"github.com/stellar/go-stellar-sdk/keypair"
+	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
+	"github.com/stellar/go-stellar-sdk/txnbuild"
+	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
 const (

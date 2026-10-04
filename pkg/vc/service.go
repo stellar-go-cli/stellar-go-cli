@@ -9,8 +9,8 @@ import (
 
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
-	"github.com/stellar/go/keypair"
-	"github.com/stellar/go/strkey"
+	"github.com/stellar/go-stellar-sdk/keypair"
+	"github.com/stellar/go-stellar-sdk/strkey"
 )
 
 // Service handles DID operations

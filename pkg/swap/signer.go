@@ -1,8 +1,8 @@
 package swap
 
 import (
-	"github.com/stellar/go/keypair"
-	"github.com/stellar/go/txnbuild"
+	"github.com/stellar/go-stellar-sdk/keypair"
+	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
 // Signer abstracts transaction signing so services can plug in their own key

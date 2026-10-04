@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
-	"github.com/stellar/go/xdr"
+	"github.com/stellar/go-stellar-sdk/xdr"
 	"golang.org/x/crypto/sha3"
 )
 

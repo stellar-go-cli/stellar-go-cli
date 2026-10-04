@@ -8,7 +8,7 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
-	"github.com/stellar/go/keypair"
+	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
 // LoadStellarKeypair loads the active Stellar keypair from the wallet registry or legacy paths.
