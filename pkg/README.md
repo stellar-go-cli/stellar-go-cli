@@ -11,7 +11,7 @@ import "github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 Pin a release with the library module tag:
 
 ```
-go get github.com/stellar-go-cli/stellar-go-cli/pkg@pkg/v0.1.0
+go get github.com/stellar-go-cli/stellar-go-cli/pkg@v0.1.0
 ```
 
 | Package | Purpose |

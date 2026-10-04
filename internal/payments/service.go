@@ -475,10 +475,6 @@ func (s *Service) BuildZKProofRequest(resourceURL, asset, payer, payee string, a
 	}
 }
 
-func (s *Service) loadStellarKeypair() (*keypair.Full, error) {
-	return wallet.LoadStellarKeypair()
-}
-
 // ── Swap ───────────────────────────────────────
 
 func (s *Service) paySwap(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
