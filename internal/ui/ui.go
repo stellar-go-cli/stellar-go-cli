@@ -149,6 +149,12 @@ func Warn(msg string) {
 	fmt.Fprintf(os.Stderr, "  %s %s\n", Yellow_("⚠"), msg)
 }
 
+// Raw prints data output to stdout (unlike the other helpers, which write
+// terminal chrome to stderr).
+func Raw(msg string) {
+	fmt.Println(msg)
+}
+
 func Header(title string) {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "  %s\n", Bold_(Gold_(title)))

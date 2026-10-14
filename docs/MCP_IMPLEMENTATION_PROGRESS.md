@@ -2,21 +2,21 @@
 
 ## 🎉 Implementation Progress
 
-### ✅ **Successfully Implemented (41 tools total)**
+### ✅ **Successfully Implemented (42 tools total)**
 
 #### **Wallet Tools (12)**
 - ✅ wallet_list - List connected wallets
 - ✅ wallet_show - Show active wallet details  
 - ✅ wallet_balance - Get wallet balances
 - ✅ wallet_assets - List trusted assets
-- ✅ wallet_connect - Connect wallet via passkey/stellar/external
+- ✅ wallet_connect - Connect wallet via stellar/external
 - ✅ wallet_import - Import wallet from secret key
 - ✅ wallet_fund - Fund wallet from faucet
 - ✅ wallet_switch - Switch active wallet
 - ✅ wallet_rename - Rename wallet
 - ✅ wallet_remove - Remove wallet
 - ✅ wallet_export - Export private key
-- ✅ wallet_passkey - Manage passkey authentication
+- ✅ wallet_passkey - Passkey (WebAuthn) seed protection: register/unlock/lock/status/disable
 
 #### **Swap Tools (8)**
 - ✅ swap_quote - Get swap quote

@@ -2,11 +2,20 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/integrations"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/x402"
+	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
 // ============================================
@@ -775,7 +784,7 @@ func (s *Server) handleWalletConnect(ctx context.Context, args map[string]interf
 
 	// Default provider if not specified
 	if provider == "" {
-		provider = "wwwallet"
+		provider = "stellar"
 	}
 
 	// TODO: Implement actual wallet connection logic
@@ -891,19 +900,79 @@ func (s *Server) handleWalletExport(ctx context.Context, args map[string]interfa
 func (s *Server) handleWalletPasskey(ctx context.Context, args map[string]interface{}) (interface{}, error) {
 	action, _ := getStringArg(args, "action")
 	address, _ := getStringArg(args, "address")
+	ttlStr, _ := getStringArg(args, "ttl_minutes")
 
-	// Default action if not specified
-	if action == "" {
-		action = "register"
+	svc := wallet.NewService()
+
+	// Resolve address: flag or active wallet
+	if address == "" {
+		acc, err := svc.GetActiveWallet()
+		if err != nil {
+			return nil, fmt.Errorf("no address given and no active wallet: %w", err)
+		}
+		address = acc.Address
 	}
 
-	// TODO: Implement actual passkey management logic
-	return map[string]interface{}{
-		"action":  action,
-		"address": address,
-		"status":  "success",
-		"message": fmt.Sprintf("Passkey %s completed", action),
-	}, nil
+	switch action {
+	case "register":
+		cred, err := svc.RegisterPasskey(address)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "protected",
+			"address":    address,
+			"credential": base64.RawURLEncoding.EncodeToString(cred.ID),
+			"message":    "Passkey registered; wallet seed is now encrypted at rest",
+		}, nil
+
+	case "unlock":
+		ttl := 15 * time.Minute
+		if ttlStr != "" {
+			if mins, err := strconv.Atoi(ttlStr); err == nil && mins > 0 {
+				ttl = time.Duration(mins) * time.Minute
+			}
+		}
+		if err := svc.Unlock(address, ttl); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":  "unlocked",
+			"address": address,
+			"ttl":     ttl.String(),
+		}, nil
+
+	case "lock":
+		if err := svc.Lock(address); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"status": "locked", "address": address}, nil
+
+	case "disable":
+		if err := svc.DisablePasskey(address); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":  "unprotected",
+			"address": address,
+			"message": "Passkey protection removed; seed restored to plaintext storage",
+		}, nil
+
+	case "status":
+		st, err := svc.GetPasskeyStatus(address)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"address":     st.Address,
+			"protected":   st.Protected,
+			"unlocked":    st.Unlocked,
+			"credentials": len(st.Credentials),
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unknown passkey action: %s (valid: register, unlock, lock, status, disable)", action)
+	}
 }
 
 // ============================================
@@ -1097,38 +1166,140 @@ func (s *Server) handlePayQuote(ctx context.Context, args map[string]interface{}
 }
 
 func (s *Server) handlePayX402(ctx context.Context, args map[string]interface{}) (interface{}, error) {
-	to, ok := getStringArg(args, "to")
-	if !ok || to == "" {
-		return nil, fmt.Errorf("missing required parameter: to")
+	resource, ok := getStringArg(args, "resource")
+	if !ok || strings.TrimSpace(resource) == "" {
+		return nil, fmt.Errorf("missing required parameter: resource")
+	}
+	if s.cfg != nil && !s.cfg.Integrations.X402Enabled {
+		return nil, fmt.Errorf("x402 is disabled in configuration")
 	}
 
-	amount, ok := getStringArg(args, "amount")
-	if !ok || amount == "" {
-		return nil, fmt.Errorf("missing required parameter: amount")
+	method, _ := getStringArg(args, "method")
+	if method == "" {
+		method = "GET"
+	}
+	body, _ := getStringArg(args, "body")
+	if len(body) > 1<<20 {
+		return nil, fmt.Errorf("body exceeds 1 MiB")
+	}
+	networkName, _ := getStringArg(args, "network")
+	if networkName == "" && s.cfg != nil {
+		networkName = s.cfg.Network
+	}
+	if networkName == "" {
+		networkName = "stellar-testnet"
+	}
+	payer, _ := getStringArg(args, "payer")
+	if payer == "" && s.cfg != nil {
+		payer = s.cfg.ActiveAddress
 	}
 
-	asset, ok := getStringArg(args, "asset")
-	if !ok || asset == "" {
-		return nil, fmt.Errorf("missing required parameter: asset")
+	headers := make(map[string]string)
+	if rawHeaders, ok := args["headers"].(map[string]interface{}); ok {
+		for name, raw := range rawHeaders {
+			value, ok := raw.(string)
+			if !ok {
+				return nil, fmt.Errorf("header %s must be a string", name)
+			}
+			headers[name] = value
+		}
 	}
 
+	var signer *keypair.Full
+	var err error
+	if payer != "" {
+		signer, err = wallet.LoadStellarKeypairForAddress(payer)
+	} else {
+		signer, err = wallet.LoadStellarKeypair()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load Stellar payer keypair: %w", err)
+	}
+
+	rpcURL, _ := getStringArg(args, "rpc_url")
+	client, rpcClient, err := x402.NewStellarClientWithRPCURL(networkName, signer, config.NewHTTPClient(), rpcURL)
+	if err != nil {
+		return nil, err
+	}
+	defer rpcClient.Close()
+
+	maxAtomicAmount, err := getAtomicAmountArg(args, "max_atomic_amount")
+	if err != nil {
+		return nil, err
+	}
 	execute := getBoolArg(args, "execute")
-
-	// TODO: Implement actual x402 payment logic
-	status := "dry_run"
-	if execute {
-		status = "completed"
+	result, err := client.Fetch(ctx, x402.Request{
+		Method:  strings.ToUpper(method),
+		URL:     strings.TrimSpace(resource),
+		Headers: headers,
+		Body:    []byte(body),
+	}, x402.FetchOptions{
+		DryRun:          !execute,
+		MaxAtomicAmount: maxAtomicAmount,
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return map[string]interface{}{
-		"to":      to,
-		"amount":  amount,
-		"asset":   asset,
-		"execute": execute,
-		"tx_hash": "mock_x402_tx_hash",
-		"status":  status,
-		"message": fmt.Sprintf("x402 payment %s", map[bool]string{true: "executed", false: "simulated"}[execute]),
-	}, nil
+	status := "no_payment_required"
+	if result.PaymentAttempted {
+		status = "completed"
+	} else if result.DryRun && result.PaymentPayload != nil {
+		status = "dry_run"
+	}
+	responseBody := result.BodyText
+	if len(responseBody) > 8192 {
+		responseBody = responseBody[:8192] + "..."
+	}
+
+	response := map[string]interface{}{
+		"resource":          resource,
+		"status":            status,
+		"status_code":       result.StatusCode,
+		"final_url":         result.FinalURL,
+		"payment_attempted": result.PaymentAttempted,
+		"payment_ready":     result.PaymentPayload != nil,
+		"execute":           execute,
+		"message":           "x402 HTTP flow completed",
+	}
+	if result.Accepted != nil {
+		response["accepted"] = result.Accepted
+	}
+	if result.Settlement != nil {
+		response["settlement"] = result.Settlement
+	}
+	if responseBody != "" {
+		response["response_body"] = responseBody
+	}
+	return response, nil
+}
+
+func getAtomicAmountArg(args map[string]interface{}, key string) (string, error) {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return "", nil
+	}
+	switch v := value.(type) {
+	case string:
+		amount := strings.TrimSpace(v)
+		if amount == "" {
+			return "", fmt.Errorf("%s cannot be empty", key)
+		}
+		return amount, nil
+	case float64:
+		if v < 0 || math.Trunc(v) != v || v > float64(math.MaxInt64) {
+			return "", fmt.Errorf("%s must be a non-negative integer or decimal string", key)
+		}
+		return strconv.FormatInt(int64(v), 10), nil
+	case json.Number:
+		amount := strings.TrimSpace(v.String())
+		if amount == "" {
+			return "", fmt.Errorf("%s cannot be empty", key)
+		}
+		return amount, nil
+	default:
+		return "", fmt.Errorf("%s must be a non-negative integer or decimal string", key)
+	}
 }
 
 func (s *Server) handlePayZK(ctx context.Context, args map[string]interface{}) (interface{}, error) {
@@ -1180,10 +1351,10 @@ func (s *Server) handlePayRails(ctx context.Context, args map[string]interface{}
 			"available":   true,
 		},
 		"x402": map[string]interface{}{
-			"name":        "x402 Micropayments",
-			"description": "Micropayment protocol with streaming",
-			"fees":        "0.001 XLM",
-			"speed":       "1-2s",
+			"name":        "x402 HTTP Payments",
+			"description": "x402 v2 SEP-41 token payments with facilitator settlement",
+			"fees":        "sponsored by facilitator",
+			"speed":       "3-5s",
 			"available":   true,
 		},
 		"tempo": map[string]interface{}{

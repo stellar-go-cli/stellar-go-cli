@@ -32,12 +32,10 @@ func (s *Service) DeploySAC(
 ) (*models.Asset, error) {
 	// Parse the issuer keypair using ParseFull which expects a secret seed
 	trimmedKey := strings.TrimSpace(issuerKey)
-	fmt.Printf("DEBUG: Attempting to parse key of length %d, first 10 chars: %s...\n", len(trimmedKey), trimmedKey[:10])
 	fullKP, err := keypair.ParseFull(trimmedKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse issuer key (must be secret seed starting with 'S', got %d chars): %w", len(trimmedKey), err)
 	}
-	fmt.Printf("DEBUG: Successfully parsed key, address: %s\n", fullKP.Address())
 
 	// Create the Stellar asset
 	asset := txnbuild.CreditAsset{

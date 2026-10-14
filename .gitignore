@@ -2,6 +2,7 @@
 /dist/
 /stellar-go-cli
 *.wasm
+/demo-output/
 
 # ISO 20022 test schemas are copied from messages/ by `make xsd`
 pkg/iso20022/testdata/xsd/*.xsd
@@ -9,3 +10,4 @@ pkg/iso20022/testdata/xsd/*.xsd
 # OS / editor noise
 .DS_Store
 *.swp
+notes.md

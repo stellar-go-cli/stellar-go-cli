@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Stellar Go CLI — Passkey</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #eee; }
+  .card { max-width: 420px; background: #0f0f23; padding: 40px; border-radius: 16px;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  p { color: #9aa0b4; font-size: 14px; line-height: 1.5; }
+  .status { margin-top: 24px; font-size: 15px; }
+  .ok { color: #4ade80; }
+  .err { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Stellar Go CLI</h1>
+  <p id="msg">Waiting for passkey…</p>
+  <div id="status" class="status"></div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('t');
+
+function b64uToBuf(b) {
+  const s = b.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(s + '='.repeat((4 - s.length % 4) % 4));
+  return Uint8Array.from(bin, c => c.charCodeAt(0)).buffer;
+}
+
+function credToJSON(c) {
+  if (c.toJSON) return c.toJSON();
+  return {
+    id: c.id, rawId: c.id, type: c.type,
+    response: {
+      clientDataJSON: btoa(String.fromCharCode(...new Uint8Array(c.response.clientDataJSON)))
+        .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),
+      attestationObject: c.response.attestationObject ? btoa(String.fromCharCode(...new Uint8Array(c.response.attestationObject))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'') : undefined,
+      authenticatorData: c.response.authenticatorData ? btoa(String.fromCharCode(...new Uint8Array(c.response.authenticatorData))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'') : undefined,
+      signature: c.response.signature ? btoa(String.fromCharCode(...new Uint8Array(c.response.signature))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'') : undefined,
+      userHandle: c.response.userHandle ? btoa(String.fromCharCode(...new Uint8Array(c.response.userHandle))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'') : undefined,
+    },
+  };
+}
+
+function setStatus(text, cls) {
+  const el = document.getElementById('status');
+  el.textContent = text;
+  el.className = 'status ' + cls;
+}
+
+(async () => {
+  if (!token) { setStatus('Invalid session link.', 'err'); return; }
+  if (!window.PublicKeyCredential) { setStatus('WebAuthn is not supported by this browser.', 'err'); return; }
+
+  try {
+    const res = await fetch('/options?t=' + encodeURIComponent(token));
+    if (!res.ok) throw new Error('could not load ceremony options');
+    const data = await res.json();
+    const pk = data.publicKey;
+
+    document.getElementById('msg').textContent =
+      data.mode === 'create'
+        ? 'Create a passkey to protect this wallet.'
+        : 'Use your passkey to unlock the wallet.';
+
+    pk.challenge = b64uToBuf(pk.challenge);
+    if (data.mode === 'create') {
+      pk.user.id = b64uToBuf(pk.user.id);
+      (pk.excludeCredentials || []).forEach(d => d.id = b64uToBuf(d.id));
+      var cred = await navigator.credentials.create({publicKey: pk});
+    } else {
+      (pk.allowCredentials || []).forEach(d => d.id = b64uToBuf(d.id));
+      var cred = await navigator.credentials.get({publicKey: pk});
+    }
+
+    const fin = await fetch('/finish?t=' + encodeURIComponent(token), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(credToJSON(cred)),
+    });
+
+    if (!fin.ok) throw new Error(await fin.text());
+    setStatus('Done — you can return to the terminal.', 'ok');
+  } catch (e) {
+    setStatus(e instanceof Error ? e.message : String(e), 'err');
+  }
+})();
+</script>
+</body>
+</html>

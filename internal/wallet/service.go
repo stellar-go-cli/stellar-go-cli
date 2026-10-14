@@ -1,31 +1,23 @@
 package wallet
 
 import (
-	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
-	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/protocols/horizon/operations"
-	"github.com/stellar/go-stellar-sdk/txnbuild"
+	"github.com/zalando/go-keyring"
 )
 
 // Service manages wallet operations
@@ -34,20 +26,11 @@ type Service struct{}
 func NewService() *Service { return &Service{} }
 
 // ConnectStellarWallet creates a native Stellar wallet with proper keypair
-func (s *Service) ConnectStellarWallet(network models.Network) (*models.Account, *models.PasskeyCredential, error) {
+func (s *Service) ConnectStellarWallet(network models.Network) (*models.Account, error) {
 	// Generate proper Stellar keypair using Stellar SDK
 	pair, err := keypair.Random()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate Stellar keypair: %w", err)
-	}
-
-	// Create Stellar credential with Stellar Lab origin
-	credential := &models.PasskeyCredential{
-		CredentialID: mpCrypto.RandomBase64(32),
-		PublicKey:    pair.Address(),
-		Algorithm:    "ED25519",
-		Origin:       "https://lab.stellar.org",
-		CreatedAt:    time.Now().UTC(),
+		return nil, fmt.Errorf("failed to generate Stellar keypair: %w", err)
 	}
 
 	// Use proper Stellar address from SDK
@@ -61,7 +44,7 @@ func (s *Service) ConnectStellarWallet(network models.Network) (*models.Account,
 		Funded:     false,
 		CreatedAt:  time.Now().UTC(),
 	}
-	return acc, credential, nil
+	return acc, nil
 }
 
 // ImportStellarFromSecret builds an account from a Stellar secret key (S... strkey) and refreshes balance from Horizon.
@@ -92,69 +75,6 @@ func (s *Service) ImportStellarFromSecret(secret string, network models.Network)
 		Funded:     funded,
 		CreatedAt:  time.Now().UTC(),
 	}, nil
-}
-
-// ConnectWWWallet creates a wwWallet using real WebAuthn passkey verification
-func (s *Service) ConnectWWWallet(network models.Network) (*models.Account, *models.PasskeyCredential, error) {
-	// Generate a temporary address for challenge generation
-	tempAddress := "temp-" + mpCrypto.RandomBase64(16)
-
-	// Generate challenge
-	challenge, err := s.generateWebAuthnChallenge(tempAddress, network)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate challenge: %w", err)
-	}
-
-	// Prepare wwwallet.app URL
-	wwalletURL := fmt.Sprintf("https://wwwallet.app/auth?challenge=%s&userId=%s&userName=%s&displayName=%s&rpName=%s",
-		challenge.Challenge,
-		challenge.UserID,
-		challenge.UserName,
-		challenge.DisplayName,
-		challenge.RPName,
-	)
-
-	// Try real WebAuthn verification first
-	fmt.Println("🔐 Initiating real WebAuthn fingerprint verification...")
-	fmt.Println("📱 Opening wwwallet.app for biometric authentication...")
-
-	// Open browser to wwwallet.app
-	go func() {
-		if err := s.openBrowser(wwalletURL); err != nil {
-			fmt.Printf("⚠️  Failed to open browser: %v\n", err)
-			fmt.Printf("Please manually open: %s\n", wwalletURL)
-		}
-	}()
-
-	// Wait for callback
-	passkey, err := s.startCallbackServer(8765, challenge)
-	if err != nil {
-		fmt.Printf("⚠️  Real WebAuthn verification failed: %v\n", err)
-		fmt.Println("🔄 Falling back to simulated passkey creation...")
-
-		// Fallback to simulated passkey ceremony
-		passkey = &models.PasskeyCredential{
-			CredentialID: mpCrypto.RandomBase64(32),
-			PublicKey:    "pkcpub_" + mpCrypto.RandomHex(32),
-			Algorithm:    "ES256",
-			Origin:       "https://wwwallet.app",
-			CreatedAt:    time.Now().UTC(),
-		}
-	} else {
-		fmt.Println("✅ Real WebAuthn verification successful!")
-	}
-
-	address := s.deriveAddress(network, passkey.CredentialID)
-	acc := &models.Account{
-		Address:   address,
-		PublicKey: passkey.PublicKey,
-		Network:   network,
-		Type:      models.WalletWWWallet,
-		Balance:   "0",
-		Funded:    false,
-		CreatedAt: time.Now().UTC(),
-	}
-	return acc, passkey, nil
 }
 
 // ConnectExternalEOA registers an external owner account
@@ -219,15 +139,16 @@ func (s *Service) FundTestnetAccount(acc *models.Account) (*models.Account, erro
 
 		// Update account with funded status
 		funded = &models.Account{
-			Address:    acc.Address,
-			PublicKey:  acc.PublicKey,
-			PrivateKey: acc.PrivateKey,
-			Network:    acc.Network,
-			Type:       acc.Type,
-			Balance:    "10000.0000000 XLM",
-			DID:        acc.DID,
-			Funded:     true,
-			CreatedAt:  acc.CreatedAt,
+			Address:          acc.Address,
+			PublicKey:        acc.PublicKey,
+			PrivateKeyEnc:    acc.PrivateKeyEnc,
+			PasskeyProtected: acc.PasskeyProtected,
+			Network:          acc.Network,
+			Type:             acc.Type,
+			Balance:          "10000.0000000 XLM",
+			DID:              acc.DID,
+			Funded:           true,
+			CreatedAt:        acc.CreatedAt,
 		}
 
 	case models.NetworkEVMSepolia:
@@ -484,13 +405,13 @@ func (s *Service) SaveAccountByType(acc *models.Account) error {
 		return fmt.Errorf("failed to marshal account: %w", err)
 	}
 
-	if err := os.WriteFile(statePath, data, 0644); err != nil {
+	if err := os.WriteFile(statePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to save account state: %w", err)
 	}
 
 	// Also save as default for backward compatibility
 	defaultPath := fmt.Sprintf("%s/.stellar-go-cli/state/account.json", stateDir)
-	return os.WriteFile(defaultPath, data, 0644)
+	return os.WriteFile(defaultPath, data, 0600)
 }
 
 // LoadAccountByType loads account state for a specific wallet type
@@ -537,14 +458,8 @@ func NetworkDisplayName(n models.Network) string {
 	}
 }
 
-// WalletNetworkDisplayName returns human-readable network name considering wallet type
+// WalletNetworkDisplayName returns human-readable network name
 func WalletNetworkDisplayName(n models.Network, walletType models.WalletType) string {
-	// For wwWallet on Stellar Testnet, show just "Testnet" instead of "Stellar Testnet (Friendbot)"
-	if n == models.NetworkStellarTestnet && walletType == models.WalletWWWallet {
-		return "Testnet"
-	}
-
-	// For all other cases, use the standard NetworkDisplayName
 	return NetworkDisplayName(n)
 }
 
@@ -557,21 +472,6 @@ func FaucetURL(n models.Network, address string) string {
 		return fmt.Sprintf("https://sepoliafaucet.com/?address=%s", address)
 	default:
 		return "https://friendbot.stellar.org"
-	}
-}
-
-// ─────────────────────────────────────────────
-// Internal helpers
-// ─────────────────────────────────────────────
-
-func (s *Service) deriveAddress(network models.Network, seed string) string {
-	hash := mpCrypto.Hash256([]byte(seed))
-	switch network {
-	case models.NetworkStellarTestnet, models.NetworkStellarMainnet:
-		// Stellar-style G... address
-		return "G" + hash[:54]
-	default:
-		return "0x" + hash[:40]
 	}
 }
 
@@ -802,94 +702,6 @@ func (s *Service) GetActiveWallet() (*models.Account, error) {
 	return s.GetWalletByAddress(registry.ActiveWallet)
 }
 
-// CreatePasskey creates a new passkey for an existing wallet using real WebAuthn verification
-func (s *Service) CreatePasskey(address string) (*models.PasskeyCredential, error) {
-	// Load existing wallet
-	acc, err := s.GetWalletByAddress(address)
-	if err != nil {
-		return nil, fmt.Errorf("wallet not found: %w", err)
-	}
-
-	// Try real WebAuthn verification first
-	fmt.Println("🔐 Initiating real WebAuthn fingerprint verification...")
-	fmt.Println("📱 Opening browser for biometric authentication...")
-
-	passkey, err := s.createWebAuthnPasskey(acc.Address, acc.Network)
-	if err != nil {
-		fmt.Printf("⚠️  Real WebAuthn verification failed: %v\n", err)
-		fmt.Println("🔄 Falling back to simulated passkey creation...")
-
-		// Fallback to simulated passkey
-		passkey = &models.PasskeyCredential{
-			CredentialID: mpCrypto.RandomBase64(32),
-			PublicKey:    "pkcpub_" + mpCrypto.RandomHex(32),
-			Algorithm:    "ES256",
-			Origin:       "https://wwwallet.app",
-			CreatedAt:    time.Now().UTC(),
-		}
-	} else {
-		fmt.Println("✅ Real WebAuthn verification successful!")
-	}
-
-	// Update wallet with new passkey and convert to wwWallet
-	acc.Type = models.WalletWWWallet
-	acc.PublicKey = passkey.PublicKey
-	if err := s.AddWalletToRegistry(acc, false); err != nil {
-		return nil, fmt.Errorf("failed to update wallet: %w", err)
-	}
-
-	return passkey, nil
-}
-
-// VerifyPasskey verifies a passkey credential
-func (s *Service) VerifyPasskey(address string) (bool, error) {
-	acc, err := s.GetWalletByAddress(address)
-	if err != nil {
-		return false, fmt.Errorf("wallet not found: %w", err)
-	}
-
-	// Check if wallet has passkey credentials and correct type
-	if acc.PublicKey == "" || !strings.HasPrefix(acc.PublicKey, "pkcpub_") {
-		return false, fmt.Errorf("no passkey found for wallet")
-	}
-
-	if acc.Type != models.WalletWWWallet {
-		return false, fmt.Errorf("wallet type is not wwWallet")
-	}
-
-	// Simulate passkey verification
-	return true, nil
-}
-
-// ListPasskeys lists all passkey credentials for wallets
-func (s *Service) ListPasskeys() ([]PasskeyInfo, error) {
-	wallets, _, err := s.ListWallets()
-	if err != nil {
-		return nil, err
-	}
-
-	var passkeys []PasskeyInfo
-	for _, w := range wallets {
-		if w.Type == models.WalletWWWallet {
-			acc, err := s.GetWalletByAddress(w.Address)
-			if err != nil {
-				continue
-			}
-
-			passkeys = append(passkeys, PasskeyInfo{
-				Address:   w.Address,
-				Network:   string(w.Network),
-				PublicKey: acc.PublicKey,
-				Created:   w.CreatedAt,
-				Algorithm: "ES256",
-				Origin:    "https://wwwallet.app",
-			})
-		}
-	}
-
-	return passkeys, nil
-}
-
 // RemoveWallet removes a wallet from storage
 func (s *Service) RemoveWallet(address string) error {
 	stateDir, err := os.UserHomeDir()
@@ -902,6 +714,12 @@ func (s *Service) RemoveWallet(address string) error {
 	if err := os.Remove(walletPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove wallet file: %w", err)
 	}
+
+	// Clean up passkey state and keychain entries (best effort)
+	_ = deletePasskeys(address)
+	_ = keyring.Delete(keyringService, walletKeyItem(address))
+	_ = keyring.Delete(keyringService, unlockItem(address))
+	scrubLegacySeedCaches(address)
 
 	// Load and update registry with proper locking
 	registry, err := s.LoadRegistry()
@@ -934,34 +752,6 @@ func (s *Service) RemoveWallet(address string) error {
 	return nil
 }
 
-// RemovePasskey removes passkey from a wallet (converts to external wallet)
-func (s *Service) RemovePasskey(address string) error {
-	acc, err := s.GetWalletByAddress(address)
-	if err != nil {
-		return fmt.Errorf("wallet not found: %w", err)
-	}
-
-	if acc.Type != models.WalletWWWallet {
-		return fmt.Errorf("wallet is not a wwWallet")
-	}
-
-	// Convert to external wallet
-	acc.Type = models.WalletExternal
-	acc.PublicKey = ""
-
-	return s.AddWalletToRegistry(acc, false)
-}
-
-// PasskeyInfo contains passkey information for listing
-type PasskeyInfo struct {
-	Address   string    `json:"address"`
-	Network   string    `json:"network"`
-	PublicKey string    `json:"publicKey"`
-	Created   time.Time `json:"created"`
-	Algorithm string    `json:"algorithm"`
-	Origin    string    `json:"origin"`
-}
-
 func (s *Service) MigrateFromLegacy() error {
 	stateDir, err := os.UserHomeDir()
 	if err != nil {
@@ -972,8 +762,8 @@ func (s *Service) MigrateFromLegacy() error {
 	oldWalletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account_stellar.json")
 	data, err := os.ReadFile(oldWalletPath)
 	if err != nil {
-		// No legacy wallet to migrate, but still run passkey migration
-		return s.MigratePasskeyWalletTypes()
+		// No legacy wallet to migrate
+		return nil
 	}
 
 	var acc models.Account
@@ -990,575 +780,7 @@ func (s *Service) MigrateFromLegacy() error {
 	backupPath := oldWalletPath + ".backup"
 	_ = os.Rename(oldWalletPath, backupPath) //nolint:errcheck // backup is best-effort
 
-	// Also run passkey wallet type migration
-	return s.MigratePasskeyWalletTypes()
-}
-
-// MigratePasskeyWalletTypes fixes wallets that have passkeys but wrong wallet type
-func (s *Service) MigratePasskeyWalletTypes() error {
-	wallets, _, err := s.ListWallets()
-	if err != nil {
-		return fmt.Errorf("failed to list wallets: %w", err)
-	}
-
-	var fixedWallets []string
-	for _, w := range wallets {
-		// Load full account to check public key
-		acc, err := s.GetWalletByAddress(w.Address)
-		if err != nil {
-			continue
-		}
-
-		// Check if wallet has passkey but wrong type
-		if strings.HasPrefix(acc.PublicKey, "pkcpub_") && acc.Type != models.WalletWWWallet {
-			// Fix wallet type
-			acc.Type = models.WalletWWWallet
-			if err := s.AddWalletToRegistry(acc, false); err == nil {
-				fixedWallets = append(fixedWallets, w.Address)
-			}
-		}
-	}
-
-	if len(fixedWallets) > 0 {
-		// Log migration results (could be enhanced with proper logging)
-		for _, addr := range fixedWallets {
-			fmt.Printf("Fixed wallet type for: %s\n", addr[:20]+"...")
-		}
-	}
-
 	return nil
-}
-
-// generateWebAuthnChallenge creates a new WebAuthn challenge for credential creation
-func (s *Service) generateWebAuthnChallenge(walletAddress string, network models.Network) (*models.WebAuthnChallenge, error) {
-	// Generate random challenge
-	challengeBytes := make([]byte, 32)
-	if _, err := rand.Read(challengeBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate challenge: %w", err)
-	}
-	challenge := base64.URLEncoding.EncodeToString(challengeBytes)
-
-	// Generate user ID
-	userIDBytes := make([]byte, 16)
-	if _, err := rand.Read(userIDBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate user ID: %w", err)
-	}
-	userID := base64.URLEncoding.EncodeToString(userIDBytes)
-
-	// Find available port for callback server
-	port, err := s.getAvailablePort()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get available port: %w", err)
-	}
-
-	// Create challenge
-	challengeObj := &models.WebAuthnChallenge{
-		Challenge:   challenge,
-		UserID:      userID,
-		UserName:    fmt.Sprintf("%s@example.com", walletAddress[:8]),
-		DisplayName: fmt.Sprintf("Stellar Go CLI User %s", walletAddress[:8]),
-		RPName:      "Stellar Go CLI",
-		RPID:        "wwwallet.app",
-		Timestamp:   time.Now().UTC(),
-		CallbackURL: fmt.Sprintf("http://localhost:%d/callback", port),
-	}
-
-	// Sign challenge (simplified - in production would use proper signing)
-	challengeObj.Signature = mpCrypto.RandomBase64(32)
-
-	return challengeObj, nil
-}
-
-// getAvailablePort finds an available port for the callback server
-func (s *Service) getAvailablePort() (int, error) {
-	// Try ports in range 9000-9999
-	for i := 9000; i < 10000; i++ {
-		listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", fmt.Sprintf(":%d", i))
-		if err == nil {
-			_ = listener.Close() //nolint:errcheck // port probe; close error is not actionable
-			return i, nil
-		}
-	}
-	return 0, fmt.Errorf("no available ports found")
-}
-
-// startCallbackServer starts a local HTTP server to receive WebAuthn credentials
-func (s *Service) startCallbackServer(port int, challenge *models.WebAuthnChallenge) (*models.PasskeyCredential, error) {
-	resultChan := make(chan *models.PasskeyCredential, 1)
-	errorChan := make(chan error, 1)
-
-	server := &http.Server{
-		Addr: fmt.Sprintf(":%d", port),
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Printf("🔍 Callback server received: %s %s\n", r.Method, r.URL.String())
-			// Add CORS headers
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Stellar-CLI-WebAuthn")
-
-			// Handle preflight
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			if r.URL.Path != "/callback" {
-				http.NotFound(w, r)
-				return
-			}
-
-			if r.Method == "GET" {
-				// Handle GET callback from WebAuthn server redirect
-				fmt.Printf("🔍 GET callback received: %s\n", r.URL.String())
-				status := r.URL.Query().Get("status")
-				credentialID := r.URL.Query().Get("credentialId")
-				fmt.Printf("🔍 Status: %s, CredentialID: %s\n", status, credentialID)
-
-				if status == "success" && credentialID != "" {
-					// Create a mock credential for successful WebAuthn
-					credential := &models.PasskeyCredential{
-						CredentialID: credentialID,
-						PublicKey:    "pkcpub_" + strings.ToUpper(uuid.New().String()[:16]),
-						Algorithm:    "ES256",
-						Origin:       "https://wwwallet.app",
-						CreatedAt:    time.Now(),
-					}
-					resultChan <- credential
-
-					// Return success page
-					w.Header().Set("Content-Type", "text/html")
-					//nolint:errcheck // best-effort response write
-					fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head>
-	<title>✅ Passkey Created - Stellar Go CLI</title>
-	<meta charset="UTF-8">
-	<style>
-		body { 
-			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-			margin: 0; 
-			padding: 0; 
-			background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); 
-			min-height: 100vh; 
-			display: flex; 
-			align-items: center; 
-			justify-content: center; 
-		}
-		.container { 
-			max-width: 400px; 
-			background: white; 
-			padding: 40px; 
-			border-radius: 20px; 
-			box-shadow: 0 20px 40px rgba(0,0,0,0.1); 
-			text-align: center; 
-		}
-		.icon { font-size: 64px; margin-bottom: 20px; }
-		h1 { color: #333; margin-bottom: 10px; font-size: 24px; }
-		p { color: #666; margin-bottom: 20px; line-height: 1.5; }
-		.btn { 
-			background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); 
-			color: white; 
-			border: none; 
-			padding: 12px 24px; 
-			border-radius: 8px; 
-			font-size: 16px; 
-			cursor: pointer; 
-			margin-top: 10px;
-		}
-		.checkmark {
-			width: 60px;
-			height: 60px;
-			border-radius: 50%%;
-			display: block;
-			stroke-width: 2;
-			stroke: #fff;
-			stroke-miterlimit: 10;
-			margin: 0 auto 20px;
-			box-shadow: inset 0px 0px 0px #7ac142;
-			animation: fill .4s ease-in-out .4s forwards, scale .3s ease-in-out .9s both;
-		}
-		.checkmark__circle {
-			stroke-dasharray: 166;
-			stroke-dashoffset: 166;
-			stroke-width: 2;
-			stroke-miterlimit: 10;
-			stroke: #7ac142;
-			fill: none;
-			animation: stroke 0.6s cubic-bezier(0.650, 0.000, 0.450, 1.000) forwards;
-		}
-		.checkmark__check {
-			transform-origin: 50%% 50%%;
-			stroke-dasharray: 48;
-			stroke-dashoffset: 48;
-			animation: stroke 0.3s cubic-bezier(0.650, 0.000, 0.450, 1.000) 0.8s forwards;
-		}
-		@keyframes stroke { 100%% { stroke-dashoffset: 0; } }
-	</style>
-</head>
-<body>
-	<div class="container">
-		<svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
-			<circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none"/>
-			<path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-		</svg>
-		<h1>Passkey Created!</h1>
-		<p>Your secure passkey has been successfully linked to your wallet.</p>
-		<p style="font-size: 14px; color: #999;">You can close this window and return to the terminal.</p>
-		<button class="btn" onclick="window.close(); window.open('', '_self').close();">Close Window</button>
-	</div>
-	<script>
-		// Try to close immediately and after delay
-		setTimeout(() => { window.close(); }, 100);
-		setTimeout(() => { window.open('', '_self').close(); }, 500);
-	</script>
-</body>
-</html>`) //nolint:errcheck // response write; client may have disconnected
-					return
-				} else {
-					errorChan <- fmt.Errorf("WebAuthn callback failed: status=%s", status)
-					http.Error(w, "Authentication failed", http.StatusBadRequest)
-					return
-				}
-			}
-
-			if r.Method != "POST" {
-				fmt.Printf("🔍 Method not allowed: %s\n", r.Method)
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-
-			// Parse credential data
-			var credential struct {
-				CredentialID string      `json:"credentialId"`
-				PublicKey    string      `json:"publicKey"`
-				Algorithm    interface{} `json:"algorithm"` // Can be string or number
-				Origin       string      `json:"origin"`
-			}
-
-			if err := json.NewDecoder(r.Body).Decode(&credential); err != nil {
-				errorChan <- fmt.Errorf("failed to parse credential: %w", err)
-				http.Error(w, "Bad request", http.StatusBadRequest)
-				return
-			}
-
-			// Validate credential
-			if credential.CredentialID == "" || credential.PublicKey == "" {
-				errorChan <- fmt.Errorf("invalid credential data")
-				http.Error(w, "Invalid credential", http.StatusBadRequest)
-				return
-			}
-
-			// Convert algorithm to string
-			algorithmStr := "ES256"
-			switch v := credential.Algorithm.(type) {
-			case string:
-				algorithmStr = v
-			case float64:
-				switch v {
-				case -7:
-					algorithmStr = "ES256"
-				case -257:
-					algorithmStr = "RS256"
-				default:
-					algorithmStr = fmt.Sprintf("%v", v)
-				}
-			}
-
-			// Create passkey credential
-			passkey := &models.PasskeyCredential{
-				CredentialID: credential.CredentialID,
-				PublicKey:    credential.PublicKey,
-				Algorithm:    algorithmStr,
-				Origin:       credential.Origin,
-				CreatedAt:    time.Now().UTC(),
-			}
-
-			// Send success response
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			//nolint:errcheck // best-effort response write
-			json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-
-			// Send result to channel
-			resultChan <- passkey
-		}),
-	}
-
-	// Start server in goroutine
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errorChan <- fmt.Errorf("server error: %w", err)
-		}
-	}()
-
-	// Wait for result or timeout
-	select {
-	case passkey := <-resultChan:
-		// Give browser time to render success page before shutting down
-		time.Sleep(2 * time.Second)
-		_ = server.Close() //nolint:errcheck // shutdown cleanup
-		return passkey, nil
-	case err := <-errorChan:
-		_ = server.Close() //nolint:errcheck // shutdown cleanup
-		return nil, err
-	case <-time.After(2 * time.Minute):
-		_ = server.Close() //nolint:errcheck // shutdown cleanup
-		return nil, fmt.Errorf("timeout waiting for WebAuthn callback")
-	}
-}
-
-// openBrowser opens the user's default browser to the wwWallet URL
-func (s *Service) openBrowser(url string) error {
-	var cmd string
-	var args []string
-
-	switch runtime.GOOS {
-	case "windows":
-		cmd = "rundll32"
-		args = []string{"url.dll,FileProtocolHandler", url}
-	case "darwin":
-		cmd = "open"
-		args = []string{url}
-	case "linux":
-		cmd = "xdg-open"
-		args = []string{url}
-	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
-	}
-
-	return exec.Command(cmd, args...).Start()
-}
-
-// createWebAuthnPasskey creates a real passkey using local WebAuthn server
-func (s *Service) createWebAuthnPasskey(walletAddress string, network models.Network) (*models.PasskeyCredential, error) {
-	// Generate challenge
-	challenge, err := s.generateWebAuthnChallenge(walletAddress, network)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate challenge: %w", err)
-	}
-
-	// Find available port for callback server
-	callbackPort, err := s.getAvailablePort()
-	if err != nil {
-		return nil, fmt.Errorf("no available ports for callback server: %w", err)
-	}
-
-	// Update callback URL to use local callback server
-	challenge.CallbackURL = fmt.Sprintf("http://localhost:%d/callback", callbackPort)
-
-	// Use fixed port 8000 for WebAuthn server
-	webauthnPort := 8000
-
-	// Prepare local WebAuthn URL with /webauthn/auth endpoint
-	localURL := fmt.Sprintf("http://localhost:%d/webauthn/auth?challenge=%s&userId=%s&userName=%s&displayName=%s&rpName=%s&rpId=localhost&callback=%s",
-		webauthnPort,
-		challenge.Challenge,
-		challenge.UserID,
-		challenge.UserName,
-		challenge.DisplayName,
-		challenge.RPName,
-		challenge.CallbackURL,
-	)
-
-	// Start local WebAuthn server in background
-	go func() {
-		fmt.Println("📡 Starting WebAuthn server on port 8000...")
-		if err := s.startLocalWebAuthnServer(webauthnPort, challenge); err != nil {
-			fmt.Printf("⚠️  Failed to start local WebAuthn server: %v\n", err)
-			ui.Link(localURL, "Click here to open WebAuthn authentication")
-			return
-		}
-	}()
-
-	// Wait for server to be ready via health check
-	fmt.Println("⏳ Waiting for WebAuthn server to be ready...")
-	if !s.waitForServer(webauthnPort, 5*time.Second) {
-		fmt.Printf("⚠️  WebAuthn server failed to start within timeout\n")
-		ui.Link(localURL, "Click here to open WebAuthn authentication")
-	} else {
-		fmt.Println("✅ WebAuthn server is ready")
-
-		// Try to open browser
-		fmt.Println("📱 Opening browser for fingerprint authentication...")
-		if err := s.openBrowser(localURL); err != nil {
-			fmt.Printf("⚠️  Failed to open browser automatically\n")
-			ui.Link(localURL, "Click here to open WebAuthn authentication")
-		} else {
-			ui.Link(localURL, "Click here if browser doesn't open automatically")
-		}
-	}
-
-	// Wait for callback on the callback port
-	passkey, err := s.startCallbackServer(callbackPort, challenge)
-	if err != nil {
-		return nil, fmt.Errorf("WebAuthn verification failed: %w", err)
-	}
-
-	return passkey, nil
-}
-
-// startLocalWebAuthnServer starts the local Go WebAuthn server
-func (s *Service) startLocalWebAuthnServer(port int, challenge *models.WebAuthnChallenge) error {
-	// Get the directory of the current executable to find the webauthn server
-	execPath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
-	}
-	execDir := filepath.Dir(execPath)
-
-	// Look for webauthn server binary relative to executable
-	serverPath := filepath.Join(execDir, "webauthn-server")
-
-	// Check if binary exists, if not, try to build it
-	if _, err := os.Stat(serverPath); os.IsNotExist(err) {
-		// Try to build the webauthn server from source
-		buildCmd := exec.Command("go", "run", "./cmd/webauthn-server")
-		buildCmd.Dir = execDir
-		buildCmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
-
-		// Start the server directly with go run
-		return buildCmd.Start()
-	}
-
-	cmd := exec.Command(serverPath)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PORT=%d", port))
-
-	return cmd.Start()
-}
-
-// waitForServer polls the health endpoint until server is ready
-func (s *Service) waitForServer(port int, timeout time.Duration) bool {
-	start := time.Now()
-	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
-	client := &http.Client{Timeout: 2 * time.Second}
-
-	for time.Since(start) < timeout {
-		resp, err := client.Get(healthURL)
-		if err == nil {
-			resp.Body.Close() //nolint:errcheck // best-effort close
-			if resp.StatusCode == 200 {
-				return true
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return false
-}
-
-// SignTransactionWithPasskey signs a Stellar transaction using WebAuthn passkey
-func (s *Service) SignTransactionWithPasskey(tx *txnbuild.Transaction, walletAddress string) (*txnbuild.Transaction, error) {
-	// Load wallet and passkey
-	acc, err := s.GetWalletByAddress(walletAddress)
-	if err != nil {
-		return nil, fmt.Errorf("wallet not found: %w", err)
-	}
-
-	if acc.Type != "wwwallet" {
-		return nil, fmt.Errorf("not a wwWallet - cannot use passkey signing")
-	}
-
-	// Get passkey credentials
-	credentials, err := s.GetPasskeyCredentials(walletAddress)
-	if err != nil {
-		return nil, fmt.Errorf("no passkey found: %w", err)
-	}
-
-	// Serialize transaction to XDR for signing
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize transaction: %w", err)
-	}
-
-	// Create WebAuthn challenge for transaction signing
-	challenge := &models.WebAuthnChallenge{
-		Challenge:   mpCrypto.RandomBase64(32),
-		UserID:      base64.StdEncoding.EncodeToString([]byte(walletAddress)),
-		UserName:    acc.Address[:16] + "...",
-		DisplayName: "Stellar Transaction",
-		RPName:      "Stellar Go CLI",
-		RPID:        "localhost",
-		CallbackURL: "http://localhost:9000/callback",
-	}
-
-	fmt.Println("🔐 Initiating passkey signing for transaction...")
-	fmt.Println("📱 Opening browser for biometric authentication...")
-
-	// Start signing server
-	_, err = s.startPasskeySigningServer(challenge, credentials)
-	if err != nil {
-		return nil, fmt.Errorf("passkey signing failed: %w", err)
-	}
-
-	// Apply signature to transaction (simplified - in real implementation would need proper WebAuthn signature processing)
-	// For now, we'll simulate the signature
-	fmt.Println("✅ Transaction signed with passkey!")
-
-	// Note: In a real implementation, you would:
-	// 1. Parse the WebAuthn signature response
-	// 2. Verify the signature against the stored public key
-	// 3. Extract the actual signature bytes
-	// 4. Apply them to the Stellar transaction
-
-	return tx, nil
-}
-
-// GetPasskeyCredentials retrieves stored passkey credentials for a wallet
-func (s *Service) GetPasskeyCredentials(walletAddress string) (*models.PasskeyCredential, error) {
-	stateDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", walletAddress+".json")
-	data, err := os.ReadFile(walletPath)
-	if err != nil {
-		return nil, fmt.Errorf("wallet file not found: %w", err)
-	}
-
-	var wallet struct {
-		Passkey *models.PasskeyCredential `json:"passkey,omitempty"`
-	}
-	if err := json.Unmarshal(data, &wallet); err != nil {
-		return nil, fmt.Errorf("failed to parse wallet: %w", err)
-	}
-
-	if wallet.Passkey == nil {
-		return nil, fmt.Errorf("no passkey found for wallet")
-	}
-
-	return wallet.Passkey, nil
-}
-
-// startPasskeySigningServer starts a local server to handle passkey signing callback
-func (s *Service) startPasskeySigningServer(challenge *models.WebAuthnChallenge, credentials *models.PasskeyCredential) (string, error) {
-	// Find available port
-	port, err := s.getAvailablePort()
-	if err != nil {
-		return "", fmt.Errorf("no available ports: %w", err)
-	}
-
-	// Update callback URL
-	challenge.CallbackURL = fmt.Sprintf("http://localhost:%d/callback", port)
-
-	// Start WebAuthn server for signing
-	if err := s.startLocalWebAuthnServer(8000, challenge); err != nil {
-		return "", fmt.Errorf("failed to start WebAuthn server: %w", err)
-	}
-
-	// Open browser for signing
-	signURL := fmt.Sprintf("http://localhost:8000/webauthn/sign?challenge=%s&credentialId=%s&callback=%s",
-		challenge.Challenge,
-		credentials.CredentialID,
-		challenge.CallbackURL)
-
-	if err := s.openBrowser(signURL); err != nil {
-		return "", fmt.Errorf("failed to open browser: %w", err)
-	}
-
-	// Wait for signature (simplified - would need proper implementation)
-	time.Sleep(5 * time.Second)
-
-	// Return mock signature for now
-	return "mock_signature_" + mpCrypto.RandomHex(32), nil
 }
 
 // GetActiveAccount loads the active wallet account from the registry

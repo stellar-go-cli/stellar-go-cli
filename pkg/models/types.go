@@ -63,9 +63,7 @@ type VCProof struct {
 type WalletType string
 
 const (
-	WalletWWWallet WalletType = "wwwallet"
 	WalletExternal WalletType = "external"
-	WalletTestnet  WalletType = "testnet"
 	WalletStellar  WalletType = "stellar"
 )
 
@@ -79,15 +77,17 @@ const (
 )
 
 type Account struct {
-	Address    string     `json:"address"`
-	PublicKey  string     `json:"publicKey"`
-	PrivateKey string     `json:"privateKey,omitempty"`
-	Network    Network    `json:"network"`
-	Type       WalletType `json:"type"`
-	Balance    string     `json:"balance"`
-	DID        string     `json:"did,omitempty"`
-	Funded     bool       `json:"funded"`
-	CreatedAt  time.Time  `json:"createdAt"`
+	Address          string     `json:"address"`
+	PublicKey        string     `json:"publicKey"`
+	PrivateKey       string     `json:"privateKey,omitempty"`
+	PrivateKeyEnc    string     `json:"privateKeyEnc,omitempty"`
+	PasskeyProtected bool       `json:"passkeyProtected,omitempty"`
+	Network          Network    `json:"network"`
+	Type             WalletType `json:"type"`
+	Balance          string     `json:"balance"`
+	DID              string     `json:"did,omitempty"`
+	Funded           bool       `json:"funded"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 // WalletEntry represents a wallet in the registry (without private key)
@@ -105,27 +105,6 @@ type WalletEntry struct {
 type WalletRegistry struct {
 	Wallets      []WalletEntry `json:"wallets"`
 	ActiveWallet string        `json:"activeWallet"`
-}
-
-type PasskeyCredential struct {
-	CredentialID string    `json:"credentialId"`
-	PublicKey    string    `json:"publicKey"`
-	Algorithm    string    `json:"algorithm"`
-	Origin       string    `json:"origin"`
-	CreatedAt    time.Time `json:"createdAt"`
-}
-
-// WebAuthnChallenge represents a WebAuthn credential creation challenge
-type WebAuthnChallenge struct {
-	Challenge   string    `json:"challenge"`
-	UserID      string    `json:"userId"`
-	UserName    string    `json:"userName"`
-	DisplayName string    `json:"displayName"`
-	RPName      string    `json:"rpName"`
-	RPID        string    `json:"rpId"`
-	Timestamp   time.Time `json:"timestamp"`
-	Signature   string    `json:"signature"`
-	CallbackURL string    `json:"callbackUrl"`
 }
 
 // ─────────────────────────────────────────────

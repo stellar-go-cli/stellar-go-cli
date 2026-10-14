@@ -15,7 +15,7 @@ Complete wallet setup and onboarding workflow for new users of the Stellar Go CL
 - "get started with Stellar Go CLI"
 
 **Assessment Questions**:
-- What type of wallet do you prefer? (passkey, stellar, external)
+- What type of wallet do you prefer? (stellar, external)
 - Which network do you want to start on? (testnet recommended for beginners)
 - Do you have an existing wallet to import?
 - What will you primarily use this wallet for?
@@ -27,8 +27,7 @@ Complete wallet setup and onboarding workflow for new users of the Stellar Go CL
 **First, let me understand your needs:**
 
 1. **Wallet Type Preference:**
-   • 📱 Passkey (biometric, most secure)
-   • 🔑 Stellar (traditional keypair)
+   •  Stellar (traditional keypair)
    • 🔗 External (existing address)
 
 2. **Network Choice:**
@@ -41,7 +40,7 @@ Complete wallet setup and onboarding workflow for new users of the Stellar Go CL
    • 🔴 Advanced (specific needs)
 
 **My Recommendation for New Users:**
-Start with a passkey wallet on testnet - it's the most secure and you can get free XLM to practice!
+Start with a Stellar keypair wallet on testnet - you can get free XLM to practice!
 
 Which option sounds right for you?
 ```
@@ -53,19 +52,7 @@ Which option sounds right for you?
 
 **Implementation Paths**:
 
-#### Pathkey Wallet (Recommended)
-**Commands**:
-```bash
-"connect wallet with passkey on testnet"
-```
-
-**Process**:
-1. Initialize passkey authentication
-2. Generate biometric challenge
-3. Create wallet account
-4. Set up security defaults
-
-**Stellar Wallet**
+#### Stellar Wallet (Recommended)
 **Commands**:
 ```bash
 "create new stellar wallet on testnet"
@@ -117,14 +104,13 @@ This usually takes about [time_estimate]. I'll let you know when it's ready!
 
 **Security Configuration**:
 - Backup phrase generation
-- Passkey registration
+- Passkey (WebAuthn) protection — encrypts the seed at rest, unlock via `wallet_passkey` register/unlock
 - Multi-signature setup (optional)
 - Security preferences
 
 **Commands**:
 ```bash
 "set up wallet security"
-"enable passkey authentication"
 "create backup phrase"
 "setup multi-signature"
 ```
@@ -134,9 +120,8 @@ This usually takes about [time_estimate]. I'll let you know when it's ready!
 🔒 **Security Setup - Protect Your Wallet**
 
 **Essential Security:**
-1. **Backup Phrase**: 24-word recovery phrase
-2. **Passkey**: Biometric authentication
-3. **Access Control**: Who can access this wallet
+1. **Backup Phrase**: Recovery phrase / secret key backup
+2. **Access Control**: Who can access this wallet
 
 **Backup Phrase (Save This Securely!):**
 [backup_phrase_display]
@@ -145,8 +130,8 @@ This usually takes about [time_estimate]. I'll let you know when it's ready!
 Write this down and store it in a secure location. Anyone with this phrase can access your wallet.
 
 **Security Options:**
-• 📱 Enable passkey (recommended)
-• 🔐 Set up multi-signature (high security)
+• 🔑 Protect with a passkey (WebAuthn — seed encrypted at rest, biometric unlock)
+•  Set up multi-signature (high security)
 • 📋 Export backup keys (advanced)
 
 **Which security options would you like to configure?**
@@ -309,7 +294,7 @@ I can configure recommended settings based on your usage patterns, or you can cu
 "set up complete wallet for me as a beginner"
 
 # With preferences
-"set up wallet with passkey on testnet with security defaults"
+"set up stellar wallet on testnet with security defaults"
 ```
 
 **Automated Process**:
@@ -362,7 +347,6 @@ I can configure recommended settings based on your usage patterns, or you can cu
 **Solutions**:
 ```bash
 "check device compatibility"
-"verify passkey support"
 "reset security settings"
 ```
 

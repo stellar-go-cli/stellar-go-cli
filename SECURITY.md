@@ -13,7 +13,7 @@ If you discover a security vulnerability in Stellar Go CLI, please report it res
 
 1. **Do not** open a public GitHub issue
 2. Email **hi@ogtechnologies.co** with a description of the vulnerability, reproduction steps, and potential impact
-3. Include the relevant component (CLI, Soroban client, MCP server, WebAuthn server, Docker)
+3. Include the relevant component (CLI, Soroban client, MCP server, Docker)
 4. You will receive an acknowledgment within 48 hours
 5. A fix or mitigation will be prioritized based on severity
 
@@ -25,14 +25,16 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 
 ### Local Storage
 
-- Private keys (Stellar seeds, `S...`) are stored locally in `~/.stellar-go-cli/config.json`
+- Private keys (Stellar seeds, `S...`) are stored locally in `~/.stellar-go-cli/state/wallets/` at `0600`
+- Optional passkey protection encrypts the seed at rest (AES-256-GCM); the wrapping key lives in the OS keychain and seed decryption requires a verified WebAuthn assertion — see `docs/passkeys.md`
 - Keys are **never** transmitted to external services unless explicitly signing a transaction
 - The `keypair.Full` type is used for in-memory signing — private key material is never logged or printed
-- Config file permissions should be restricted to the owner (`chmod 600 ~/.stellar-go-cli/config.json`)
+- Wallet and passkey state files are restricted to the owner (`0600`/`0700`)
 
 ### Wallet Operations
 
-- `keypair.ParseFull(account.PrivateKey)` loads the keypair for signing — the seed is not exposed beyond this point
+- All signing resolves the seed through `wallet.ResolveSeed(account)` — plaintext wallets return `PrivateKey` directly; passkey-protected wallets (`PasskeyProtected` + `PrivateKeyEnc`) require a live unlock grant
+- `keypair.ParseFull(resolvedSeed)` loads the keypair for signing — the seed is not exposed beyond this point
 - Testnet faucet funding (`stellar-go-cli wallet fund`) only works on `stellar-testnet`
 - Mainnet operations require an explicitly connected wallet with a funded account
 - The active wallet address (`G...`) is safe to display; the private seed (`S...`) is never shown
@@ -55,23 +57,6 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 
 ---
 
-## WebAuthn / FIDO2
-
-### Passkey Authentication
-
-- The WebAuthn server (`cmd/webauthn-server/`) provides FIDO2/WebAuthn credential registration and verification
-- Passkeys are device-bound and require user presence (touch/biometric) for authentication
-- The server runs as a separate Docker service (`Dockerfile.webauthn`) on port 8000
-- Health checks are configured for Docker deployments
-
-### Credential Storage
-
-- WebAuthn credentials are associated with the user's Stellar account
-- Credential registration requires a signed challenge from the user's device
-- Authentication verifies the signed challenge against the registered credential
-
----
-
 ## Docker Security
 
 - **Multi-stage builds** — Build stage uses `golang:1.26-alpine`, final images use `alpine:latest` (minimal attack surface)
@@ -84,7 +69,6 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| WebAuthn | 8000 | FIDO2/passkey authentication |
 | MCP | 3000 | AI assistant integration (SSE) |
 | VC API | 4000 | W3C VC API test endpoints |
 

@@ -6,11 +6,6 @@ RUN apk add --no-cache git ca-certificates tzdata
 COPY go.mod go.sum ./
 RUN go mod download
 
-# WebAuthn Server Builder
-FROM base-builder AS webauthn-builder
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o webauthn-server ./cmd/webauthn-server
-
 # MCP Server Builder  
 FROM base-builder AS mcp-builder
 COPY . .
@@ -20,16 +15,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o stellar-go-cli ./
 FROM base-builder AS cli-builder
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o stellar-go-cli-bin ./cmd/stellar-go-cli
-
-# WebAuthn Server Final Image
-FROM alpine:latest AS webauthn
-RUN apk --no-cache add ca-certificates tzdata wget
-WORKDIR /root/
-COPY --from=webauthn-builder /app/webauthn-server .
-EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
-CMD ["./webauthn-server"]
 
 # MCP Server Final Image
 FROM alpine:latest AS mcp

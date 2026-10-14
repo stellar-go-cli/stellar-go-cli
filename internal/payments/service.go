@@ -78,9 +78,8 @@ func (s *Service) Pay(
 
 // ── x402 ──────────────────────────────────────
 
-func (s *Service) payX402(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
-	fmt.Printf("[DEBUG] payX402 called: from=%s to=%s amount=%s\n", from, to, amount)
-	return s.payDirect(from, to, amount, asset, net, memo)
+func (s *Service) payX402(_, _, _, _ string, _ models.Network, _ string) (*models.Payment, error) {
+	return nil, fmt.Errorf("x402 is an HTTP payment protocol, not a recipient-address transfer; use 'stellar-go-cli pay x402 --resource <url>' or 'stellar-go-cli pay send --rail x402 --resource <url>'")
 }
 
 func (s *Service) BuildX402Request(resourceURL, asset, payer, payee string, price float64) *models.X402Request {
@@ -146,8 +145,6 @@ func (s *Service) GetTempoQuote(src, tgt string) *models.TempoFXQuote {
 // ── Direct Stellar — real Horizon API ─────────
 
 func (s *Service) payDirect(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
-	fmt.Printf("[DEBUG] payDirect called: from=%s to=%s amount=%s\n", from, to, amount)
-
 	// Validate addresses before proceeding
 	if err := validateStellarAddress(from); err != nil {
 		return nil, fmt.Errorf("invalid from address: %w", err)
@@ -159,10 +156,8 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 	// Load keypair for the specific from address to ensure correct wallet is used
 	kp, err := wallet.LoadStellarKeypairForAddress(from)
 	if err != nil {
-		fmt.Printf("[DEBUG] No keypair found for address %s, using simulated: %v\n", from, err)
-		return s.payDirectSimulated(from, to, amount, asset, net, memo)
+		return nil, err
 	}
-	fmt.Printf("[DEBUG] Loaded keypair for address %s: %s\n", from, kp.Address())
 
 	// Pick Horizon client + network passphrase
 	var client *horizonclient.Client
@@ -185,7 +180,7 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 
 	// Only XLM native for now; anchored assets need issuer config
 	if asset != "XLM" && asset != "" {
-		return s.payDirectSimulated(from, to, amount, asset, net, memo)
+		return nil, fmt.Errorf("direct rail supports XLM only (got %s)", asset)
 	}
 	asset = "XLM"
 
@@ -256,27 +251,6 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 	}, nil
 }
 
-func (s *Service) payDirectSimulated(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
-	now := time.Now().UTC()
-	confirmed := now.Add(5 * time.Second)
-	return &models.Payment{
-		ID:          "direct-" + mpCrypto.RandomHex(12),
-		From:        from,
-		To:          to,
-		Amount:      amount,
-		Asset:       asset,
-		Rail:        models.RailDirect,
-		Status:      models.PaymentConfirmed,
-		Network:     net,
-		Memo:        memo,
-		Fee:         "0.00001 XLM",
-		TxHash:      mpCrypto.StellarTxHash(),
-		LedgerSeq:   int64(50000000 + randIntn(1000000)),
-		CreatedAt:   now,
-		ConfirmedAt: &confirmed,
-	}, nil
-}
-
 // ── ZK Proof ───────────────────────────────────
 
 func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
@@ -291,8 +265,7 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 	// Load keypair for the specific from address to ensure correct wallet is used
 	kp, err := wallet.LoadStellarKeypairForAddress(from)
 	if err != nil {
-		// No real keypair for this address — fall back to simulated ZK payment
-		return s.payZKSimulated(from, to, amount, asset, net, memo)
+		return nil, err
 	}
 
 	// Initialize ZK services
@@ -342,7 +315,7 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 
 	// Only XLM native for ZK payments for now
 	if asset != "XLM" && asset != "" {
-		return s.payZKSimulated(from, to, amount, asset, net, memo)
+		return nil, fmt.Errorf("ZK rail supports XLM only (got %s)", asset)
 	}
 	asset = "XLM"
 
@@ -413,54 +386,6 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 	}, nil
 }
 
-// Fallback simulated ZK payment for development
-func (s *Service) payZKSimulated(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
-	// Simulate ZK proof generation and verification
-	proofStart := time.Now()
-
-	// Mock ZK proof generation (would use Noir/Risc0 circuits in real implementation)
-	time.Sleep(8 * time.Second) // Proof generation time
-
-	// Mock proof verification on-chain
-	time.Sleep(2 * time.Second) // Verification time
-
-	proofDuration := time.Since(proofStart)
-
-	now := time.Now().UTC()
-	confirmed := now.Add(5 * time.Second)
-
-	// Generate mock proof verification data
-	verification := &models.ZKProofVerification{
-		ProofID:          "ZK-" + mpCrypto.RandomHex(16),
-		CircuitType:      "noir", // Default to Noir circuits
-		Verified:         true,
-		VerificationTime: proofDuration,
-		GasUsed:          2500000, // Estimated gas for ZK verification
-		OnChainRef:       mpCrypto.StellarTxHash()[:16],
-		CreatedAt:        now,
-	}
-
-	// Save verification data for compliance reporting
-	config.SaveState("zk_verification_latest", verification) //nolint:errcheck // best-effort cache
-
-	return &models.Payment{
-		ID:          "zk-" + mpCrypto.RandomHex(12),
-		From:        from,
-		To:          to,
-		Amount:      amount,
-		Asset:       asset,
-		Rail:        models.RailZK,
-		Status:      models.PaymentConfirmed,
-		Network:     net,
-		Memo:        memo,
-		Fee:         "0.00005 XLM", // Higher fee for ZK operations
-		TxHash:      mpCrypto.StellarTxHash(),
-		LedgerSeq:   int64(50000000 + randIntn(1000000)),
-		CreatedAt:   now,
-		ConfirmedAt: &confirmed,
-	}, nil
-}
-
 func (s *Service) BuildZKProofRequest(resourceURL, asset, payer, payee string, amount float64, privacyLevel string) *models.ZKProofRequest {
 	return &models.ZKProofRequest{
 		ResourceURL:    resourceURL,
@@ -489,8 +414,7 @@ func (s *Service) paySwap(from, to, amount, asset string, net models.Network, me
 	// Check if keypair exists
 	kp, err := wallet.LoadStellarKeypairForSwap()
 	if err != nil {
-		// No real keypair — fall back to simulated swap
-		return s.paySwapSimulated(from, to, amount, asset, net, memo)
+		return nil, err
 	}
 
 	// Initialize swap service
@@ -527,30 +451,6 @@ func (s *Service) paySwap(from, to, amount, asset string, net models.Network, me
 	}
 
 	return payment, nil
-}
-
-func (s *Service) paySwapSimulated(from, to, amount, asset string, net models.Network, memo string) (*models.Payment, error) {
-	// Simulated swap for development
-	swapService := swap.NewSimulatedService()
-
-	sourceAsset, destAsset := s.parseSwapAssets(asset, memo)
-
-	req := models.SwapRequest{
-		SourceAsset: sourceAsset,
-		DestAsset:   destAsset,
-		Amount:      amount,
-		SwapType:    models.SwapStrictSend,
-		MaxSlippage: 1.0,
-		Destination: to,
-		Memo:        memo,
-	}
-
-	quote, err := swapService.GetQuote(req)
-	if err != nil {
-		return nil, err
-	}
-
-	return swapService.ExecuteSwap(quote, req.MaxSlippage, to)
 }
 
 func (s *Service) parseSwapAssets(asset, memo string) (string, string) {

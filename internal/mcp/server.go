@@ -153,7 +153,7 @@ func (s *Server) handleMessage(msg *JSONRPCMessage) error {
 	switch msg.Method {
 	case "initialize":
 		return s.handleInitialize(msg)
-	case "initialized":
+	case "initialized", "notifications/initialized":
 		return s.handleInitialized(msg)
 	case "tools/list":
 		return s.handleToolsList(msg)
@@ -476,7 +476,7 @@ func (s *Server) handleMessageHTTP(msg *JSONRPCMessage) *JSONRPCMessage {
 	switch msg.Method {
 	case "initialize":
 		return s.handleInitializeHTTP(msg)
-	case "initialized":
+	case "initialized", "notifications/initialized":
 		return s.handleInitializedHTTP(msg)
 	case "tools/list":
 		return s.handleToolsListHTTP(msg)

@@ -12,7 +12,7 @@ make test    # run the test suite
 make lint    # go vet + golangci-lint
 ```
 
-Requirements: Go 1.26+. Docker is optional (MCP/WebAuthn services).
+Requirements: Go 1.26+. Docker is optional (MCP service).
 
 ## Pull Request Guidelines
 

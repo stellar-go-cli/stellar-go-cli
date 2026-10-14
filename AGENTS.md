@@ -49,7 +49,6 @@ Non-core command groups (`chat`, `chat_finetune`, `terminal`, `triangular`, `exc
 |------|-------------|
 | `cmd/stellar-go-cli/` | CLI entrypoint and command definitions |
 | `cmd/stellar-go-cli/commands/` | All CLI commands (one file per command group) |
-| `cmd/webauthn-server/` | WebAuthn/FIDO2 server for passkey authentication |
 | `pkg/soroban/` | Pure-Go Soroban RPC client (deploy, invoke, simulate) — public |
 | `pkg/iso20022/` | ISO 20022 pacs.008/002/004/009 XML generation — public |
 | `pkg/vc/` | DID creation and VC issuance/verification — public |
@@ -57,7 +56,8 @@ Non-core command groups (`chat`, `chat_finetune`, `terminal`, `triangular`, `exc
 | `pkg/models/` | Shared data models (Account, Payment, Asset, VC, …) — public |
 | `pkg/crypto/` | Key generation, hashing, encoding helpers — public |
 | `internal/mcp/` | MCP server, tools, handlers, and skills |
-| `internal/wallet/` | Wallet management (Stellar, wwWallet, EOA) |
+| `internal/wallet/` | Wallet management (Stellar, external EOA) + passkey protection |
+| `internal/webauthn/` | Localhost WebAuthn relying party for passkey ceremonies |
 | `internal/config/` | Config load/save (`~/.stellar-go-cli/config.json`) |
 | `internal/ui/` | Terminal UI helpers (colors, formatting) — all output goes to stderr |
 | `internal/assets/` | Asset creation (SEP-41 fungible/non-fungible) |
@@ -66,8 +66,8 @@ Non-core command groups (`chat`, `chat_finetune`, `terminal`, `triangular`, `exc
 | `internal/reporting/` | Compliance reports, ISO 20022 formatting |
 | `internal/chat/` | AI chat interface (extras only) |
 | `internal/contracts/` | Contract management helpers |
-| `Dockerfile` | Multi-service Docker builds (CLI, MCP, WebAuthn, VC API) |
-| `docker-compose.yml` | Docker Compose orchestration (MCP + WebAuthn) |
+| `Dockerfile` | Multi-service Docker builds (CLI, MCP, VC API) |
+| `docker-compose.yml` | Docker Compose orchestration (MCP) |
 
 ---
 
@@ -105,7 +105,7 @@ All CLI commands follow the `Command` struct pattern defined in `cmd/stellar-go-
 - Config stored at `~/.stellar-go-cli/config.json` via `internal/config`
 - State files in `~/.stellar-go-cli/state/`
 - The legacy `~/.mozartpay` directory is migrated to `~/.stellar-go-cli` on first run (one-release migration in `config.migrateLegacyDir`)
-- Active wallet's `PrivateKey` (Stellar seed `S...`) is used with `keypair.ParseFull()` for signing
+- Seed access goes through `wallet.ResolveSeed(account)` — returns `PrivateKey` for plaintext wallets, or the decrypted seed from a live passkey unlock grant for protected wallets (`PrivateKeyEnc` + `PasskeyProtected` fields). All signing paths must use the resolver, never `account.PrivateKey` directly; a locked protected wallet must fail, not fall back. See `docs/passkeys.md`
 - `cfg.ContractID` stores the last deployed contract ID
 
 ### Linting & Code Style
@@ -136,6 +136,7 @@ stellar-go-cli mcp --verbose                    # Enable verbose logging
 |------|-------------|
 | `wallet_list` | List all configured wallets |
 | `wallet_balance` | Query wallet balance |
+| `wallet_passkey` | Passkey protection: register/unlock/lock/status/disable |
 | `swap_quote` | Get asset swap quote |
 | `swap_execute` | Execute asset swap |
 | `pay_send` | Send payment |
@@ -199,6 +200,22 @@ stellar-go-cli contract invoke --id <contract-id> --fn set_state --args <base64-
 - **Network Passphrase**: Stellar Testnet (`network.TestNetworkPassphrase`)
 - **Explorer**: `https://stellar.expert/explorer/testnet/contract/<contract-id>`
 - **Faucet**: `stellar-go-cli wallet fund --network stellar-testnet` (Friendbot)
+
+### Live e2e tests
+
+`make test-e2e` (or `cd pkg && go test -tags e2e ./x402/ -v -timeout 15m`) runs the
+x402 end-to-end suite in `pkg/x402/e2e_test.go`. It is gated behind the `e2e`
+build tag and skipped by `-short`: it generates fresh wallets, funds them via
+Friendbot, deploys a real SAC, performs a full HTTP 402 challenge/payment/retry
+flow, and settles on-chain through a test facilitator — real testnet
+transactions, several minutes per run.
+
+`make test-e2e-mainnet` runs the same flow on mainnet
+(`pkg/x402/e2e_mainnet_test.go`). It requires `X402_MAINNET_SEED` set to the
+secret of a funded mainnet account (skipped otherwise) and **spends real XLM**
+— a few XLM of account reserves, mostly recovered because the fresh
+payer/merchant accounts are merged back into the funder on cleanup. The seed
+is read from the environment only, never logged or persisted.
 
 ---
 

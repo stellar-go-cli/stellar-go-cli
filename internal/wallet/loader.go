@@ -33,8 +33,12 @@ func LoadStellarKeypair() (*keypair.Full, error) {
 			walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", registry.ActiveWallet+".json")
 			if wdata, err := os.ReadFile(walletPath); err == nil {
 				var account models.Account
-				if json.Unmarshal(wdata, &account) == nil && account.PrivateKey != "" {
-					return keypair.ParseFull(account.PrivateKey)
+				if json.Unmarshal(wdata, &account) == nil && (account.PrivateKey != "" || account.PrivateKeyEnc != "") {
+					seed, err := ResolveSeed(&account)
+					if err != nil {
+						return nil, err
+					}
+					return keypair.ParseFull(seed)
 				}
 			}
 		}
@@ -44,15 +48,23 @@ func LoadStellarKeypair() (*keypair.Full, error) {
 	var account models.Account
 	stellarAccountPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account_stellar.json")
 	if data, err := os.ReadFile(stellarAccountPath); err == nil {
-		if json.Unmarshal(data, &account) == nil && account.PrivateKey != "" {
-			return keypair.ParseFull(account.PrivateKey)
+		if json.Unmarshal(data, &account) == nil && (account.PrivateKey != "" || account.PrivateKeyEnc != "") {
+			seed, err := ResolveSeed(&account)
+			if err != nil {
+				return nil, err
+			}
+			return keypair.ParseFull(seed)
 		}
 	}
 
 	defaultAccountPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account.json")
 	if data, err := os.ReadFile(defaultAccountPath); err == nil {
-		if json.Unmarshal(data, &account) == nil && account.PrivateKey != "" && account.Type == models.WalletStellar {
-			return keypair.ParseFull(account.PrivateKey)
+		if json.Unmarshal(data, &account) == nil && (account.PrivateKey != "" || account.PrivateKeyEnc != "") && account.Type == models.WalletStellar {
+			seed, err := ResolveSeed(&account)
+			if err != nil {
+				return nil, err
+			}
+			return keypair.ParseFull(seed)
 		}
 	}
 
@@ -68,7 +80,7 @@ func LoadStellarKeypair() (*keypair.Full, error) {
 }
 
 // LoadStellarKeypairForSwap loads a Stellar keypair with special handling for swap operations.
-// It ensures only traditional Stellar wallets (not wwWallets) can be used for swaps.
+// It requires a wallet with a stored private key.
 func LoadStellarKeypairForSwap() (*keypair.Full, error) {
 	stateDir, err := os.UserHomeDir()
 	if err != nil {
@@ -86,12 +98,12 @@ func LoadStellarKeypairForSwap() (*keypair.Full, error) {
 			if wdata, err := os.ReadFile(walletPath); err == nil {
 				var account models.Account
 				if json.Unmarshal(wdata, &account) == nil {
-					// Only allow traditional Stellar wallets for swaps
-					if account.Type == "wwwallet" {
-						return nil, fmt.Errorf("wwWallet not supported for swaps - please use a traditional Stellar wallet")
-					}
-					if account.PrivateKey != "" {
-						return keypair.ParseFull(account.PrivateKey)
+					if account.PrivateKey != "" || account.PrivateKeyEnc != "" {
+						seed, err := ResolveSeed(&account)
+						if err != nil {
+							return nil, err
+						}
+						return keypair.ParseFull(seed)
 					}
 				}
 			}
@@ -102,8 +114,12 @@ func LoadStellarKeypairForSwap() (*keypair.Full, error) {
 	var account models.Account
 	stellarAccountPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "account_stellar.json")
 	if data, err := os.ReadFile(stellarAccountPath); err == nil {
-		if json.Unmarshal(data, &account) == nil && account.PrivateKey != "" {
-			return keypair.ParseFull(account.PrivateKey)
+		if json.Unmarshal(data, &account) == nil && (account.PrivateKey != "" || account.PrivateKeyEnc != "") {
+			seed, err := ResolveSeed(&account)
+			if err != nil {
+				return nil, err
+			}
+			return keypair.ParseFull(seed)
 		}
 	}
 
@@ -122,8 +138,12 @@ func LoadStellarKeypairForAddress(address string) (*keypair.Full, error) {
 	walletPath := filepath.Join(stateDir, ".stellar-go-cli", "state", "wallets", address+".json")
 	if wdata, err := os.ReadFile(walletPath); err == nil {
 		var account models.Account
-		if json.Unmarshal(wdata, &account) == nil && account.PrivateKey != "" {
-			kp, err := keypair.ParseFull(account.PrivateKey)
+		if json.Unmarshal(wdata, &account) == nil && (account.PrivateKey != "" || account.PrivateKeyEnc != "") {
+			seed, err := ResolveSeed(&account)
+			if err != nil {
+				return nil, err
+			}
+			kp, err := keypair.ParseFull(seed)
 			if err != nil {
 				return nil, fmt.Errorf("invalid private key for address %s: %w", address, err)
 			}

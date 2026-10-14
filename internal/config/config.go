@@ -77,7 +77,7 @@ type TrainingConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Network:    "stellar-testnet",
-		WalletType: "wwwallet",
+		WalletType: "stellar",
 		DIDMethod:  "key",
 		Integrations: IntegrationConfig{
 			StellarCarbonEnabled: true,

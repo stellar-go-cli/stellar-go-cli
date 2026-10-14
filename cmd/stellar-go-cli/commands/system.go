@@ -81,7 +81,7 @@ func newInitCmd(cfg *config.Config) *Command {
 			ui.Info("Quick start:")
 			fmt.Println()
 			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli did attest --method ebsi --vc national-id --name \"Your Name\""))
-			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli wallet connect --provider wwwallet --network stellar-testnet"))
+			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli wallet connect --provider stellar --network stellar-testnet"))
 			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli wallet fund --network stellar-testnet"))
 			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli asset create-ft --name \"MyToken\" --symbol MTK --with-score --with-carbon"))
 			fmt.Printf("  %s %s\n", ui.Gold_("$"), ui.Dim_("stellar-go-cli pay send --to <address> --amount 10 --asset USDC --rail x402"))
@@ -248,7 +248,7 @@ func printFlow() {
 	// Layer 2: Wallet
 	fmt.Println(ui.Dim_("  [02] WALLET & ACCOUNT"))
 	fmt.Println()
-	fmt.Println(indentBlock(box("🌐 wwWallet", "WebAuthn passkeys (FIDO2)\nOpen-source, browser-native", ui.Gold)))
+	fmt.Println(indentBlock(box("🔑 Stellar Wallet", "Native keypairs (Ed25519)\nImport or generate seeds", ui.Gold)))
 	fmt.Println(indentBlock(box("🧪 Testnet Funding", "EOA selection · Stellar Friendbot\nEVM Sepolia faucet", ui.Blue)))
 	fmt.Println()
 

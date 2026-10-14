@@ -73,7 +73,11 @@ func newContractDeployCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("no active wallet: %w", err)
 			}
 
-			kp, err := keypair.ParseFull(account.PrivateKey)
+			seed, err := wallet.ResolveSeed(account)
+			if err != nil {
+				return err
+			}
+			kp, err := keypair.ParseFull(seed)
 			if err != nil {
 				return fmt.Errorf("invalid private key in wallet: %w", err)
 			}
@@ -275,7 +279,11 @@ func getKeypairAndNetwork(cfg *config.Config) (*keypair.Full, string, *models.Ac
 		return nil, "", nil, fmt.Errorf("no active wallet: %w", err)
 	}
 
-	kp, err := keypair.ParseFull(account.PrivateKey)
+	seed, err := wallet.ResolveSeed(account)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	kp, err := keypair.ParseFull(seed)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("invalid private key in wallet: %w", err)
 	}

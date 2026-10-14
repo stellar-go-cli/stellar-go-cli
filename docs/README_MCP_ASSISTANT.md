@@ -5,7 +5,7 @@ An interactive command-line assistant that provides a user-friendly interface to
 ## Features
 
 - 🤖 Interactive chat interface with natural language commands
-- 📦 Access to all 17 MCP tools (wallet, swap, asset, payment, system)
+- 📦 Access to all MCP tools (wallet, swap, asset, payment, system, memory, tansu)
 - 💱 Smart command parsing and argument handling
 - 🎨 Formatted output with emojis and readable responses
 - 🛡️ Error handling and graceful recovery

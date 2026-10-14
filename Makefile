@@ -7,7 +7,7 @@ GOFLAGS    =
 
 LDFLAGS = -ldflags "-X $(MODULE)/internal/config.Version=$(VERSION) -s -w"
 
-.PHONY: all build run clean test lint install help
+.PHONY: all build run clean test test-e2e test-e2e-mainnet lint install help
 
 ## all: Build the binary (default)
 all: build
@@ -35,6 +35,16 @@ test:
 	@cd pkg && go test ./... -v
 	@echo "→ Running tests (CLI module)..."
 	@go test ./... -v
+
+## test-e2e: Run the live testnet e2e suite (fresh wallets, real transactions; takes minutes)
+test-e2e:
+	@echo "→ Running live testnet e2e tests..."
+	@cd pkg && go test -tags e2e ./x402/ -v -timeout 15m
+
+## test-e2e-mainnet: Run the mainnet e2e (requires X402_MAINNET_SEED; spends real XLM)
+test-e2e-mainnet:
+	@echo "→ Running live mainnet e2e tests (requires X402_MAINNET_SEED)..."
+	@cd pkg && go test -tags e2e ./x402/ -run TestX402EndToEndMainnet -v -timeout 15m
 
 ## lint: Run go vet + golangci-lint
 lint:
@@ -92,7 +102,7 @@ demo-attest: build
 
 ## demo-wallet: Demo wallet connect + fund
 demo-wallet: build
-	@$(BUILD_DIR)/$(BINARY) wallet connect --provider wwwallet --network stellar-testnet
+	@$(BUILD_DIR)/$(BINARY) wallet connect --provider stellar --network stellar-testnet
 	@$(BUILD_DIR)/$(BINARY) wallet fund --network stellar-testnet
 
 ## demo-asset: Demo asset creation with carbon offset
@@ -108,8 +118,7 @@ demo-asset: build
 demo-pay: build
 	@$(BUILD_DIR)/$(BINARY) pay x402 \
 		--resource "https://api.example.com/v1/feed" \
-		--price 0.001 \
-		--asset USDC
+		--dry-run
 
 ## demo-report: Demo full compliance report
 demo-report: build
@@ -127,10 +136,10 @@ demo-full: build
 	@echo "════════════════════════════════════════════"
 	@$(BUILD_DIR)/$(BINARY) init
 	@$(BUILD_DIR)/$(BINARY) did attest --method ebsi --name "Olvis E. Gil Ríos" --country AT
-	@$(BUILD_DIR)/$(BINARY) wallet connect --provider wwwallet --network stellar-testnet
+	@$(BUILD_DIR)/$(BINARY) wallet connect --provider stellar --network stellar-testnet
 	@$(BUILD_DIR)/$(BINARY) wallet fund --network stellar-testnet
 	@$(BUILD_DIR)/$(BINARY) asset create-ft --name "EduToken" --symbol EDU --supply 5000000 --with-carbon
-	@$(BUILD_DIR)/$(BINARY) pay x402 --resource "https://api.example.com/v1/edudata" --price 0.001 --asset USDC
+	@$(BUILD_DIR)/$(BINARY) pay x402 --resource "https://api.example.com/v1/edudata" --dry-run
 	@$(BUILD_DIR)/$(BINARY) report generate --vc-attach
 	@$(BUILD_DIR)/$(BINARY) status
 

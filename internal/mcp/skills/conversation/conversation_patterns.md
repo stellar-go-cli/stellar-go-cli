@@ -83,7 +83,6 @@ What would you like to accomplish today?
 • Connect/import/fund wallets
 • Switch between wallets
 • Export/backup wallet keys
-• Manage passkey authentication
 
 **💱 Swap & Trade:**
 • Get swap quotes and execute trades

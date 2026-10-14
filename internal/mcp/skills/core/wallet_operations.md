@@ -6,29 +6,25 @@ Comprehensive wallet management capabilities for the Stellar Go CLI platform, in
 ## Skills
 
 ### wallet_connect
-**Description**: Connect wallet via passkey, stellar keypair, or external address provider
+**Description**: Connect wallet via stellar keypair or external address provider
 **Category**: wallet_operations
 **MCP Tool**: wallet_connect
 
 **Parameters**:
-- `provider` (enum): wwwallet | stellar | external (default: wwwallet)
+- `provider` (enum): stellar | external (default: stellar)
 - `network` (enum): stellar-testnet | stellar-mainnet | evm-sepolia | evm-mainnet (default: stellar-testnet)
 - `address` (string): External address for external provider (optional)
 
 **Natural Language Patterns**:
-- "connect my wallet with passkey"
+- "create a stellar wallet"
 - "import stellar wallet on testnet"
 - "add external wallet address"
-- "set up wwwallet connection"
 - "connect wallet on mainnet"
 
 **Examples**:
 ```bash
-# Passkey connection
-"connect my wallet using passkey"
-
-# Stellar import
-"import my stellar wallet to testnet"
+# Stellar keypair
+"create a new stellar wallet on testnet"
 
 # External address
 "add external wallet GD...ADDRESS"
@@ -40,7 +36,7 @@ Comprehensive wallet management capabilities for the Stellar Go CLI platform, in
 - "Should I generate a backup of your wallet keys?"
 
 **Error Handling**:
-- Missing provider: "I need to know which wallet provider you'd like to use (passkey, stellar, or external)"
+- Missing provider: "I need to know which wallet provider you'd like to use (stellar or external)"
 - Network issues: "Let me check the network connection and try again"
 - Invalid address: "That address doesn't look valid. Can you double-check it?"
 
@@ -272,42 +268,34 @@ Comprehensive wallet management capabilities for the Stellar Go CLI platform, in
 ---
 
 ### wallet_passkey
-**Description**: Manage passkey authentication for wallet
+**Description**: Manage passkey (WebAuthn) protection for a wallet's seed — real browser ceremonies, no mock paths
 **Category**: wallet_operations
 **MCP Tool**: wallet_passkey
 
 **Parameters**:
-- `action` (enum): register | verify | remove (default: register)
+- `action` (enum): register | unlock | lock | status | disable (default: status)
 - `address` (string): Wallet address (optional, uses active if omitted)
+- `ttl_minutes` (string): Unlock duration for `unlock` (default 15)
 
 **Natural Language Patterns**:
-- "register passkey for wallet"
-- "verify my passkey"
-- "remove passkey authentication"
-- "set up biometric login"
-- "enable passkey for wallet"
+- "protect my wallet with a passkey"
+- "unlock my wallet with Touch ID"
+- "lock my wallet"
+- "is my wallet passkey-protected?"
+
+**Important Behavior**:
+- `register`, `unlock`, and `disable` open a **browser ceremony on the machine running the CLI** — they need human interaction (Touch ID / security key) and cannot complete fully headless
+- `status` and `lock` work without a browser
+- A successful `unlock` stores a time-limited grant; signing tools then work normally until expiry or `lock`
+- Signing a protected wallet while locked returns an error telling the user to unlock — never silently succeeds
+- `register` encrypts the seed (AES-256-GCM, key in OS keychain); `disable` restores plaintext after a verified assertion
 
 **Examples**:
 ```bash
-# Register passkey
-"register passkey for my wallet"
-
-# Verify passkey
-"verify my passkey authentication"
-
-# Remove passkey
-"remove passkey from wallet"
+"protect my active wallet with a passkey"
+"unlock wallet GD...ADDRESS for 30 minutes"
+"is wallet GD...ADDRESS passkey protected?"
 ```
-
-**Passkey Benefits**:
-- Enhanced security
-- Biometric authentication
-- No password memorization
-- Cross-device synchronization
-
-**Error Handling**:
-- Device not supported: "Your device doesn't support passkeys. Would you like to use an alternative method?"
-- Registration failed: "Passkey registration failed. Let's try again."
 
 ---
 
@@ -329,7 +317,7 @@ Comprehensive wallet management capabilities for the Stellar Go CLI platform, in
 ### Security Maintenance
 1. **Audit**: "Review wallet security"
 2. **Backup**: "Export important keys"
-3. **Update**: "Refresh passkey authentication"
+3. **Update**: "Refresh wallet details"
 4. **Clean**: "Remove unused wallets"
 
 ## Common Questions
@@ -350,6 +338,5 @@ A: Testnet uses fake XLM for testing, mainnet uses real XLM with actual value.
 
 - Always back up important wallets before making changes
 - Use descriptive names to organize your wallets
-- Enable passkey authentication for enhanced security
 - Keep testnet and mainnet wallets separate
 - Regularly audit your wallet collection

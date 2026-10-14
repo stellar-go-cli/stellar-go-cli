@@ -13,7 +13,7 @@ The codebase was originally developed as part of a downstream commercial product
 
 ## Features
 
-- **Wallets** — Create and manage Stellar wallets, import seeds, testnet faucet funding
+- **Wallets** — Create and manage Stellar wallets, import seeds, testnet faucet funding, optional passkey (WebAuthn) protection that encrypts the seed at rest and gates signing behind a biometric/hardware assertion ([docs/passkeys.md](docs/passkeys.md))
 - **Payments** — Direct Stellar payments, x402 pay-per-use flow, FX quotes
 - **Swaps** — Path-payment quotes and execution on the Stellar DEX
 - **Assets** — SEP-41 fungible tokens and non-fungible assets (SAC), trustlines, claimable balances, liquidity pools
@@ -21,12 +21,11 @@ The codebase was originally developed as part of a downstream commercial product
 - **Soroban contracts** — Deploy any `.wasm` contract and invoke methods — pure Go, no `stellar` CLI required
 - **ISO 20022 reporting** — Export transactions as `pacs.008`/`pacs.002`/`pacs.004`/`pacs.009` XML; `pkg/iso20022` also builds batch `pain.001` disbursement initiations and `camt.054` settlement notifications
 - **MCP server** — Expose CLI functionality as tools for AI assistants over stdio or SSE
-- **WebAuthn server** — Standalone FIDO2/passkey server (`cmd/webauthn-server`)
 
 ## Requirements
 
 - Go 1.26+
-- Docker & Docker Compose (optional, for the MCP and WebAuthn services)
+- Docker & Docker Compose (optional, for the MCP service)
 
 ## Build & Install
 
@@ -70,7 +69,7 @@ stellar-go-cli report iso20022 --type pacs.008 > report.xml
 | Group | Commands |
 |-------|----------|
 | `did` | `create`, `attest`, `verify`, `show` |
-| `wallet` | `connect`, `fund`, `balance`, `list`, `switch`, `passkey`, … |
+| `wallet` | `connect`, `fund`, `balance`, `list`, `switch`, `passkey` (`register`/`unlock`/`lock`/`status`/`disable`), … |
 | `pay` | `send`, `quote`, `x402`, … |
 | `swap` | `quote`, `execute`, `zk`, `arbitrage`, `scan`, `monitor`, `assets` (+ `triangular` with `-tags extras`) |
 | `pool` | Liquidity pool operations |
@@ -142,13 +141,12 @@ stellar-go-cli mcp                            # stdio transport
 stellar-go-cli mcp --transport sse --port 3000 # SSE over HTTP
 ```
 
-Tools include `wallet_list`, `wallet_balance`, `swap_quote`, `swap_execute`, `pay_send`, `pay_request`, `asset_list`, `asset_trust`, `system_status`, `system_health`, plus Tansu governance queries.
+Tools include `wallet_list`, `wallet_balance`, `wallet_passkey`, `swap_quote`, `swap_execute`, `pay_send`, `pay_request`, `asset_list`, `asset_trust`, `system_status`, `system_health`, plus Tansu governance queries.
 
 ## Docker
 
 ```bash
 docker compose up mcp        # MCP server on :3000 (SSE)
-docker compose up webauthn   # WebAuthn server on :8000
 ```
 
 ## Configuration
