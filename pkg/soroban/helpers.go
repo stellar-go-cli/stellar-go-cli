@@ -3,6 +3,7 @@ package soroban
 import (
 	"crypto/rand"
 	"fmt"
+	"math/big"
 
 	"github.com/stellar/go-stellar-sdk/network"
 	"github.com/stellar/go-stellar-sdk/strkey"
@@ -11,7 +12,7 @@ import (
 
 const (
 	TestnetRPCURL = "https://soroban-testnet.stellar.org"
-	MainnetRPCURL = "https://soroban-mainnet.stellar.org"
+	MainnetRPCURL = "https://mainnet.sorobanrpc.com"
 )
 
 func NetworkPassphrase(net string) string {
@@ -115,4 +116,36 @@ func ScvI64(n int64) xdr.ScVal {
 
 func ScvAddress(addr xdr.ScAddress) xdr.ScVal {
 	return mustScVal(xdr.NewScVal(xdr.ScValTypeScvAddress, addr))
+}
+
+// ScvI128 builds an ScvI128 from a big.Int. Negative values are handled via
+// two's complement (big.Int bitwise ops treat negatives as infinite two's
+// complement).
+func ScvI128(n *big.Int) xdr.ScVal {
+	mask := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 64), big.NewInt(1))
+	lo := new(big.Int).And(n, mask)
+	hi := new(big.Int).Rsh(new(big.Int).Set(n), 64)
+	parts := xdr.Int128Parts{Hi: xdr.Int64(hi.Int64()), Lo: xdr.Uint64(lo.Uint64())}
+	return mustScVal(xdr.NewScVal(xdr.ScValTypeScvI128, parts))
+}
+
+// DecodeScAddress extracts an address string (G... or C...) from an ScvAddress ScVal.
+func DecodeScAddress(v xdr.ScVal) (string, error) {
+	if v.Type != xdr.ScValTypeScvAddress || v.Address == nil {
+		return "", fmt.Errorf("expected ScvAddress, got %s", v.Type.String())
+	}
+	switch v.Address.Type {
+	case xdr.ScAddressTypeScAddressTypeAccount:
+		if v.Address.AccountId == nil {
+			return "", fmt.Errorf("nil account ID")
+		}
+		return v.Address.AccountId.Address(), nil
+	case xdr.ScAddressTypeScAddressTypeContract:
+		if v.Address.ContractId == nil {
+			return "", fmt.Errorf("nil contract ID")
+		}
+		return strkey.Encode(strkey.VersionByteContract, v.Address.ContractId[:])
+	default:
+		return "", fmt.Errorf("unsupported address type %s", v.Address.Type.String())
+	}
 }

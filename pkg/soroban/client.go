@@ -49,6 +49,89 @@ func (c *Client) LoadAccount(ctx context.Context, address string) (txnbuild.Acco
 	return c.rpc.LoadAccount(ctx, address)
 }
 
+// LatestLedger returns the latest ledger known by the configured RPC server.
+func (c *Client) LatestLedger(ctx context.Context) (uint32, error) {
+	resp, err := c.rpc.GetLatestLedger(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return resp.Sequence, nil
+}
+
+// EstimatedLedgerSeconds estimates ledger close time from recent ledgers. It
+// falls back to the five-second network estimate used by the x402 Stellar
+// specification when RPC ledger history is unavailable.
+func (c *Client) EstimatedLedgerSeconds(ctx context.Context) int64 {
+	const fallback int64 = 5
+
+	latest, err := c.LatestLedger(ctx)
+	if err != nil || latest == 0 {
+		return fallback
+	}
+	start := uint32(1)
+	if latest > 20 {
+		start = latest - 20
+	}
+	resp, err := c.rpc.GetLedgers(ctx, rpc.GetLedgersRequest{
+		StartLedger: start,
+		Pagination:  &rpc.LedgerPaginationOptions{Limit: 20},
+	})
+	if err != nil || len(resp.Ledgers) < 2 {
+		return fallback
+	}
+	first := resp.Ledgers[0]
+	last := resp.Ledgers[len(resp.Ledgers)-1]
+	seconds := (last.LedgerCloseTime - first.LedgerCloseTime + int64(len(resp.Ledgers)-2)) / int64(len(resp.Ledgers)-1)
+	if seconds <= 0 {
+		return fallback
+	}
+	return seconds
+}
+
+// SimulateTransaction submits an already-built transaction to Soroban RPC.
+func (c *Client) SimulateTransaction(ctx context.Context, tx *txnbuild.Transaction, authMode string) (*rpc.SimulateTransactionResponse, error) {
+	txB64, err := tx.Base64()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize transaction: %w", err)
+	}
+	resp, err := c.rpc.SimulateTransaction(ctx, rpc.SimulateTransactionRequest{
+		Transaction: txB64,
+		AuthMode:    authMode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("simulation failed: %w", err)
+	}
+	if resp.Error != "" {
+		return nil, fmt.Errorf("simulation error: %s", resp.Error)
+	}
+	return &resp, nil
+}
+
+// SimulateAndAssemble builds a tx with the given operation, simulates it, and
+// returns the transaction assembled with the simulation's Soroban data/auth.
+func (c *Client) SimulateAndAssemble(
+	ctx context.Context,
+	sourceAccount txnbuild.Account,
+	op *txnbuild.InvokeHostFunction,
+	baseFee int64,
+	authMode string,
+) (*txnbuild.Transaction, *rpc.SimulateTransactionResponse, error) {
+	return c.simulateAndAssemble(ctx, sourceAccount, op, baseFee, 0, authMode)
+}
+
+// SimulateAndAssembleWithTimeout is SimulateAndAssemble with an explicit
+// transaction time bound in seconds.
+func (c *Client) SimulateAndAssembleWithTimeout(
+	ctx context.Context,
+	sourceAccount txnbuild.Account,
+	op *txnbuild.InvokeHostFunction,
+	baseFee int64,
+	timeoutSeconds int64,
+	authMode string,
+) (*txnbuild.Transaction, *rpc.SimulateTransactionResponse, error) {
+	return c.simulateAndAssemble(ctx, sourceAccount, op, baseFee, timeoutSeconds, authMode)
+}
+
 // simulateAndAssemble builds a tx with the given operation, simulates it,
 // then rebuilds with the SorobanTransactionData and auth from the simulation.
 func (c *Client) simulateAndAssemble(
@@ -56,35 +139,30 @@ func (c *Client) simulateAndAssemble(
 	sourceAccount txnbuild.Account,
 	op *txnbuild.InvokeHostFunction,
 	baseFee int64,
+	timeoutSeconds int64,
+	authMode string,
 ) (*txnbuild.Transaction, *rpc.SimulateTransactionResponse, error) {
 	if baseFee <= 0 {
 		baseFee = defaultBaseFee
+	}
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 300
 	}
 
 	tx, err := txnbuild.NewTransaction(txnbuild.TransactionParams{
 		SourceAccount:        sourceAccount,
 		IncrementSequenceNum: true,
 		BaseFee:              baseFee,
-		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(300)},
+		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(timeoutSeconds)},
 		Operations:           []txnbuild.Operation{op},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build initial transaction: %w", err)
 	}
 
-	txB64, err := tx.Base64()
+	simResp, err := c.SimulateTransaction(ctx, tx, authMode)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to serialize transaction: %w", err)
-	}
-
-	simResp, err := c.rpc.SimulateTransaction(ctx, rpc.SimulateTransactionRequest{
-		Transaction: txB64,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("simulation failed: %w", err)
-	}
-	if simResp.Error != "" {
-		return nil, nil, fmt.Errorf("simulation error: %s", simResp.Error)
+		return nil, nil, err
 	}
 
 	var sorobanData xdr.SorobanTransactionData
@@ -118,14 +196,14 @@ func (c *Client) simulateAndAssemble(
 		},
 		IncrementSequenceNum: false,
 		BaseFee:              baseFee,
-		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(300)},
+		Preconditions:        txnbuild.Preconditions{TimeBounds: txnbuild.NewTimeout(timeoutSeconds)},
 		Operations:           []txnbuild.Operation{op},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to rebuild transaction with simulation data: %w", err)
 	}
 
-	return rebuiltTx, &simResp, nil
+	return rebuiltTx, simResp, nil
 }
 
 // submitAndWait signs the transaction with the given keypair, submits it,

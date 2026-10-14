@@ -2,10 +2,13 @@ package soroban
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 
 	"github.com/stellar/go-stellar-sdk/keypair"
+	"github.com/stellar/go-stellar-sdk/network"
 	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
+	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
@@ -34,7 +37,7 @@ func (c *Client) UploadWasm(ctx context.Context, kp *keypair.Full, wasmBytes []b
 		SourceAccount: kp.Address(),
 	}
 
-	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0)
+	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0, 0, "")
 	if err != nil {
 		return xdr.Hash{}, "", err
 	}
@@ -104,12 +107,88 @@ func (c *Client) CreateContract(ctx context.Context, kp *keypair.Full, wasmHash 
 		}
 	}
 
-	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0)
+	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0, 0, "")
 	if err != nil {
 		return "", "", err
 	}
 
 	// Extract contract ID from simulation return value
+	contractID, err = extractContractIDFromSimResult(simResp)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to extract contract ID from simulation: %w", err)
+	}
+
+	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, kp)
+	if err != nil {
+		return "", txHash, err
+	}
+
+	return contractID, txHash, nil
+}
+
+// ContractIDForAsset returns the deterministic Stellar Asset Contract ID for a
+// classic asset under the given network passphrase — SHA-256 of the
+// HashIdPreimage::ContractID preimage (network ID + ContractIdPreimage::Asset),
+// encoded as a strkey contract address. It matches the address createContract
+// assigns, so it can be used to locate an already-deployed SAC.
+func ContractIDForAsset(passphrase string, asset txnbuild.Asset) (string, error) {
+	assetXDR, err := asset.ToXDR()
+	if err != nil {
+		return "", fmt.Errorf("failed to convert asset to XDR: %w", err)
+	}
+	preimage := xdr.HashIdPreimage{
+		Type: xdr.EnvelopeTypeEnvelopeTypeContractId,
+		ContractId: &xdr.HashIdPreimageContractId{
+			NetworkId: network.ID(passphrase),
+			ContractIdPreimage: xdr.ContractIdPreimage{
+				Type:      xdr.ContractIdPreimageTypeContractIdPreimageFromAsset,
+				FromAsset: &assetXDR,
+			},
+		},
+	}
+	raw, err := preimage.MarshalBinary()
+	if err != nil {
+		return "", fmt.Errorf("failed to encode contract ID preimage: %w", err)
+	}
+	hash := sha256.Sum256(raw)
+	return strkey.Encode(strkey.VersionByteContract, hash[:])
+}
+
+// CreateContractForAsset deploys the Stellar Asset Contract (SAC) for a
+// classic Stellar asset and returns its contract ID. The deployed contract
+// implements SEP-41 and shares balances with the asset's trustlines.
+func (c *Client) CreateContractForAsset(ctx context.Context, kp *keypair.Full, asset txnbuild.Asset) (contractID string, txHash string, err error) {
+	sourceAccount, err := c.LoadAccount(ctx, kp.Address())
+	if err != nil {
+		return "", "", fmt.Errorf("failed to load source account: %w", err)
+	}
+
+	assetXDR, err := asset.ToXDR()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to convert asset to XDR: %w", err)
+	}
+
+	op := &txnbuild.InvokeHostFunction{
+		HostFunction: xdr.HostFunction{
+			Type: xdr.HostFunctionTypeHostFunctionTypeCreateContract,
+			CreateContract: &xdr.CreateContractArgs{
+				ContractIdPreimage: xdr.ContractIdPreimage{
+					Type:      xdr.ContractIdPreimageTypeContractIdPreimageFromAsset,
+					FromAsset: &assetXDR,
+				},
+				Executable: xdr.ContractExecutable{
+					Type: xdr.ContractExecutableTypeContractExecutableStellarAsset,
+				},
+			},
+		},
+		SourceAccount: kp.Address(),
+	}
+
+	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0, 0, "")
+	if err != nil {
+		return "", "", err
+	}
+
 	contractID, err = extractContractIDFromSimResult(simResp)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to extract contract ID from simulation: %w", err)
@@ -161,7 +240,7 @@ func (c *Client) simulateAndAssembleAndSubmit(
 	kp *keypair.Full,
 	baseFee int64,
 ) (txHash string, resultXDR string, resultMetaXDR string, err error) {
-	assembledTx, _, err := c.simulateAndAssemble(ctx, sourceAccount, op, baseFee)
+	assembledTx, _, err := c.simulateAndAssemble(ctx, sourceAccount, op, baseFee, 0, "")
 	if err != nil {
 		return "", "", "", err
 	}
