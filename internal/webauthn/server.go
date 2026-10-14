@@ -59,13 +59,13 @@ func startCeremony(mode Mode, u *User) (*Ceremony, error) {
 		RPOrigins:     []string{origin},
 	})
 	if err != nil {
-		_ = ln.Close()
+		ln.Close() //nolint:errcheck // best-effort listener cleanup
 		return nil, fmt.Errorf("relying party init: %w", err)
 	}
 
 	tokenBytes := make([]byte, 16)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		_ = ln.Close()
+		ln.Close() //nolint:errcheck // best-effort listener cleanup
 		return nil, fmt.Errorf("session token: %w", err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
@@ -83,7 +83,7 @@ func startCeremony(mode Mode, u *User) (*Ceremony, error) {
 			),
 		)
 		if err != nil {
-			_ = ln.Close()
+			ln.Close() //nolint:errcheck // best-effort listener cleanup
 			return nil, fmt.Errorf("begin registration: %w", err)
 		}
 		optionsJSON, err = json.Marshal(creation.Response)
@@ -94,16 +94,16 @@ func startCeremony(mode Mode, u *User) (*Ceremony, error) {
 			webauthn.WithUserVerification(protocol.VerificationRequired),
 		)
 		if err != nil {
-			_ = ln.Close()
+			ln.Close() //nolint:errcheck // best-effort listener cleanup
 			return nil, fmt.Errorf("begin assertion: %w", err)
 		}
 		optionsJSON, err = json.Marshal(assertion.Response)
 	default:
-		_ = ln.Close()
+		ln.Close() //nolint:errcheck // best-effort listener cleanup
 		return nil, fmt.Errorf("unknown ceremony mode %d", mode)
 	}
 	if err != nil {
-		_ = ln.Close()
+		ln.Close() //nolint:errcheck // best-effort listener cleanup
 		return nil, fmt.Errorf("marshal options: %w", err)
 	}
 
@@ -124,7 +124,7 @@ func startCeremony(mode Mode, u *User) (*Ceremony, error) {
 	mux.HandleFunc("/finish", c.serveFinish(mode, u, wa, session, token))
 
 	c.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = c.srv.Serve(ln) }()
+	go func() { c.srv.Serve(ln) }() //nolint:errcheck // accept loop; server lifetime managed by Close
 
 	return c, nil
 }
@@ -140,7 +140,7 @@ func (c *Ceremony) servePage(token string) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(ceremonyHTML)
+		_, _ = w.Write(ceremonyHTML) //nolint:errcheck // response write, nothing actionable
 	}
 }
 
@@ -151,7 +151,7 @@ func (c *Ceremony) serveOptions(token, mode string, optionsJSON []byte) http.Han
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"mode":%q,"publicKey":%s}`, mode, optionsJSON)
+		fmt.Fprintf(w, `{"mode":%q,"publicKey":%s}`, mode, optionsJSON) //nolint:errcheck // response write, nothing actionable
 	}
 }
 
@@ -186,7 +186,7 @@ func (c *Ceremony) serveFinish(mode Mode, u *User, wa *webauthn.WebAuthn, sessio
 		c.finished = true
 		c.done <- ceremonyResult{credential: cred}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`)) //nolint:errcheck // response write, nothing actionable
 	}
 }
 
@@ -202,8 +202,8 @@ func (c *Ceremony) Wait(timeout time.Duration) (*webauthn.Credential, error) {
 
 // Close shuts the ceremony server down.
 func (c *Ceremony) Close() {
-	_ = c.srv.Shutdown(context.Background())
-	_ = c.ln.Close()
+	c.srv.Shutdown(context.Background()) //nolint:errcheck // best-effort shutdown
+	c.ln.Close()                         //nolint:errcheck // best-effort close
 }
 
 // Register runs a full registration ceremony: it starts the RP server, invokes
@@ -216,7 +216,7 @@ func Register(u *User, openURL func(string) error, timeout time.Duration) (*weba
 	}
 	defer c.Close()
 	if openURL != nil {
-		_ = openURL(c.URL)
+		openURL(c.URL) //nolint:errcheck // browser open is best-effort; URL is printed for manual use
 	}
 	return c.Wait(timeout)
 }
@@ -230,7 +230,7 @@ func Assert(u *User, openURL func(string) error, timeout time.Duration) (*webaut
 	}
 	defer c.Close()
 	if openURL != nil {
-		_ = openURL(c.URL)
+		openURL(c.URL) //nolint:errcheck // browser open is best-effort; URL is printed for manual use
 	}
 	return c.Wait(timeout)
 }

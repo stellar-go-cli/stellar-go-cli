@@ -1221,7 +1221,7 @@ func (s *Server) handlePayX402(ctx context.Context, args map[string]interface{})
 	if err != nil {
 		return nil, err
 	}
-	defer rpcClient.Close()
+	defer rpcClient.Close() //nolint:errcheck // RPC client cleanup
 
 	maxAtomicAmount, err := getAtomicAmountArg(args, "max_atomic_amount")
 	if err != nil {

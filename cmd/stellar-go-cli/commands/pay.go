@@ -389,7 +389,7 @@ func executeX402Flow(ctx context.Context, cfg *config.Config, opts x402CommandOp
 	if err != nil {
 		return nil, err
 	}
-	defer rpcClient.Close()
+	defer rpcClient.Close() //nolint:errcheck // RPC client cleanup
 
 	return client.Fetch(ctx, x402.Request{
 		Method:  method,

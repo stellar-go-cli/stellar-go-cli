@@ -124,7 +124,7 @@ func (s *Service) RegisterPasskey(address string) (*webauthn.Credential, error) 
 
 	enc, err := encryptSeed(acc.PrivateKey, key)
 	if err != nil {
-		_ = keyring.Delete(keyringService, walletKeyItem(address))
+		keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup on failure
 		return nil, err
 	}
 
@@ -132,7 +132,7 @@ func (s *Service) RegisterPasskey(address string) (*webauthn.Credential, error) 
 	acc.PrivateKey = ""
 	acc.PasskeyProtected = true
 	if err := s.AddWalletToRegistry(acc, false); err != nil {
-		_ = keyring.Delete(keyringService, walletKeyItem(address))
+		keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup on failure
 		return nil, fmt.Errorf("failed to save protected wallet: %w", err)
 	}
 
@@ -168,7 +168,7 @@ func scrubLegacySeedCaches(address string) {
 		}
 		acc.PrivateKey = ""
 		if out, err := json.Marshal(acc); err == nil {
-			_ = os.WriteFile(path, out, 0600)
+			os.WriteFile(path, out, 0600) //nolint:errcheck // best-effort cache scrub
 		}
 	}
 }
@@ -268,9 +268,9 @@ func (s *Service) DisablePasskey(address string) error {
 		return fmt.Errorf("failed to save wallet: %w", err)
 	}
 
-	_ = s.Lock(address)
-	_ = keyring.Delete(keyringService, walletKeyItem(address))
-	_ = deletePasskeys(address)
+	s.Lock(address)                                        //nolint:errcheck // best-effort cleanup
+	keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup
+	deletePasskeys(address)                                //nolint:errcheck // best-effort cleanup
 	return nil
 }
 
@@ -360,7 +360,7 @@ func unlockedSeed(address string) (string, error) {
 		return "", fmt.Errorf("no unlock grant")
 	}
 	if time.Now().Unix() >= grant.Expires {
-		_ = keyring.Delete(keyringService, unlockItem(address)) // clean expired grant
+		keyring.Delete(keyringService, unlockItem(address)) //nolint:errcheck // clean expired grant
 		return "", fmt.Errorf("unlock grant expired")
 	}
 	return grant.Seed, nil

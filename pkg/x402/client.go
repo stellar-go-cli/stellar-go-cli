@@ -181,7 +181,10 @@ func (c *Client) Fetch(ctx context.Context, request Request, options FetchOption
 		if err != nil {
 			return result, fmt.Errorf("invalid maxAtomicAmount: %w", err)
 		}
-		amount, _ := ParseAtomicAmount(accepted.Amount)
+		amount, err := ParseAtomicAmount(accepted.Amount)
+		if err != nil {
+			return result, fmt.Errorf("invalid required amount %s: %w", accepted.Amount, err)
+		}
 		if amount.Cmp(limit) > 0 {
 			return result, fmt.Errorf("payment amount %s exceeds maxAtomicAmount %s", accepted.Amount, options.MaxAtomicAmount)
 		}
@@ -273,7 +276,7 @@ func (c *Client) do(ctx context.Context, request Request) (*http.Response, []byt
 	if err != nil {
 		return nil, nil, fmt.Errorf("resource request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // response body cleanup
 
 	limit := c.maxBody
 	if resp.StatusCode == http.StatusPaymentRequired {
@@ -406,7 +409,7 @@ func validatePaymentPayload(payload *PaymentPayload, accepted *PaymentRequiremen
 	}
 	transaction, _ := payload.Payload["transaction"].(string)
 	if transaction == "" {
-		return fmt.Errorf("Stellar payment payload is missing payload.transaction")
+		return fmt.Errorf("stellar payment payload is missing payload.transaction")
 	}
 	return nil
 }

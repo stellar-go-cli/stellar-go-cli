@@ -39,10 +39,10 @@ type StellarExactBuilder struct {
 
 func NewStellarExactBuilder(signer *keypair.Full, rpcClient *soroban.Client) (*StellarExactBuilder, error) {
 	if signer == nil {
-		return nil, fmt.Errorf("Stellar signer keypair is required")
+		return nil, fmt.Errorf("stellar signer keypair is required")
 	}
 	if rpcClient == nil {
-		return nil, fmt.Errorf("Soroban RPC client is required")
+		return nil, fmt.Errorf("soroban RPC client is required")
 	}
 	return &StellarExactBuilder{signer: signer, rpc: rpcClient}, nil
 }
@@ -445,7 +445,7 @@ func NewStellarClientWithRPCURL(networkName string, signer *keypair.Full, httpCl
 	rpcClient := soroban.NewClient(rpcURL, soroban.NetworkPassphrase(internalNetwork))
 	builder, err := NewStellarExactBuilder(signer, rpcClient)
 	if err != nil {
-		rpcClient.Close()
+		rpcClient.Close() //nolint:errcheck // cleanup on failure
 		return nil, nil, err
 	}
 	client, err := NewClient(Config{
@@ -454,7 +454,7 @@ func NewStellarClientWithRPCURL(networkName string, signer *keypair.Full, httpCl
 		Network:        canonical,
 	})
 	if err != nil {
-		rpcClient.Close()
+		rpcClient.Close() //nolint:errcheck // cleanup on failure
 		return nil, nil, err
 	}
 	return client, rpcClient, nil
@@ -468,10 +468,10 @@ func normalizeRPCURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" ||
 		(u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-		return "", fmt.Errorf("Soroban RPC URL must be a valid HTTP or HTTPS URL without credentials")
+		return "", fmt.Errorf("soroban RPC URL must be a valid HTTP or HTTPS URL without credentials")
 	}
 	if u.Scheme == "http" && !isLoopbackRPCURL(u.Hostname()) {
-		return "", fmt.Errorf("Soroban RPC URL must use HTTPS unless it targets localhost")
+		return "", fmt.Errorf("soroban RPC URL must use HTTPS unless it targets localhost")
 	}
 	return u.String(), nil
 }

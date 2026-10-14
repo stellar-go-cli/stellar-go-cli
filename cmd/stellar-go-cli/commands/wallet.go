@@ -1165,7 +1165,7 @@ func newWalletPasskeyUnlockCmd(cfg *config.Config) *Command {
 				return err
 			}
 
-			st, _ := svc.GetPasskeyStatus(target)
+			st, _ := svc.GetPasskeyStatus(target) //nolint:errcheck // display-only best effort
 			spin.Stop(true, "Wallet unlocked")
 			if st != nil && st.UnlockedUntil != nil {
 				ui.KV("Valid until", st.UnlockedUntil.Format(time.RFC3339))

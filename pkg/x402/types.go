@@ -240,7 +240,7 @@ func ValidateStellarRequirement(req *PaymentRequirements) error {
 	}
 	sponsored, ok := req.Extra["areFeesSponsored"].(bool)
 	if !ok || !sponsored {
-		return fmt.Errorf("Stellar exact payments require extra.areFeesSponsored=true")
+		return fmt.Errorf("stellar exact payments require extra.areFeesSponsored=true")
 	}
 	return nil
 }
