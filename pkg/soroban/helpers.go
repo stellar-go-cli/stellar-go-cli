@@ -118,6 +118,29 @@ func ScvAddress(addr xdr.ScAddress) xdr.ScVal {
 	return mustScVal(xdr.NewScVal(xdr.ScValTypeScvAddress, addr))
 }
 
+// ScvVec builds an ScvVec ScVal from ordered elements.
+func ScvVec(vals ...xdr.ScVal) xdr.ScVal {
+	vec := xdr.ScVec(vals)
+	return mustScVal(xdr.NewScVal(xdr.ScValTypeScvVec, &vec))
+}
+
+// ScvPair is a convenience constructor for an xdr.ScMapEntry.
+func ScvPair(key, val xdr.ScVal) xdr.ScMapEntry {
+	return xdr.ScMapEntry{Key: key, Val: val}
+}
+
+// ScvMap builds an ScvMap ScVal. Entries are sorted by the canonical ScVal
+// ordering (see CompareScVal) — the same ordering soroban-sdk applies in Rust —
+// so the encoded map is identical whether built from Go or Rust. It panics on
+// duplicate keys.
+func ScvMap(entries ...xdr.ScMapEntry) xdr.ScVal {
+	if err := sortScMapEntries(entries); err != nil {
+		panic(err)
+	}
+	m := xdr.ScMap(entries)
+	return mustScVal(xdr.NewScVal(xdr.ScValTypeScvMap, &m))
+}
+
 // ScvI128 builds an ScvI128 from a big.Int. Negative values are handled via
 // two's complement (big.Int bitwise ops treat negatives as infinite two's
 // complement).

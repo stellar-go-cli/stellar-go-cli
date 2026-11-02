@@ -94,7 +94,8 @@ All CLI commands follow the `Command` struct pattern defined in `cmd/stellar-go-
 
 - All Soroban RPC interactions use the pure-Go client in `pkg/soroban/`
 - **No shell-out to the stellar CLI** — everything is done via the Stellar Go SDK and Soroban RPC
-- `xdr.ScVal` construction uses helper functions in `pkg/soroban/helpers.go` (`ScvString`, `ScvSymbol`, `ScvBytes`, `ScvBool`, `ScvU32`, `ScvU64`, `ScvI32`, `ScvI64`, `ScvAddress`)
+- `xdr.ScVal` construction uses helper functions in `pkg/soroban/helpers.go` (`ScvString`, `ScvSymbol`, `ScvBytes`, `ScvBool`, `ScvU32`, `ScvU64`, `ScvI32`, `ScvI64`, `ScvAddress`, `ScvVec`, `ScvMap`, `ScvPair`); `ToScVal` in `pkg/soroban/values.go` encodes Go structs/maps/slices (structs become ScvMap with `soroban:"name"` symbol keys; map keys sort per `CompareScVal` — identical to Rust `soroban-sdk` encoding)
+- Contract events: `Client.GetEvents` wraps RPC `getEvents` (filters, topics, pagination, decoded ScVal topics/values); `EventsFromTransactionMeta` decodes events out of `InvokeResult.ResultMetaXDR` — both in `pkg/soroban/events.go`
 - Contract deployment uses `HostFunctionTypeCreateContractV2` when constructor args are needed
 - WASM hash and contract ID are extracted from `SimulateTransactionResponse.Results[0].ReturnValueXDR`
 - Read-only queries use `SimulateOnly()` (no transaction submission, uses a dummy keypair)
