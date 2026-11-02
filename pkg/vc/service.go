@@ -5,6 +5,8 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
@@ -84,7 +86,18 @@ func (s *Service) CreateDID(method models.DIDMethod, opts ...string) (*models.DI
 	var pubKeyMultibase string
 
 	if s.keyType == "ed25519" {
-		did = mpCrypto.DIDKeyFromEd25519PublicKey(s.ed25519Pub)
+		switch method {
+		case models.DIDMethodKey:
+			did = mpCrypto.DIDKeyFromEd25519PublicKey(s.ed25519Pub)
+		case models.DIDMethodWeb:
+			domain := "example.com"
+			if len(opts) > 0 && opts[0] != "" {
+				domain = opts[0]
+			}
+			did = mpCrypto.DIDWebFromDomain(domain)
+		default:
+			return nil, fmt.Errorf("DID method %s requires a secp256k1 (ECDSA) key — Ed25519 supports did:key and did:web", method)
+		}
 		pubKeyMultibase = mpCrypto.Ed25519PublicKeyToMultibase(s.ed25519Pub)
 		keyTypeStr = "Ed25519VerificationKey2020"
 	} else {
@@ -144,8 +157,16 @@ func (s *Service) CreateDID(method models.DIDMethod, opts ...string) (*models.DI
 	return doc, nil
 }
 
-// IssueVC issues a Verifiable Credential anchored to the DID
+// IssueVC issues a Verifiable Credential anchored to the DID. The service
+// signs only for identities its key controls: the issuer DID must be
+// derivable from the service key (did:key, did:ethr, did:ebsi). did:web is
+// exempt — domain ownership is proven by hosting the DID document, which
+// cannot be checked offline; the caller asserts control and the credential
+// verifies only if the document is actually published.
 func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*models.VerifiableCredential, error) {
+	if err := s.checkIssuerControl(did); err != nil {
+		return nil, err
+	}
 	vcID := "urn:uuid:" + mpCrypto.RandomHex(16)
 	now := time.Now().UTC()
 
@@ -247,74 +268,185 @@ func (s *Service) IssueNationalIDVC(did, holderDID, name, country, idNumber, bir
 	return s.IssueVC(did, "NationalIdentityCredential", subject)
 }
 
-// Verify performs real cryptographic verification of a VC
+// Verify performs cryptographic verification of a VC model. Fields the
+// model does not represent are lost when the credential was parsed into it;
+// for externally issued VCs prefer VerifyDocument on the raw JSON.
 func (s *Service) Verify(vc *models.VerifiableCredential) (bool, error) {
 	if vc == nil {
 		return false, fmt.Errorf("PARSING_ERROR: VC is nil")
 	}
-	if vc.ID == "" || vc.Issuer == "" {
-		return false, fmt.Errorf("invalid VC: missing required fields")
+	raw, err := json.Marshal(vc)
+	if err != nil {
+		return false, fmt.Errorf("marshal VC: %w", err)
 	}
-	if vc.Proof.Type == "" {
-		return false, fmt.Errorf("invalid VC: proof.type is missing")
+	var doc map[string]interface{}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return false, fmt.Errorf("unmarshal VC: %w", err)
 	}
-	if vc.Proof.VerificationMethod == "" {
-		return false, fmt.Errorf("invalid VC: proof.verificationMethod is missing")
+	// Unset dates marshal as year-1 strings; validity dates are optional, so
+	// drop them rather than treating the credential as long-expired.
+	if vc.IssuanceDate.IsZero() {
+		delete(doc, "issuanceDate")
 	}
-	if vc.Proof.ProofPurpose == "" {
-		return false, fmt.Errorf("invalid VC: proof.proofPurpose is missing")
+	if vc.ExpirationDate.IsZero() {
+		delete(doc, "expirationDate")
 	}
-	if time.Now().After(vc.ExpirationDate) {
-		return false, fmt.Errorf("VC has expired")
+	return VerifyDocument(doc)
+}
+
+// VerifyDocument cryptographically verifies a raw VC JSON document — the map
+// produced by json.Unmarshal of the credential JSON-LD. Unlike Verify, it
+// preserves fields the VerifiableCredential model does not represent, so
+// externally issued VCs carrying credentialStatus, evidence or extra proof
+// properties still hash to what the issuer signed. It accepts both VC 1.0
+// (issuanceDate/expirationDate) and VC 2.0 (validFrom/validUntil) date names,
+// all optional.
+func VerifyDocument(doc map[string]interface{}) (bool, error) {
+	if id, _ := doc["id"].(string); id == "" {
+		return false, fmt.Errorf("invalid VC: missing id")
+	}
+	issuer, err := issuerFromDocument(doc)
+	if err != nil {
+		return false, err
+	}
+	proof, err := proofFromDocument(doc)
+	if err != nil {
+		return false, err
+	}
+	if err := checkValidityWindow(doc); err != nil {
+		return false, err
 	}
 
-	switch vc.Proof.Type {
+	proofType, _ := proof["type"].(string)
+	switch proofType {
 	case models.ProofTypeEd25519:
-		return s.verifyEd25519(vc)
+		return verifyEd25519Document(doc, proof, issuer)
 	case models.ProofTypeJWS:
-		return s.verifyJWS(vc)
+		return false, fmt.Errorf("%s verification is unsupported: JWS issuance in this library is simulated and produces no verifiable signature", models.ProofTypeJWS)
+	case "":
+		return false, fmt.Errorf("invalid VC: proof.type is missing")
 	default:
-		return false, fmt.Errorf("unsupported proof type: %s", vc.Proof.Type)
+		return false, fmt.Errorf("unsupported proof type: %s", proofType)
 	}
 }
 
-func (s *Service) verifyEd25519(vc *models.VerifiableCredential) (bool, error) {
-	pub, err := mpCrypto.DecodeEd25519PublicKeyFromDIDKey(vc.Issuer)
-	if err != nil {
-		return false, fmt.Errorf("extract public key from did:key: %w", err)
+// issuerFromDocument extracts the issuer DID from either the string or the
+// object (`{"id": ...}`) form of the issuer property.
+func issuerFromDocument(doc map[string]interface{}) (string, error) {
+	switch iss := doc["issuer"].(type) {
+	case string:
+		if iss == "" {
+			return "", fmt.Errorf("invalid VC: issuer is empty")
+		}
+		return iss, nil
+	case map[string]interface{}:
+		if id, _ := iss["id"].(string); id != "" {
+			return id, nil
+		}
+		return "", fmt.Errorf("invalid VC: issuer object missing id")
+	default:
+		return "", fmt.Errorf("invalid VC: missing issuer")
 	}
+}
 
-	if err := mpCrypto.ValidateProofValue(vc.Proof.ProofValue); err != nil {
+// proofFromDocument extracts the first proof from either the object or the
+// array form of the proof property.
+func proofFromDocument(doc map[string]interface{}) (map[string]interface{}, error) {
+	switch p := doc["proof"].(type) {
+	case map[string]interface{}:
+		return p, nil
+	case []interface{}:
+		if len(p) == 0 {
+			return nil, fmt.Errorf("invalid VC: empty proof set")
+		}
+		m, ok := p[0].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid VC: malformed proof")
+		}
+		return m, nil
+	default:
+		return nil, fmt.Errorf("invalid VC: missing proof")
+	}
+}
+
+// checkValidityWindow enforces the VC's validity dates when present. Both
+// VC 1.0 (issuanceDate/expirationDate) and VC 2.0 (validFrom/validUntil)
+// names are accepted; absent dates are allowed.
+func checkValidityWindow(doc map[string]interface{}) error {
+	now := time.Now()
+	for _, key := range []string{"validFrom", "issuanceDate"} {
+		s, ok := doc[key].(string)
+		if !ok || s == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return fmt.Errorf("invalid VC: unparsable %s %q", key, s)
+		}
+		if now.Before(t) {
+			return fmt.Errorf("VC is not yet valid (%s %s)", key, s)
+		}
+		break
+	}
+	for _, key := range []string{"validUntil", "expirationDate"} {
+		s, ok := doc[key].(string)
+		if !ok || s == "" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return fmt.Errorf("invalid VC: unparsable %s %q", key, s)
+		}
+		if now.After(t) {
+			return fmt.Errorf("VC has expired (%s %s)", key, s)
+		}
+		break
+	}
+	return nil
+}
+
+func verifyEd25519Document(doc, proof map[string]interface{}, issuer string) (bool, error) {
+	vm, _ := proof["verificationMethod"].(string)
+	if proofPurpose, _ := proof["proofPurpose"].(string); proofPurpose == "" {
+		return false, fmt.Errorf("invalid VC: proof.proofPurpose is missing")
+	}
+	proofValue, _ := proof["proofValue"].(string)
+	if err := mpCrypto.ValidateProofValue(proofValue); err != nil {
 		return false, fmt.Errorf("invalid proofValue: %w", err)
 	}
-
-	vcMap := map[string]interface{}{
-		"@context":          toInterfaceSlice(vc.Context),
-		"id":                vc.ID,
-		"type":              toInterfaceSlice(vc.Type),
-		"issuer":            vc.Issuer,
-		"issuanceDate":      vc.IssuanceDate.Format(time.RFC3339Nano),
-		"expirationDate":    vc.ExpirationDate.Format(time.RFC3339Nano),
-		"credentialSubject": vc.CredentialSubject,
+	pub, err := ResolveEd25519Key(issuer, vm)
+	if err != nil {
+		return false, err
 	}
 
-	if err := mpCrypto.DetectDataLoss(vcMap); err != nil {
+	// The signed document is the credential minus its proof.
+	docCanon := make(map[string]interface{}, len(doc))
+	for k, v := range doc {
+		if k != "proof" {
+			docCanon[k] = v
+		}
+	}
+	// The signed proof config is the proof minus the signature itself.
+	proofConfig := make(map[string]interface{}, len(proof))
+	for k, v := range proof {
+		if k != "proofValue" && k != "jws" {
+			proofConfig[k] = v
+		}
+	}
+	if _, ok := proofConfig["@context"]; !ok {
+		// Credentials issued before the proof carried an explicit @context
+		// were signed with this default context pair.
+		proofConfig["@context"] = []interface{}{
+			"https://www.w3.org/ns/credentials/v2",
+			"https://w3id.org/security/suites/ed25519-2020/v1",
+		}
+	}
+
+	if err := mpCrypto.DetectDataLoss(docCanon); err != nil {
 		return false, fmt.Errorf("data loss detection: %w", err)
 	}
 
-	proofConfig := map[string]interface{}{
-		"@context":           []interface{}{"https://www.w3.org/ns/credentials/v2", "https://w3id.org/security/suites/ed25519-2020/v1"},
-		"type":               vc.Proof.Type,
-		"created":            vc.Proof.Created.Format(time.RFC3339Nano),
-		"verificationMethod": vc.Proof.VerificationMethod,
-		"proofPurpose":       vc.Proof.ProofPurpose,
-	}
-
-	if vc.Proof.ProofValue == "" {
-		return false, fmt.Errorf("missing proofValue")
-	}
-
-	valid, err := mpCrypto.VerifyEd25519VC(pub, vcMap, proofConfig, vc.Proof.ProofValue)
+	valid, err := mpCrypto.VerifyEd25519VC(pub, docCanon, proofConfig, proofValue)
 	if err != nil {
 		return false, fmt.Errorf("verification error: %w", err)
 	}
@@ -324,11 +456,28 @@ func (s *Service) verifyEd25519(vc *models.VerifiableCredential) (bool, error) {
 	return true, nil
 }
 
-func (s *Service) verifyJWS(vc *models.VerifiableCredential) (bool, error) {
-	if vc.Proof.JWSSignature == "" {
-		return false, fmt.Errorf("missing JWS signature")
+// checkIssuerControl ensures the service signs only for identities its key
+// controls. did:web is exempt — domain ownership is proven by hosting the DID
+// document, which cannot be checked offline.
+func (s *Service) checkIssuerControl(did string) error {
+	if strings.HasPrefix(did, "did:web:") {
+		return nil
 	}
-	return true, nil
+	var controlled []string
+	if s.keyType == "ed25519" {
+		controlled = []string{mpCrypto.DIDKeyFromEd25519PublicKey(s.ed25519Pub)}
+	} else {
+		pub := &s.ecdsaPriv.PublicKey
+		controlled = []string{
+			mpCrypto.DIDKeyFromPublicKey(pub),
+			mpCrypto.DIDEthrFromAddress(mpCrypto.AddressFromPublicKey(pub)),
+			mpCrypto.DIDEBSIFromPublicKey(pub),
+		}
+	}
+	if !slices.Contains(controlled, did) {
+		return fmt.Errorf("issuer %q is not controlled by this service's key", did)
+	}
+	return nil
 }
 
 // toInterfaceSlice converts []string to []interface{}

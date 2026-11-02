@@ -403,6 +403,11 @@ func base58Encode(input []byte) string {
 	return string(result)
 }
 
+// Base58Decode decodes a base58 (Bitcoin alphabet) string.
+func Base58Decode(input string) ([]byte, error) {
+	return base58Decode(input)
+}
+
 func base58Decode(input string) ([]byte, error) {
 	result := big.NewInt(0)
 	base := big.NewInt(int64(len(base58Alphabet)))

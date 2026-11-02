@@ -144,9 +144,11 @@ func issueHandler(svc *vc.Service) http.HandlerFunc {
 	}
 }
 
+// verifyRequest keeps the credential as a raw map so verification preserves
+// fields the VerifiableCredential model does not represent.
 type verifyRequest struct {
-	VerifiableCredential models.VerifiableCredential `json:"verifiableCredential"`
-	Options              map[string]interface{}      `json:"options,omitempty"`
+	VerifiableCredential map[string]interface{} `json:"verifiableCredential"`
+	Options              map[string]interface{} `json:"options,omitempty"`
 }
 
 type verifyResult struct {
@@ -179,12 +181,12 @@ func verifyHandler(svc *vc.Service) http.HandlerFunc {
 			return
 		}
 
-		if req.VerifiableCredential.ID == "" {
+		if req.VerifiableCredential == nil {
 			httpError(w, http.StatusBadRequest, "missing 'verifiableCredential' field")
 			return
 		}
 
-		valid, verr := svc.Verify(&req.VerifiableCredential)
+		valid, verr := vc.VerifyDocument(req.VerifiableCredential)
 
 		result := verifyResult{
 			Checks: []checkResult{

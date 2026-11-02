@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -49,6 +50,7 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	method := fs.String("method", "key", "DID method: web | key | ethr | ebsi")
 	domain := fs.String("domain", "example.com", "Domain for did:web (used with --method web)")
+	keyType := fs.String("key-type", "ed25519", "Key type: ed25519 | ecdsa (ethr/ebsi require ecdsa)")
 	output := fs.String("output", "pretty", "Output format: pretty | json")
 
 	return &Command{
@@ -63,7 +65,17 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(600 * time.Millisecond)
 
-			svc, err := vc.NewService()
+			var svc *vc.Service
+			var err error
+			if *keyType == "ecdsa" {
+				var key *ecdsa.PrivateKey
+				key, err = mpCrypto.GenerateKeyPair()
+				if err == nil {
+					svc = vc.NewServiceWithECDSAKey(key)
+				}
+			} else {
+				svc, err = vc.NewService()
+			}
 			if err != nil {
 				spin.Stop(false, "Key generation failed")
 				return err
@@ -115,8 +127,10 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 
 func newDIDAttestCmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("attest", flag.ContinueOnError)
-	method := fs.String("method", "ebsi", "DID method for attestation")
+	method := fs.String("method", "key", "DID method for the issuer identity: key | web (ed25519) | ethr | ebsi (jws only)")
+	domain := fs.String("domain", "example.com", "Domain for did:web issuer (used with --method web)")
 	vcType := fs.String("vc", "national-id", "VC type: national-id | kyc | accreditation")
+	subjectDID := fs.String("subject-did", "", "DID of the credential subject (default: same as issuer — self-issued)")
 	name := fs.String("name", "", "Holder full name")
 	country := fs.String("country", "AT", "ISO country code")
 	birthYear := fs.String("birth-year", "", "Holder birth year (optional, omitted if empty)")
@@ -137,6 +151,13 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			}
 
 			m := models.DIDMethod(*method)
+
+			if *proofType == proofTypeJWS {
+				ui.Warn("JWS proofs are simulated — the credential cannot be verified by this CLI")
+			}
+			if m == models.DIDMethodWeb {
+				ui.Warn("A did:web issuer is verifiable only if the DID document is hosted at the domain")
+			}
 
 			spin := ui.NewSpinner("Creating DID and issuing VC...")
 			spin.Start()
@@ -189,14 +210,18 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 				}
 			}
 
-			doc, err := svc.CreateDID(m)
+			doc, err := svc.CreateDID(m, *domain)
 			if err != nil {
 				spin.Stop(false, err.Error())
 				return err
 			}
 
+			holderDID := *subjectDID
+			if holderDID == "" {
+				holderDID = doc.ID
+			}
 			vcTypeName := vcTypeToName(*vcType)
-			cred, err := svc.IssueNationalIDVC(doc.ID, doc.ID, *name, *country, "", *birthYear, *level)
+			cred, err := svc.IssueNationalIDVC(doc.ID, holderDID, *name, *country, "", *birthYear, *level)
 			if err != nil {
 				spin.Stop(false, err.Error())
 				return err
@@ -222,6 +247,8 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			ui.KV("VC ID", cred.ID)
 			ui.KV("Type", vcTypeName)
 			ui.KV("Issuer DID", safeTrunc(cred.Issuer, 40)+"...")
+			ui.KV("Subject DID", safeTrunc(holderDID, 40)+"...")
+			ui.KV("Self-issued", fmt.Sprintf("%v", holderDID == cred.Issuer))
 			ui.KV("Subject", *name)
 			ui.KV("Country", *country)
 			ui.KV("Level", *level)
@@ -261,16 +288,16 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 		Run: func(c *Command, args []string) error {
 			ui.Header("Verify VC")
 
-			var cred models.VerifiableCredential
+			var doc map[string]interface{}
 			if *vcFile != "" {
 				data, err := os.ReadFile(*vcFile)
 				if err != nil {
 					return fmt.Errorf("read VC file: %w", err)
 				}
-				if err := json.Unmarshal(data, &cred); err != nil {
+				if err := json.Unmarshal(data, &doc); err != nil {
 					return fmt.Errorf("parse VC file: %w", err)
 				}
-			} else if err := config.LoadState("vc_latest", &cred); err != nil {
+			} else if err := config.LoadState("vc_latest", &doc); err != nil {
 				ui.Warn("No saved VC found. Run 'stellar-go-cli did attest' first.")
 				return nil
 			}
@@ -279,24 +306,44 @@ func newDIDVerifyCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(500 * time.Millisecond)
 
-			svc, serr := vc.NewService()
-			if serr != nil {
-				spin.Stop(false, "Service init failed")
-				return fmt.Errorf("vc service: %w", serr)
-			}
-			valid, err := svc.Verify(&cred)
+			valid, err := vc.VerifyDocument(doc)
 			if err != nil {
 				spin.Stop(false, "Verification failed: "+err.Error())
 				return fmt.Errorf("verification failed: %w", err)
 			}
 			spin.Stop(valid, map[bool]string{true: "Credential is VALID", false: "Credential is INVALID"}[valid])
 
+			issuer, _ := doc["issuer"].(string)
+			var subjectID string
+			if subj, ok := doc["credentialSubject"].(map[string]interface{}); ok {
+				subjectID, _ = subj["id"].(string)
+			}
+			selfIssued := "-"
+			if subjectID != "" {
+				selfIssued = fmt.Sprintf("%v", subjectID == issuer)
+			}
+			expires := ""
+			for _, key := range []string{"validUntil", "expirationDate"} {
+				if s, ok := doc[key].(string); ok && s != "" {
+					expires = s[:10]
+					break
+				}
+			}
+			proofType := ""
+			if proof, ok := doc["proof"].(map[string]interface{}); ok {
+				proofType, _ = proof["type"].(string)
+			}
+
 			ui.SectionLabel("Verification Result")
-			ui.KV("VC ID", cred.ID)
-			ui.KV("Issuer", safeTrunc(cred.Issuer, 40)+"...")
-			ui.KV("Proof Type", cred.Proof.Type)
+			ui.KV("VC ID", fmt.Sprintf("%v", doc["id"]))
+			ui.KV("Issuer", safeTrunc(issuer, 40)+"...")
+			ui.KV("Subject", safeTrunc(subjectID, 40)+"...")
+			ui.KV("Self-issued", selfIssued)
+			ui.KV("Proof Type", proofType)
 			ui.KV("Valid", fmt.Sprintf("%v", valid))
-			ui.KV("Expires", cred.ExpirationDate.Format("2006-01-02"))
+			if expires != "" {
+				ui.KV("Expires", expires)
+			}
 			ui.KV("Status", map[bool]string{true: "✓ VERIFIED", false: "✗ INVALID"}[valid])
 
 			if !valid {
