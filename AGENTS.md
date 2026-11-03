@@ -165,6 +165,20 @@ The MCP server runs on port 3000 with SSE transport in Docker, with health check
 
 ---
 
+## Releasing
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml` (GoReleaser):
+
+- **Binaries**: archives + checksums for linux/darwin/windows on amd64/arm64 → GitHub Release (`.goreleaser.yml`)
+- **Homebrew**: formula published to `stellar-go-cli/homebrew-tap` — requires a `HOMEBREW_TAP_TOKEN` repo secret (PAT with `contents:write` on the tap repo)
+- **Signing**: cosign keyless `sign-blob` produces a `${artifact}.bundle` per archive/checksum; verify with `cosign verify-blob --bundle <file>.bundle --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp 'github.com/stellar-go-cli' <file>`
+- **SBOM**: syft CycloneDX JSON per archive (`${artifact}.sbom.json`)
+- **GHCR images**: `ghcr.io/<owner>/stellar-go-cli-{mcp,cli,vc-api}:<tag>` + `:latest`, built from the matching `Dockerfile` targets and cosign-signed by digest
+
+`pkg/vX.Y.Z` library tags intentionally do **not** trigger this workflow (`v*` filter only matches CLI release tags).
+
+---
+
 ## What to Avoid
 
 - **No shell-out to stellar CLI** for Soroban operations — use the pure-Go `pkg/soroban/` package

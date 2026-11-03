@@ -7,6 +7,29 @@ go install github.com/stellar-go-cli/stellar-go-cli/cmd/stellar-go-cli@latest
 stellar-go-cli --help
 ```
 
+## Install
+
+```bash
+# Homebrew
+brew install stellar-go-cli/tap/stellar-go-cli
+
+# go install
+go install github.com/stellar-go-cli/stellar-go-cli/cmd/stellar-go-cli@latest
+```
+
+Prebuilt binaries for linux/darwin/windows (amd64/arm64) are attached to every
+[GitHub Release](https://github.com/stellar-go-cli/stellar-go-cli/releases)
+with checksums, a CycloneDX SBOM, and cosign signature bundles:
+
+```bash
+cosign verify-blob --bundle stellar-go-cli_<ver>_checksums.txt.bundle \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp 'github.com/stellar-go-cli' \
+  stellar-go-cli_<ver>_checksums.txt
+```
+
+Container images are published to GHCR as `ghcr.io/stellar-go-cli/stellar-go-cli-{cli,mcp,vc-api}` — see [Docker](#docker).
+
 **Status:** wallet/payments/swaps run against mainnet and testnet. DID/VC issuance (Ed25519Signature2020 proofs, cryptographic verification) and ISO 20022 pacs.008/002/004/009 export (validated against the official XSDs) are working prototypes — VCs are self-issued unless an external issuer is configured. This is not a Stellar Development Foundation project.
 
 The codebase was originally developed as part of a downstream commercial product and was extracted into this standalone public repository. [MozartPay Orchestrated Agreements](https://github.com/mozartpay/OAs) is the first downstream consumer.
@@ -50,7 +73,7 @@ stellar-go-cli init
 
 # Create a DID and issue a verifiable credential
 stellar-go-cli did create --method key
-stellar-go-cli did attest --method ebsi --name "Your Name" --country AT
+stellar-go-cli did attest --name "Your Name" --country AT
 
 # Create and fund a testnet wallet
 stellar-go-cli wallet connect --provider stellar --network stellar-testnet
@@ -90,9 +113,9 @@ Reusable packages are public under `pkg/` and render on [pkg.go.dev](https://pkg
 
 | Package | Description |
 |---------|-------------|
-| `pkg/soroban` | Pure-Go Soroban RPC client: upload WASM, deploy, invoke, simulate |
+| `pkg/soroban` | Pure-Go Soroban RPC client: upload WASM, deploy, invoke, simulate, query contract events (`getEvents`) |
 | `pkg/iso20022` | ISO 20022 XML generation — pacs.008/002/004/009, batch pacs.008/002, pain.001, camt.054 |
-| `pkg/vc` | W3C DID creation and Verifiable Credential issuance/verification |
+| `pkg/vc` | W3C DID creation and Verifiable Credential issuance/verification; `did:key` + `did:web` issuer resolution |
 | `pkg/swap` | Stellar DEX path-payment quoting and execution |
 | `pkg/models` | Shared types (Payment, Asset, DIDDocument, VerifiableCredential, …) |
 | `pkg/crypto` | Key generation, hashing, and encoding helpers |
@@ -146,8 +169,16 @@ Tools include `wallet_list`, `wallet_balance`, `wallet_passkey`, `swap_quote`, `
 ## Docker
 
 ```bash
-docker compose up mcp        # MCP server on :3000 (SSE)
+# Published images (built and cosign-signed on every release tag)
+docker pull ghcr.io/stellar-go-cli/stellar-go-cli-mcp:latest
+docker run -p 3000:3000 ghcr.io/stellar-go-cli/stellar-go-cli-mcp:latest
+
+# Or pull via compose (docker compose up --build still builds from source)
+docker compose pull mcp
+docker compose up mcp
 ```
+
+Published images: `stellar-go-cli-mcp` (SSE server, :3000), `stellar-go-cli-cli`, `stellar-go-cli-vc-api` (:4000).
 
 ## Configuration
 

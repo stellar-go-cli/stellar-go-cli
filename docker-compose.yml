@@ -1,5 +1,8 @@
 services:
   mcp:
+    # Published to ghcr.io by the release workflow — `docker compose pull`
+    # fetches it; `docker compose up --build` builds from source instead.
+    image: ghcr.io/stellar-go-cli/stellar-go-cli-mcp:latest
     build:
       context: .
       dockerfile: Dockerfile.mcp

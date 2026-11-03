@@ -30,6 +30,40 @@ archives:
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
 
+# Keyless cosign signatures: every artifact gets a sigstore bundle
+# (${artifact}.bundle) verifiable against the GitHub Actions OIDC identity.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.bundle"
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--bundle=${signature}"
+      - "${artifact}"
+    artifacts: all
+
+# SBOM per archive (CycloneDX via syft — installed in release.yml).
+sboms:
+  - artifacts: archive
+    documents:
+      - "${artifact}.sbom.json"
+
+# Homebrew formula published to stellar-go-cli/homebrew-tap.
+# Requires a HOMEBREW_TAP_TOKEN secret with contents:write on the tap repo.
+brews:
+  - name: stellar-go-cli
+    repository:
+      owner: stellar-go-cli
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/stellar-go-cli/stellar-go-cli"
+    description: "Go CLI for the Stellar network — wallets, Soroban contracts, DEX swaps, DIDs and W3C Verifiable Credentials, ISO 20022 reporting"
+    license: "Apache-2.0"
+    install: |
+      bin.install "stellar-go-cli"
+    test: |
+      system "#{bin}/stellar-go-cli", "--help"
+
 changelog:
   sort: asc
   filters:
