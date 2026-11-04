@@ -26,8 +26,11 @@ func newDIDCmd(cfg *config.Config) *Command {
 	cmd := &Command{
 		Name:  "did",
 		Short: "Manage decentralized identifiers and verifiable credentials",
-		Long:  "Create DIDs using web/key/ethr/ebsi methods. Issue and verify W3C Verifiable Credentials.",
-		cfg:   cfg,
+		Long: "Create DIDs using web/key/ethr/ebsi methods. Issue and verify W3C Verifiable Credentials " +
+			"(Ed25519Signature2020 for Ed25519 issuers, ES256 JsonWebSignature2020 for ECDSA issuers). " +
+			"did:ethr and did:ebsi identifiers embed the public key and are locally derived — nothing is " +
+			"registered on Ethereum or EBSI.",
+		cfg: cfg,
 	}
 
 	// Sub-commands
@@ -61,6 +64,9 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 			ui.Header("Create DID")
 
 			m := models.DIDMethod(*method)
+			if m == models.DIDMethodEthr || m == models.DIDMethodEBSI {
+				*keyType = "ecdsa" // ethr/ebsi identifiers carry an ECDSA key
+			}
 			spin := ui.NewSpinner(fmt.Sprintf("Generating did:%s document...", m))
 			spin.Start()
 			time.Sleep(600 * time.Millisecond)
@@ -127,7 +133,7 @@ func newDIDCreateCmd(cfg *config.Config) *Command {
 
 func newDIDAttestCmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("attest", flag.ContinueOnError)
-	method := fs.String("method", "key", "DID method for the issuer identity: key | web (ed25519) | ethr | ebsi (jws only)")
+	method := fs.String("method", "key", "DID method for the issuer identity: key | web (ed25519) | ethr | ebsi (ECDSA, forces --proof-type jws)")
 	domain := fs.String("domain", "example.com", "Domain for did:web issuer (used with --method web)")
 	vcType := fs.String("vc", "national-id", "VC type: national-id | kyc | accreditation")
 	subjectDID := fs.String("subject-did", "", "DID of the credential subject (default: same as issuer — self-issued)")
@@ -151,10 +157,10 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			}
 
 			m := models.DIDMethod(*method)
-
-			if *proofType == proofTypeJWS {
-				ui.Warn("JWS proofs are simulated — the credential cannot be verified by this CLI")
+			if m == models.DIDMethodEthr || m == models.DIDMethodEBSI {
+				*proofType = proofTypeJWS // ethr/ebsi issuers sign with an ECDSA key
 			}
+
 			if m == models.DIDMethodWeb {
 				ui.Warn("A did:web issuer is verifiable only if the DID document is hosted at the domain")
 			}
@@ -369,10 +375,10 @@ func newDIDShowCmd(cfg *config.Config) *Command {
 				spec    string
 				usecase string
 			}{
-				{"did:web", "W3C DID Core", "Web-hosted DIDs for organizations (TLS-anchored)"},
-				{"did:key", "W3C DID Core", "Self-sovereign, portable, no registry required"},
-				{"did:ethr", "ERC-1056", "Ethereum-based DID, smart contract anchoring"},
-				{"did:ebsi", "EBSI v3", "EU Blockchain Services Infrastructure (eIDAS 2.0)"},
+				{"did:web", "W3C DID Core", "Web-hosted DIDs for organizations (TLS-anchored); verifiable"},
+				{"did:key", "W3C DID Core", "Self-sovereign, portable, no registry required; verifiable"},
+				{"did:ethr", "ERC-1056", "Key-embedded identifier, locally derived — no on-chain registration; verifiable (ES256 JWS)"},
+				{"did:ebsi", "EBSI v3", "Key-embedded identifier, locally derived — no EBSI registry anchoring; verifiable (ES256 JWS)"},
 			}
 
 			t := ui.NewTable("Method", "Spec", "Use Case")
@@ -380,6 +386,8 @@ func newDIDShowCmd(cfg *config.Config) *Command {
 				t.AddRow(ui.Teal_(m.method), m.spec, m.usecase)
 			}
 			t.Print()
+
+			ui.Info("All methods support credential verification: Ed25519Signature2020 for did:key/did:web, ES256 JsonWebSignature2020 for ECDSA issuers.")
 
 			if cfg.ActiveDID != "" {
 				ui.SectionLabel("Active DID")

@@ -96,7 +96,7 @@ func (s *Service) CreateDID(method models.DIDMethod, opts ...string) (*models.DI
 			}
 			did = mpCrypto.DIDWebFromDomain(domain)
 		default:
-			return nil, fmt.Errorf("DID method %s requires a secp256k1 (ECDSA) key — Ed25519 supports did:key and did:web", method)
+			return nil, fmt.Errorf("DID method %s requires an ECDSA (P-256) key — Ed25519 supports did:key and did:web", method)
 		}
 		pubKeyMultibase = mpCrypto.Ed25519PublicKeyToMultibase(s.ed25519Pub)
 		keyTypeStr = "Ed25519VerificationKey2020"
@@ -112,8 +112,7 @@ func (s *Service) CreateDID(method models.DIDMethod, opts ...string) (*models.DI
 			}
 			did = mpCrypto.DIDWebFromDomain(domain)
 		case models.DIDMethodEthr:
-			addr := mpCrypto.AddressFromPublicKey(pub)
-			did = mpCrypto.DIDEthrFromAddress(addr)
+			did = mpCrypto.DIDEthrFromPublicKey(pub)
 		case models.DIDMethodEBSI:
 			did = mpCrypto.DIDEBSIFromPublicKey(pub)
 		default:
@@ -181,6 +180,7 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 		contexts = []string{
 			"https://www.w3.org/ns/credentials/v2",
 			"https://www.w3.org/ns/credentials/examples/v2",
+			"https://w3id.org/security/suites/jws-2020/v1",
 		}
 	}
 
@@ -199,34 +199,29 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 		CredentialSubject: subject,
 	}
 
+	proofConfig := map[string]interface{}{
+		"created":            now.Format(time.RFC3339Nano),
+		"verificationMethod": did + "#keys-1",
+		"proofPurpose":       "assertionMethod",
+	}
 	if s.keyType == "ed25519" {
-		proofConfig := map[string]interface{}{
-			"@context":           []interface{}{"https://www.w3.org/ns/credentials/v2", "https://w3id.org/security/suites/ed25519-2020/v1"},
-			"type":               models.ProofTypeEd25519,
-			"created":            now.Format(time.RFC3339Nano),
-			"verificationMethod": did + "#keys-1",
-			"proofPurpose":       "assertionMethod",
-		}
+		proofConfig["@context"] = []interface{}{"https://www.w3.org/ns/credentials/v2", "https://w3id.org/security/suites/ed25519-2020/v1"}
+		proofConfig["type"] = models.ProofTypeEd25519
+	} else {
+		proofConfig["@context"] = []interface{}{"https://www.w3.org/ns/credentials/v2", "https://w3id.org/security/suites/jws-2020/v1"}
+		proofConfig["type"] = models.ProofTypeJWS
+	}
 
-		vcMap := map[string]interface{}{
-			"@context":          toInterfaceSlice(vc.Context),
-			"id":                vc.ID,
-			"type":              toInterfaceSlice(vc.Type),
-			"issuer":            vc.Issuer,
-			"issuanceDate":      vc.IssuanceDate.Format(time.RFC3339Nano),
-			"expirationDate":    vc.ExpirationDate.Format(time.RFC3339Nano),
-			"credentialSubject": subject,
-		}
+	vcMap := vcDocumentMap(vc, subject)
+	if err := mpCrypto.DetectDataLoss(vcMap); err != nil {
+		return nil, fmt.Errorf("data loss detection: %w", err)
+	}
 
-		if err := mpCrypto.DetectDataLoss(vcMap); err != nil {
-			return nil, fmt.Errorf("data loss detection: %w", err)
-		}
-
+	if s.keyType == "ed25519" {
 		sig, err := mpCrypto.SignEd25519VC(s.ed25519Priv, vcMap, proofConfig)
 		if err != nil {
 			return nil, fmt.Errorf("sign VC: %w", err)
 		}
-
 		vc.Proof = models.VCProof{
 			Type:               models.ProofTypeEd25519,
 			Created:            now,
@@ -235,16 +230,34 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 			ProofValue:         sig,
 		}
 	} else {
+		jws, err := mpCrypto.SignES256VC(s.ecdsaPriv, vcMap, proofConfig)
+		if err != nil {
+			return nil, fmt.Errorf("sign VC: %w", err)
+		}
 		vc.Proof = models.VCProof{
 			Type:               models.ProofTypeJWS,
 			Created:            now,
 			ProofPurpose:       "assertionMethod",
 			VerificationMethod: did + "#keys-1",
-			JWSSignature:       mpCrypto.SignVC(s.ecdsaPriv, vcID, subject),
+			JWSSignature:       jws,
 		}
 	}
 
 	return vc, nil
+}
+
+// vcDocumentMap renders a VerifiableCredential as the JSON-LD map the proof
+// is computed over — the credential without its proof.
+func vcDocumentMap(vc *models.VerifiableCredential, subject map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"@context":          toInterfaceSlice(vc.Context),
+		"id":                vc.ID,
+		"type":              toInterfaceSlice(vc.Type),
+		"issuer":            vc.Issuer,
+		"issuanceDate":      vc.IssuanceDate.Format(time.RFC3339Nano),
+		"expirationDate":    vc.ExpirationDate.Format(time.RFC3339Nano),
+		"credentialSubject": subject,
+	}
 }
 
 // IssueNationalIDVC issues a VC representing a verified National ID.
@@ -322,7 +335,7 @@ func VerifyDocument(doc map[string]interface{}) (bool, error) {
 	case models.ProofTypeEd25519:
 		return verifyEd25519Document(doc, proof, issuer)
 	case models.ProofTypeJWS:
-		return false, fmt.Errorf("%s verification is unsupported: JWS issuance in this library is simulated and produces no verifiable signature", models.ProofTypeJWS)
+		return verifyJWSDocument(doc, proof, issuer)
 	case "":
 		return false, fmt.Errorf("invalid VC: proof.type is missing")
 	default:
@@ -456,6 +469,57 @@ func verifyEd25519Document(doc, proof map[string]interface{}, issuer string) (bo
 	return true, nil
 }
 
+func verifyJWSDocument(doc, proof map[string]interface{}, issuer string) (bool, error) {
+	vm, _ := proof["verificationMethod"].(string)
+	if proofPurpose, _ := proof["proofPurpose"].(string); proofPurpose == "" {
+		return false, fmt.Errorf("invalid VC: proof.proofPurpose is missing")
+	}
+	jws, _ := proof["jws"].(string)
+	if jws == "" {
+		return false, fmt.Errorf("invalid VC: proof.jws is missing")
+	}
+	pub, err := ResolveECDSAKey(issuer, vm)
+	if err != nil {
+		return false, err
+	}
+
+	// The signed document is the credential minus its proof.
+	docCanon := make(map[string]interface{}, len(doc))
+	for k, v := range doc {
+		if k != "proof" {
+			docCanon[k] = v
+		}
+	}
+	// The signed proof config is the proof minus the signature itself.
+	proofConfig := make(map[string]interface{}, len(proof))
+	for k, v := range proof {
+		if k != "proofValue" && k != "jws" {
+			proofConfig[k] = v
+		}
+	}
+	if _, ok := proofConfig["@context"]; !ok {
+		// Credentials issued before the proof carried an explicit @context
+		// were signed with this default context pair.
+		proofConfig["@context"] = []interface{}{
+			"https://www.w3.org/ns/credentials/v2",
+			"https://w3id.org/security/suites/jws-2020/v1",
+		}
+	}
+
+	if err := mpCrypto.DetectDataLoss(docCanon); err != nil {
+		return false, fmt.Errorf("data loss detection: %w", err)
+	}
+
+	valid, err := mpCrypto.VerifyES256VC(pub, docCanon, proofConfig, jws)
+	if err != nil {
+		return false, fmt.Errorf("verification error: %w", err)
+	}
+	if !valid {
+		return false, fmt.Errorf("signature verification failed: cryptographic proof is invalid (wrong canonicalization, wrong hash algorithm, or tampered data)")
+	}
+	return true, nil
+}
+
 // checkIssuerControl ensures the service signs only for identities its key
 // controls. did:web is exempt — domain ownership is proven by hosting the DID
 // document, which cannot be checked offline.
@@ -470,7 +534,7 @@ func (s *Service) checkIssuerControl(did string) error {
 		pub := &s.ecdsaPriv.PublicKey
 		controlled = []string{
 			mpCrypto.DIDKeyFromPublicKey(pub),
-			mpCrypto.DIDEthrFromAddress(mpCrypto.AddressFromPublicKey(pub)),
+			mpCrypto.DIDEthrFromPublicKey(pub),
 			mpCrypto.DIDEBSIFromPublicKey(pub),
 		}
 	}

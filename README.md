@@ -32,7 +32,7 @@ cosign verify-blob --bundle stellar-go-cli_<ver>_checksums.txt.bundle \
 
 Container images are published to GHCR as `ghcr.io/stellar-go-cli/stellar-go-cli-{cli,mcp,vc-api}` — see [Docker](#docker).
 
-**Status:** wallet/payments/swaps run against mainnet and testnet. DID/VC issuance (Ed25519Signature2020 proofs, cryptographic verification) and ISO 20022 pacs.008/002/004/009 export (validated against the official XSDs) are working prototypes — VCs are self-issued unless an external issuer is configured. This is not a Stellar Development Foundation project.
+**Status:** wallet/payments/swaps run against mainnet and testnet. DID/VC issuance (Ed25519Signature2020 and ES256 JsonWebSignature2020 proofs, cryptographic verification) and ISO 20022 pacs.008/002/004/009 export (validated against the official XSDs) are working prototypes — VCs are self-issued unless an external issuer is configured. This is not a Stellar Development Foundation project.
 
 The codebase was originally developed as part of a downstream commercial product and was extracted into this standalone public repository. [MozartPay Orchestrated Agreements](https://github.com/mozartpay/OAs) is the first downstream consumer.
 
@@ -42,9 +42,9 @@ The codebase was originally developed as part of a downstream commercial product
 - **Payments** — Direct Stellar payments, x402 pay-per-use flow, FX quotes
 - **Swaps** — Path-payment quotes and execution on the Stellar DEX
 - **Assets** — SEP-41 fungible tokens and non-fungible assets (SAC), trustlines, claimable balances, liquidity pools
-- **DIDs & VCs** — Create `did:web`/`did:key`/`did:ethr`/`did:ebsi` documents; issue and verify W3C Verifiable Credentials
+- **DIDs & VCs** — Create `did:web`/`did:key`/`did:ethr`/`did:ebsi` documents and issue and cryptographically verify W3C Verifiable Credentials (Ed25519Signature2020 for Ed25519 issuers, ES256 JsonWebSignature2020 for ECDSA issuers; `did:ethr`/`did:ebsi` embed the key and are locally derived)
 - **Soroban contracts** — Deploy any `.wasm` contract and invoke methods — pure Go, no `stellar` CLI required
-- **ISO 20022 reporting** — Export transactions as `pacs.008`/`pacs.002`/`pacs.004`/`pacs.009` XML; `pkg/iso20022` also builds batch `pain.001` disbursement initiations and `camt.054` settlement notifications
+- **ISO 20022 reporting** — Export transactions as `pacs.008`/`pacs.002`/`pacs.004`/`pacs.009` XML; `pkg/iso20022` also builds batch `pain.001` disbursement initiations, `pain.002` status reports, `camt.053` statements, and `camt.054` settlement notifications
 - **MCP server** — Expose CLI functionality as tools for AI assistants over stdio or SSE
 
 ## Requirements
@@ -98,7 +98,7 @@ stellar-go-cli report iso20022 --type pacs.008 > report.xml
 | `pay` | `send`, `quote`, `x402`, … |
 | `swap` | `quote`, `execute`, `zk`, `arbitrage`, `scan`, `monitor`, `assets` (+ `triangular` with `-tags extras`) |
 | `pool` | Liquidity pool operations |
-| `trade` | Trading strategies (dca, grid, momentum, …) |
+| `trade` | Trading strategies (arbitrage, mean_reversion, momentum, grid_trading, dca, breakout, scalping) |
 | `asset` | `create-ft`, `create-nfa`, `trust`, `untrust`, `carbon`, `show` |
 | `claimable` | Claimable balance operations |
 | `contract` | `deploy`, `invoke` (`--simulate` for read-only), `set` |
@@ -116,9 +116,10 @@ Reusable packages are public under `pkg/` and render on [pkg.go.dev](https://pkg
 | Package | Description |
 |---------|-------------|
 | `pkg/soroban` | Pure-Go Soroban RPC client: upload WASM, deploy, invoke, simulate, query contract events (`getEvents`) |
-| `pkg/iso20022` | ISO 20022 XML generation — pacs.008/002/004/009, batch pacs.008/002, pain.001, camt.054 |
-| `pkg/vc` | W3C DID creation and Verifiable Credential issuance/verification; `did:key` + `did:web` issuer resolution |
+| `pkg/iso20022` | ISO 20022 XML generation — pacs.008/002/004/009, batch pacs.008/002, pain.001/002, camt.053/054 |
+| `pkg/vc` | W3C DID creation and Verifiable Credential issuance/verification; local resolution for `did:key`, `did:ebsi` and public-key-form `did:ethr`, `did:web` over HTTPS |
 | `pkg/swap` | Stellar DEX path-payment quoting and execution |
+| `pkg/x402` | x402 v2 HTTP 402 pay-per-use protocol for Stellar (client + facilitator) |
 | `pkg/models` | Shared types (Payment, Asset, DIDDocument, VerifiableCredential, …) |
 | `pkg/crypto` | Key generation, hashing, and encoding helpers |
 
@@ -188,10 +189,10 @@ Config is stored at `~/.stellar-go-cli/config.json`; state files under `~/.stell
 
 ## Standards
 
-- **W3C DID Core 1.0** / **VC Data Model 2.0** (Ed25519Signature2020, JWS)
-- **EBSI v3** DID method support
+- **W3C DID Core 1.0** / **VC Data Model 2.0** (Ed25519Signature2020, JsonWebSignature2020/ES256)
+- **EBSI v3** did:ebsi identifier format (key-embedded, locally derived — no registry anchoring)
 - **SEP-41** Stellar token interface (SAC)
-- **ISO 20022** — pacs.008.001.14, pacs.002.001.16, pacs.004.001.15, pacs.009.001.13, pain.001.001.13, camt.054.001.14
+- **ISO 20022** — pacs.008.001.14, pacs.002.001.16, pacs.004.001.15, pacs.009.001.13, pain.001.001.13, pain.002.001.10, camt.053.001.13, camt.054.001.14
 - **x402 / HTTP 402** payment flow
 
 ## Downstream users
@@ -202,6 +203,7 @@ Config is stored at `~/.stellar-go-cli/config.json`; state files under `~/.stell
 
 - **Self-issued VCs are not KYC** — credentials are self-issued (they prove key control, not verified identity) unless an external issuer is configured.
 - **Identity trust anchor is off-chain** — DID/VC issuance and verification resolve off-chain; nothing is anchored to the Stellar ledger.
+- **`did:ethr`/`did:ebsi` are locally derived identifier formats** — they embed the public key and verify cryptographically (ES256 JWS), but are never registered on Ethereum or EBSI, so they prove key control, not registry-backed identity.
 
 ## Contributing
 

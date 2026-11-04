@@ -9,10 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
-	"time"
 
 	"github.com/piprate/json-gold/ld"
 )
@@ -99,15 +99,91 @@ func RandomBase64(n int) string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// SimulatedSign creates a deterministic pseudo-signature for MVP
-func SimulatedSign(privateKey *ecdsa.PrivateKey, data []byte) string {
-	h := sha256.Sum256(data)
-	r, s, err := ecdsa.Sign(rand.Reader, privateKey, h[:])
+// ─────────────────────────────────────────────
+// JsonWebSignature2020 (detached JWS, ES256)
+// ─────────────────────────────────────────────
+
+// jwsHeaderB64 is the base64url-encoded protected header used for VC proofs:
+// ES256 over the unencoded detached payload (RFC 7797), matching the
+// JsonWebSignature2020 linked-data proof format.
+const jwsHeaderB64 = "eyJhbGciOiJFUzI1NiIsImI2NCI6ZmFsc2UsImNyaXQiOlsiYjY0Il19"
+
+// jwsSigningInput builds the ES256 signing input
+// b64(header) + "." + hex(sha256(c14n proofConfig)) + "." + hex(sha256(c14n doc))
+// used by JsonWebSignature2020: the proof options hash precedes the document
+// hash, both computed over URDNA2015-canonicalized input.
+func jwsSigningInput(vcMap, proofConfig map[string]interface{}) (string, error) {
+	configCanonical, err := CanonicalizeRDF(proofConfig)
 	if err != nil {
-		return RandomHex(64)
+		return "", fmt.Errorf("canonicalize proof config: %w", err)
 	}
-	sig := append(r.Bytes(), s.Bytes()...)
-	return base64.RawURLEncoding.EncodeToString(sig)
+	vcCanonical, err := CanonicalizeRDF(vcMap)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize VC: %w", err)
+	}
+	payload := hex.EncodeToString(HashData(configCanonical)) + "." + hex.EncodeToString(HashData(vcCanonical))
+	return jwsHeaderB64 + "." + payload, nil
+}
+
+// SignES256VC signs a VC using the JsonWebSignature2020 approach and returns
+// the detached compact JWS "b64(header)..b64(signature)" for the proof's
+// jws property. The signature is over the document and proof-option hashes,
+// so any tampering invalidates it.
+func SignES256VC(priv *ecdsa.PrivateKey, vcMap, proofConfig map[string]interface{}) (string, error) {
+	input, err := jwsSigningInput(vcMap, proofConfig)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256([]byte(input))
+	r, s, err := ecdsa.Sign(rand.Reader, priv, digest[:])
+	if err != nil {
+		return "", fmt.Errorf("ES256 sign: %w", err)
+	}
+	sig := make([]byte, 64)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	return jwsHeaderB64 + ".." + base64.RawURLEncoding.EncodeToString(sig), nil
+}
+
+// VerifyES256VC verifies a detached JsonWebSignature2020 proof produced by
+// SignES256VC. Only the ES256 / b64=false detached profile is accepted.
+func VerifyES256VC(pub *ecdsa.PublicKey, vcMap, proofConfig map[string]interface{}, jws string) (bool, error) {
+	parts := strings.Split(jws, ".")
+	if len(parts) != 3 || parts[1] != "" {
+		return false, fmt.Errorf("expected detached compact JWS (header..signature)")
+	}
+	hdrJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return false, fmt.Errorf("decode JWS header: %w", err)
+	}
+	var hdr struct {
+		Alg string `json:"alg"`
+		B64 *bool  `json:"b64"`
+	}
+	if err := json.Unmarshal(hdrJSON, &hdr); err != nil {
+		return false, fmt.Errorf("parse JWS header: %w", err)
+	}
+	if hdr.Alg != "ES256" {
+		return false, fmt.Errorf("unsupported JWS alg %q (expected ES256)", hdr.Alg)
+	}
+	if hdr.B64 == nil || *hdr.B64 {
+		return false, fmt.Errorf("only detached unencoded payloads (b64=false) are supported")
+	}
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false, fmt.Errorf("decode JWS signature: %w", err)
+	}
+	if len(sigBytes) != 64 {
+		return false, fmt.Errorf("ES256 signature must be 64 bytes, got %d", len(sigBytes))
+	}
+	input, err := jwsSigningInput(vcMap, proofConfig)
+	if err != nil {
+		return false, err
+	}
+	digest := sha256.Sum256([]byte(input))
+	r := new(big.Int).SetBytes(sigBytes[:32])
+	s := new(big.Int).SetBytes(sigBytes[32:])
+	return ecdsa.Verify(pub, digest[:], r, s), nil
 }
 
 // TxHash generates a realistic-looking transaction hash
@@ -349,26 +425,98 @@ func DIDWebFromDomain(domain string) string {
 	return "did:web:" + domain
 }
 
-// DIDEthrFromAddress builds a did:ethr identifier
+// DIDEthrFromAddress builds a did:ethr identifier from an address. Note that
+// address-form identifiers do not carry the public key and therefore cannot
+// be resolved locally — prefer DIDEthrFromPublicKey.
 func DIDEthrFromAddress(addr string) string {
 	return "did:ethr:" + addr
 }
 
-// DIDEBSIFromPublicKey builds a did:ebsi identifier
+// DIDEthrFromPublicKey builds a did:ethr identifier whose method-specific-id
+// is the uncompressed SEC 1 public key (did:ethr:0x04<128 hex chars>).
+// Public-key identifiers are valid per the did:ethr method spec and resolve
+// without an EthrDIDRegistry lookup.
+func DIDEthrFromPublicKey(pub *ecdsa.PublicKey) string {
+	return "did:ethr:0x" + PublicKeyToHex(pub)
+}
+
+// DIDEBSIFromPublicKey builds a did:ebsi identifier that embeds the public
+// key as base58btc multibase (did:ebsi:z<65-byte uncompressed SEC 1 point>),
+// making the DID self-contained and locally resolvable.
 func DIDEBSIFromPublicKey(pub *ecdsa.PublicKey) string {
-	b := marshalPublicKey(pub)
-	h := sha256.Sum256(b)
-	enc := base58Encode(h[:16])
-	return "did:ebsi:z" + enc
+	return "did:ebsi:" + PublicKeyToMultibase(pub)
 }
 
 // ─────────────────────────────────────────────
-// Verifiable Credential JWT-like signing
+// ECDSA public key resolution
 // ─────────────────────────────────────────────
 
-func SignVC(privateKey *ecdsa.PrivateKey, vcID string, subject map[string]interface{}) string {
-	payload := fmt.Sprintf(`{"vcId":"%s","iat":%d}`, vcID, time.Now().Unix())
-	return SimulatedSign(privateKey, []byte(payload))
+// DecodeECDSAPublicKeyMultibase decodes a base58btc ("z") multibase carrying
+// an uncompressed SEC 1 P-256 public key (0x04 || X || Y).
+func DecodeECDSAPublicKeyMultibase(mb string) (*ecdsa.PublicKey, error) {
+	if !strings.HasPrefix(mb, "z") {
+		return nil, fmt.Errorf("expected base58btc multibase (z prefix)")
+	}
+	raw, err := base58Decode(mb[1:])
+	if err != nil {
+		return nil, fmt.Errorf("base58 decode: %w", err)
+	}
+	return decodeP256Point(raw)
+}
+
+// DecodeECDSAPublicKeyFromDIDKey resolves a did:key carrying an ECDSA P-256 key.
+func DecodeECDSAPublicKeyFromDIDKey(did string) (*ecdsa.PublicKey, error) {
+	msid, ok := strings.CutPrefix(did, "did:key:")
+	if !ok {
+		return nil, fmt.Errorf("not a did:key identifier: %q", did)
+	}
+	return DecodeECDSAPublicKeyMultibase(msid)
+}
+
+// DecodeECDSAPublicKeyFromDIDEBSI resolves a did:ebsi identifier produced by
+// DIDEBSIFromPublicKey. Identifiers holding a key hash rather than the key
+// itself cannot be resolved and are rejected.
+func DecodeECDSAPublicKeyFromDIDEBSI(did string) (*ecdsa.PublicKey, error) {
+	msid, ok := strings.CutPrefix(did, "did:ebsi:")
+	if !ok {
+		return nil, fmt.Errorf("not a did:ebsi identifier: %q", did)
+	}
+	return DecodeECDSAPublicKeyMultibase(msid)
+}
+
+// DecodeECDSAPublicKeyFromDIDEthr resolves a did:ethr whose
+// method-specific-id is the uncompressed SEC 1 public key
+// (did:ethr:0x04<128 hex chars>, optionally chain-prefixed). Address-form
+// identifiers (did:ethr:0x<40 hex>) need an EthrDIDRegistry lookup, which
+// this library does not perform, and are rejected.
+func DecodeECDSAPublicKeyFromDIDEthr(did string) (*ecdsa.PublicKey, error) {
+	msid, ok := strings.CutPrefix(did, "did:ethr:")
+	if !ok {
+		return nil, fmt.Errorf("not a did:ethr identifier: %q", did)
+	}
+	if i := strings.LastIndex(msid, ":"); i >= 0 {
+		msid = msid[i+1:]
+	}
+	raw, err := hex.DecodeString(strings.TrimPrefix(msid, "0x"))
+	if err != nil {
+		return nil, fmt.Errorf("did:ethr method-specific-id is not hex: %w", err)
+	}
+	if len(raw) == 20 {
+		return nil, fmt.Errorf("address-form did:ethr requires EthrDIDRegistry resolution, which is unsupported")
+	}
+	return decodeP256Point(raw)
+}
+
+// decodeP256Point parses a 65-byte uncompressed SEC 1 P-256 public key.
+func decodeP256Point(b []byte) (*ecdsa.PublicKey, error) {
+	if len(b) != 65 || b[0] != 0x04 {
+		return nil, fmt.Errorf("expected 65-byte uncompressed P-256 point (0x04 prefix), got %d bytes", len(b))
+	}
+	pub, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), b)
+	if err != nil {
+		return nil, fmt.Errorf("invalid P-256 public key: %w", err)
+	}
+	return pub, nil
 }
 
 // ─────────────────────────────────────────────

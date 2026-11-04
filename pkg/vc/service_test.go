@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,7 +230,105 @@ func resign(t *testing.T, svc *Service, doc map[string]interface{}) {
 	}
 }
 
-func TestVerifyDocumentJWSFailsExplicitly(t *testing.T) {
+func newECDSAService(t *testing.T) *Service {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	return NewServiceWithECDSAKey(key)
+}
+
+func issueJWS(t *testing.T, svc *Service, method models.DIDMethod, subject map[string]interface{}, opts ...string) (string, map[string]interface{}) {
+	t.Helper()
+	doc, err := svc.CreateDID(method, opts...)
+	if err != nil {
+		t.Fatalf("CreateDID %s: %v", method, err)
+	}
+	cred, err := svc.IssueVC(doc.ID, "TestCredential", subject)
+	if err != nil {
+		t.Fatalf("IssueVC: %v", err)
+	}
+	return doc.ID, toDoc(t, cred)
+}
+
+func TestVerifyDocumentJWSEBSIRoundTrip(t *testing.T) {
+	svc := newECDSAService(t)
+	issuer, doc := issueJWS(t, svc, models.DIDMethodEBSI, map[string]interface{}{"id": "did:key:subject"})
+	if !strings.HasPrefix(issuer, "did:ebsi:z") {
+		t.Fatalf("expected did:ebsi issuer, got %s", issuer)
+	}
+	valid, err := VerifyDocument(doc)
+	if err != nil {
+		t.Fatalf("VerifyDocument: %v", err)
+	}
+	if !valid {
+		t.Fatal("expected valid credential")
+	}
+}
+
+func TestVerifyDocumentJWSEthrRoundTrip(t *testing.T) {
+	svc := newECDSAService(t)
+	issuer, doc := issueJWS(t, svc, models.DIDMethodEthr, map[string]interface{}{"id": "did:key:subject"})
+	if !strings.HasPrefix(issuer, "did:ethr:0x04") {
+		t.Fatalf("expected public-key-form did:ethr issuer, got %s", issuer)
+	}
+	valid, err := VerifyDocument(doc)
+	if err != nil {
+		t.Fatalf("VerifyDocument: %v", err)
+	}
+	if !valid {
+		t.Fatal("expected valid credential")
+	}
+}
+
+func TestVerifyDocumentJWSDIDKeyRoundTrip(t *testing.T) {
+	svc := newECDSAService(t)
+	_, doc := issueJWS(t, svc, models.DIDMethodKey, map[string]interface{}{"id": "did:key:subject"})
+	valid, err := VerifyDocument(doc)
+	if err != nil {
+		t.Fatalf("VerifyDocument: %v", err)
+	}
+	if !valid {
+		t.Fatal("expected valid credential")
+	}
+}
+
+func TestVerifyDocumentJWSTamperedSubject(t *testing.T) {
+	svc := newECDSAService(t)
+	_, doc := issueJWS(t, svc, models.DIDMethodEBSI, map[string]interface{}{"id": "did:key:a", "level": "KYC_LEVEL_1"})
+	doc["credentialSubject"].(map[string]interface{})["level"] = "KYC_LEVEL_9"
+	if _, err := VerifyDocument(doc); err == nil {
+		t.Fatal("expected verification to fail for tampered subject")
+	}
+}
+
+func TestVerifyDocumentJWSIssuerBinding(t *testing.T) {
+	svc := newECDSAService(t)
+	_, doc := issueJWS(t, svc, models.DIDMethodEBSI, map[string]interface{}{"id": "did:key:a"})
+	doc["proof"].(map[string]interface{})["verificationMethod"] = "did:ebsi:zSomebodyElse#keys-1"
+	if _, err := VerifyDocument(doc); err == nil {
+		t.Fatal("expected verificationMethod/issuer mismatch to fail")
+	}
+}
+
+func TestResolveECDSAKeyRejectsUnresolvableDIDs(t *testing.T) {
+	// Address-form did:ethr carries no key material — it needs a registry.
+	if _, err := ResolveECDSAKey("did:ethr:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0", "did:ethr:0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0#controller"); err == nil {
+		t.Fatal("expected address-form did:ethr resolution to fail")
+	}
+	// Hash-based did:ebsi (16-byte digest form) carries no key material.
+	if _, err := ResolveECDSAKey("did:ebsi:z8aBCD2nVqZ1xKj", "did:ebsi:z8aBCD2nVqZ1xKj#keys-1"); err == nil {
+		t.Fatal("expected hash-based did:ebsi resolution to fail")
+	}
+	// An ed25519 did:key has no ECDSA key material.
+	edSvc := newService(t)
+	if _, err := ResolveECDSAKey(mpCrypto.DIDKeyFromEd25519PublicKey(edSvc.ed25519Pub), mpCrypto.DIDKeyFromEd25519PublicKey(edSvc.ed25519Pub)+"#keys-1"); err == nil {
+		t.Fatal("expected ed25519 did:key ECDSA resolution to fail")
+	}
+}
+
+func TestVerifyDocumentJWSMalformed(t *testing.T) {
 	svc := newService(t)
 	doc := issueSelfSigned(t, svc, map[string]interface{}{"id": "did:key:a"})
 	doc["proof"] = map[string]interface{}{
@@ -240,7 +339,7 @@ func TestVerifyDocumentJWSFailsExplicitly(t *testing.T) {
 		"jws":                "simulated",
 	}
 	if _, err := VerifyDocument(doc); err == nil {
-		t.Fatal("expected JWS proof to fail explicitly")
+		t.Fatal("expected malformed JWS proof to fail")
 	}
 }
 
