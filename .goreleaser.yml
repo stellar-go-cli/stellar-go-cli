@@ -30,6 +30,11 @@ archives:
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
 
+release:
+  # Replace assets instead of failing with 422 when a run is retried after a
+  # partial publish (e.g. artifacts uploaded but a later publish step failed).
+  replace_existing_artifacts: true
+
 # Keyless cosign signatures: every artifact gets a sigstore bundle
 # (${artifact}.bundle) verifiable against the GitHub Actions OIDC identity.
 signs:
