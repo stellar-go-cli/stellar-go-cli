@@ -31,13 +31,15 @@ go vet ./...
 The repo has two Go modules:
 
 - **Root module** `github.com/stellar-go-cli/stellar-go-cli` — CLI and internals (`cmd/`, `internal/`)
-- **Library module** `github.com/stellar-go-cli/stellar-go-cli/pkg` — the public `pkg/` packages (`pkg/go.mod`, deps: `stellar/go` + `piprate/json-gold` only). The root module consumes it via `replace => ./pkg`.
+- **Library module** `github.com/stellar-go-cli/stellar-go-cli/pkg` — the public `pkg/` packages (`pkg/go.mod`, deps: `stellar/go-stellar-sdk` + `piprate/json-gold` only). The root module requires a published `pkg/v*` version; local builds resolve it to `./pkg` via the committed `go.work` workspace.
 
 Consequences:
 
 - `go test ./...` at the root does **not** run `pkg/` tests — use `make test` or `cd pkg && go test ./...`
 - **`pkg/` must never import `internal/`** — it is a standalone public library
 - **Releases**: the library is versioned with `pkg/vX.Y.Z` git tags (consumers `go get ...@pkg/v0.1.0`); CLI binary releases keep `vX.Y.Z` tags
+- **No `replace`/`exclude` directives in root `go.mod`** — Go rejects `go install`/`go run ...@version` for modules whose go.mod contains `replace` (it would be silently ignored outside the main module). `go.work` provides the local `./pkg` mapping instead; it only applies inside this checkout and is ignored by `@version` installs.
+- **The root `pkg` require must point at a published `pkg/v*` tag** — `go install ...@latest` and external consumers resolve that version, not the local tree. Local builds use the workspace, so the two can diverge silently; see the release-ordering rule below.
 
 Non-core command groups (`chat`, `chat_finetune`, `terminal`, `triangular`, `exchange`) live behind the `extras` build tag. Registration goes through `registerExtras` in `cmd/stellar-go-cli/commands/extras.go` (with a `!extras` stub in `extras_disabled.go`).
 
@@ -176,6 +178,8 @@ Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml` (GoReleaser):
 - **GHCR images**: `ghcr.io/<owner>/stellar-go-cli-{mcp,cli,vc-api}:<tag>` + `:latest`, built from the matching `Dockerfile` targets and cosign-signed by digest
 
 `pkg/vX.Y.Z` library tags intentionally do **not** trigger this workflow (`v*` filter only matches CLI release tags).
+
+**Release ordering:** if `pkg/` changed, push its `pkg/vX.Y.Z` tag *first* and bump the root `go.mod` `pkg` require to that version before tagging the CLI release. `go install ...@latest` and `go get` resolve the published library version (the committed `go.work` is ignored outside this checkout), while release binaries/CI build the local `./pkg` — a stale require makes those two builds diverge.
 
 ---
 

@@ -2,8 +2,6 @@ module github.com/stellar-go-cli/stellar-go-cli
 
 go 1.26.0
 
-replace github.com/stellar-go-cli/stellar-go-cli/pkg => ./pkg
-
 require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -11,8 +9,9 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/mattn/go-sqlite3 v1.14.37
 	github.com/prometheus/client_golang v1.19.1
-	github.com/stellar-go-cli/stellar-go-cli/pkg v0.0.0-00010101000000-000000000000
+	github.com/stellar-go-cli/stellar-go-cli/pkg v0.4.0
 	github.com/stellar/go-stellar-sdk v0.7.3
+	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.57.0
 	golang.org/x/term v0.46.0
 	golang.org/x/text v0.42.0
@@ -71,7 +70,6 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/zalando/go-keyring v0.2.8 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/sync v0.23.0 // indirect

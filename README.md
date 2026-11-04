@@ -17,6 +17,8 @@ brew install stellar-go-cli/tap/stellar-go-cli
 go install github.com/stellar-go-cli/stellar-go-cli/cmd/stellar-go-cli@latest
 ```
 
+(`go install` needs a release after v0.6.0 — v0.6.0's go.mod contained a `replace` directive, which Go rejects for `@version` installs. On v0.6.0 use Homebrew above, or `git clone` + `make install`.)
+
 Prebuilt binaries for linux/darwin/windows (amd64/arm64) are attached to every
 [GitHub Release](https://github.com/stellar-go-cli/stellar-go-cli/releases)
 with checksums, a CycloneDX SBOM, and cosign signature bundles:
