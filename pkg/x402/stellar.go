@@ -82,9 +82,51 @@ func (b *StellarExactBuilder) CreatePaymentPayload(
 	}, nil
 }
 
+// CreateUnsignedPaymentPayload builds a dry-run preview payload: the same
+// envelope shape as CreatePaymentPayload but with the payer authorization
+// entry left unsigned, so it cannot be settled by a facilitator.
+func (b *StellarExactBuilder) CreateUnsignedPaymentPayload(
+	ctx context.Context,
+	required *PaymentRequired,
+	accepted *PaymentRequirements,
+) (*PaymentPayload, error) {
+	if required == nil {
+		return nil, fmt.Errorf("payment required challenge is empty")
+	}
+	if err := ValidateStellarRequirement(accepted); err != nil {
+		return nil, err
+	}
+
+	transaction, err := b.BuildUnsignedTransferTransaction(ctx, accepted)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PaymentPayload{
+		X402Version: Version2,
+		Payload: map[string]interface{}{
+			"transaction": transaction,
+		},
+		Accepted:   *accepted,
+		Resource:   required.Resource,
+		Extensions: required.Extensions,
+	}, nil
+}
+
 // BuildTransferTransaction returns the unsigned transaction envelope XDR with
 // signed authorization entries expected by a Stellar x402 facilitator.
 func (b *StellarExactBuilder) BuildTransferTransaction(ctx context.Context, req *PaymentRequirements) (string, error) {
+	return b.buildTransferTransaction(ctx, req, true)
+}
+
+// BuildUnsignedTransferTransaction returns the transaction envelope XDR with
+// the payer authorization entry left unsigned — a preview that cannot be
+// submitted or settled.
+func (b *StellarExactBuilder) BuildUnsignedTransferTransaction(ctx context.Context, req *PaymentRequirements) (string, error) {
+	return b.buildTransferTransaction(ctx, req, false)
+}
+
+func (b *StellarExactBuilder) buildTransferTransaction(ctx context.Context, req *PaymentRequirements, sign bool) (string, error) {
 	if err := ValidateStellarRequirement(req); err != nil {
 		return "", err
 	}
@@ -141,6 +183,20 @@ func (b *StellarExactBuilder) BuildTransferTransaction(ctx context.Context, req 
 	}
 	if err := validateTransferAuthEntry(op.Auth[0], contractAddress, fromAddress, toAddress, amount, b.signer.Address()); err != nil {
 		return "", err
+	}
+
+	if !sign {
+		// Dry-run preview: keep the recording-mode auth entry unsigned and skip
+		// the enforce-mode re-simulation, which would reject it.
+		unsignedTx, err := rebuildInvokeTransaction(assembled, op, stellarX402BaseFee, int64(req.MaxTimeoutSeconds))
+		if err != nil {
+			return "", err
+		}
+		encoded, err := unsignedTx.Base64()
+		if err != nil {
+			return "", fmt.Errorf("serialize payment transaction: %w", err)
+		}
+		return encoded, nil
 	}
 
 	latestLedger := simResp.LatestLedger

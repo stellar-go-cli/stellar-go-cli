@@ -5,12 +5,16 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,7 +25,20 @@ import (
 const (
 	jsonRPCVersion = "2.0"
 	mcpVersion     = "2024-11-05"
+
+	defaultSSEBind = "127.0.0.1"
 )
+
+// transportCtxKey marks which transport dispatched a tool call. Handlers use
+// it to restrict sensitive operations on the network-exposed HTTP transport.
+type transportCtxKey struct{}
+
+const transportHTTP = "http"
+
+func isHTTPTransport(ctx context.Context) bool {
+	t, _ := ctx.Value(transportCtxKey{}).(string)
+	return t == transportHTTP
+}
 
 // JSONRPCMessage represents a JSON-RPC 2.0 message
 type JSONRPCMessage struct {
@@ -98,8 +115,11 @@ func (s *Server) RegisterTool(tool Tool, handler ToolHandler) {
 	s.handlers[tool.Name] = handler
 }
 
-// Start begins the MCP server with the specified transport
-func (s *Server) Start(transport string, port int) error {
+// Start begins the MCP server with the specified transport. For the "sse"
+// transport, bind selects the listen address (loopback by default) and token,
+// when non-empty, requires Authorization: Bearer <token> on all endpoints
+// except /health. Binding a non-loopback address without a token is refused.
+func (s *Server) Start(transport string, port int, bind, token string) error {
 	s.logger.Printf("Starting MCP server (transport: %s)\n", transport)
 
 	// Register all tools
@@ -109,7 +129,7 @@ func (s *Server) Start(transport string, port int) error {
 	case "stdio":
 		return s.serveStdio()
 	case "sse":
-		return s.serveSSE(port)
+		return s.serveSSE(port, bind, token)
 	default:
 		return fmt.Errorf("unsupported transport: %s", transport)
 	}
@@ -382,22 +402,33 @@ func (s *Server) writeMessage(msg *JSONRPCMessage) error {
 }
 
 // serveSSE handles SSE transport over HTTP
-func (s *Server) serveSSE(port int) error {
+func (s *Server) serveSSE(port int, bind, token string) error {
+	if bind == "" {
+		bind = defaultSSEBind
+	}
+	loopback, err := isLoopbackBind(bind)
+	if err != nil {
+		return fmt.Errorf("invalid bind address: %w", err)
+	}
+	if !loopback && token == "" {
+		return fmt.Errorf("refusing to bind %s without authentication — pass --token (or set MCP_TOKEN) to expose the MCP server beyond loopback", bind)
+	}
+
 	mux := http.NewServeMux()
 
 	// SSE endpoint for server-to-client streaming
-	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/sse", s.requireAuth(token, func(w http.ResponseWriter, r *http.Request) {
 		s.handleSSEConnection(w, r)
-	})
+	}))
 
-	// Health check endpoint
+	// Health check endpoint (unauthenticated: exposes only a static status)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck // best-effort response write
 	})
 
 	// JSON-RPC message endpoint (for client-to-server)
-	mux.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/message", s.requireAuth(token, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -418,19 +449,70 @@ func (s *Server) serveSSE(port int) error {
 		response := s.handleMessageHTTP(&msg)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response) //nolint:errcheck // best-effort response write
-	})
+	}))
 
 	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Addr:              net.JoinHostPort(bind, strconv.Itoa(port)),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	s.logger.Printf("MCP SSE server listening on http://localhost:%d\n", port)
-	s.logger.Printf("  - SSE endpoint: http://localhost:%d/sse\n", port)
-	s.logger.Printf("  - Message endpoint: http://localhost:%d/message\n", port)
-	s.logger.Printf("  - Health check: http://localhost:%d/health\n", port)
+	base := fmt.Sprintf("http://%s:%d", bind, port)
+	s.logger.Printf("MCP SSE server listening on %s\n", base)
+	s.logger.Printf("  - SSE endpoint: %s/sse\n", base)
+	s.logger.Printf("  - Message endpoint: %s/message\n", base)
+	s.logger.Printf("  - Health check: %s/health\n", base)
+	if token != "" {
+		s.logger.Println("  - Bearer token authentication enabled")
+	} else {
+		s.logger.Println("  - No auth token configured (loopback only)")
+	}
 
 	return server.ListenAndServe()
+}
+
+// requireAuth wraps a handler with Bearer-token authentication. An empty
+// token disables the check (only permitted on loopback binds).
+func (s *Server) requireAuth(token string, next http.HandlerFunc) http.HandlerFunc {
+	if token == "" {
+		return next
+	}
+	const prefix = "Bearer "
+	return func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+		if !strings.HasPrefix(header, prefix) ||
+			subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(header, prefix)), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// isLoopbackBind reports whether a bind address resolves exclusively to
+// loopback interfaces.
+func isLoopbackBind(addr string) (bool, error) {
+	host := strings.TrimSpace(addr)
+	if host == "" {
+		return false, nil
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true, nil
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback(), nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false, fmt.Errorf("cannot resolve bind host %q", host)
+	}
+	for _, ip := range ips {
+		if !ip.IsLoopback() {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // handleSSEConnection handles Server-Sent Events connections
@@ -589,7 +671,7 @@ func (s *Server) handleToolsCallHTTP(msg *JSONRPCMessage) *JSONRPCMessage {
 		return s.createErrorResponse(msg.ID, MethodNotFound, fmt.Sprintf("Tool not found: %s", params.Name), nil)
 	}
 
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), transportCtxKey{}, transportHTTP)
 	result, err := handler(ctx, params.Arguments)
 	if err != nil {
 		return s.createToolErrorResponse(msg.ID, err)

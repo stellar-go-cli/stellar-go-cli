@@ -7,10 +7,15 @@ services:
       context: .
       dockerfile: Dockerfile.mcp
     ports:
-      - "3000:3000"
+      # Loopback-only publish — pair with a reverse proxy + MCP_TOKEN to expose.
+      - "127.0.0.1:3000:3000"
     environment:
       - TRANSPORT=sse
       - PORT=3000
+      # Container must bind all interfaces for the published port; the server
+      # refuses non-loopback binds without a token, so MCP_TOKEN is required.
+      - MCP_BIND=0.0.0.0
+      - MCP_TOKEN=${MCP_TOKEN:?set MCP_TOKEN before starting the MCP container}
       - LOG_LEVEL=info
       - NETWORK=stellar-testnet
     networks:
