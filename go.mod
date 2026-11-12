@@ -9,7 +9,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/mattn/go-sqlite3 v1.14.37
 	github.com/prometheus/client_golang v1.19.1
-	github.com/stellar-go-cli/stellar-go-cli/pkg v0.4.0
+	github.com/stellar-go-cli/stellar-go-cli/pkg v0.4.1
 	github.com/stellar/go-stellar-sdk v0.7.3
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.57.0
