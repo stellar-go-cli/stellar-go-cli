@@ -902,6 +902,12 @@ func (s *Server) handleWalletPasskey(ctx context.Context, args map[string]interf
 	address, _ := getStringArg(args, "address")
 	ttlStr, _ := getStringArg(args, "ttl_minutes")
 
+	// Ceremony-triggering actions open a browser on the server host; exposing
+	// them on the network transport only enables prompt-bombing the operator.
+	if isHTTPTransport(ctx) && (action == "register" || action == "unlock" || action == "disable") {
+		return nil, fmt.Errorf("wallet_passkey action %q is unavailable on the HTTP transport — use stdio transport or 'stellar-go-cli wallet passkey'", action)
+	}
+
 	svc := wallet.NewService()
 
 	// Resolve address: flag or active wallet
@@ -1173,6 +1179,10 @@ func (s *Server) handlePayX402(ctx context.Context, args map[string]interface{})
 	if s.cfg != nil && !s.cfg.Integrations.X402Enabled {
 		return nil, fmt.Errorf("x402 is disabled in configuration")
 	}
+	allowPrivateResource := getBoolArg(args, "allow_private_resource")
+	if err := validateOutboundURL(ctx, resource, allowPrivateResource); err != nil {
+		return nil, err
+	}
 
 	method, _ := getStringArg(args, "method")
 	if method == "" {
@@ -1205,8 +1215,16 @@ func (s *Server) handlePayX402(ctx context.Context, args map[string]interface{})
 		}
 	}
 
+	maxAtomicAmount, err := getAtomicAmountArg(args, "max_atomic_amount")
+	if err != nil {
+		return nil, err
+	}
+	execute := getBoolArg(args, "execute")
+	if execute && strings.TrimSpace(maxAtomicAmount) == "" {
+		return nil, fmt.Errorf("max_atomic_amount is required when execute=true — refusing an uncapped spend")
+	}
+
 	var signer *keypair.Full
-	var err error
 	if payer != "" {
 		signer, err = wallet.LoadStellarKeypairForAddress(payer)
 	} else {
@@ -1223,11 +1241,6 @@ func (s *Server) handlePayX402(ctx context.Context, args map[string]interface{})
 	}
 	defer rpcClient.Close() //nolint:errcheck // RPC client cleanup
 
-	maxAtomicAmount, err := getAtomicAmountArg(args, "max_atomic_amount")
-	if err != nil {
-		return nil, err
-	}
-	execute := getBoolArg(args, "execute")
 	result, err := client.Fetch(ctx, x402.Request{
 		Method:  strings.ToUpper(method),
 		URL:     strings.TrimSpace(resource),

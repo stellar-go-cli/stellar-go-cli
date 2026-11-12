@@ -31,6 +31,14 @@ type PaymentBuilder interface {
 	CreatePaymentPayload(ctx context.Context, required *PaymentRequired, accepted *PaymentRequirements) (*PaymentPayload, error)
 }
 
+// unsignedPayloadBuilder is an optional PaymentBuilder extension used on
+// dry-run fetches: it produces a preview payload without creating spendable
+// signatures. Builders that do not implement it fall back to
+// CreatePaymentPayload for dry-runs.
+type unsignedPayloadBuilder interface {
+	CreateUnsignedPaymentPayload(ctx context.Context, required *PaymentRequired, accepted *PaymentRequirements) (*PaymentPayload, error)
+}
+
 // Config configures an x402 HTTP client.
 type Config struct {
 	HTTPClient          HTTPClient
@@ -193,7 +201,16 @@ func (c *Client) Fetch(ctx context.Context, request Request, options FetchOption
 	if c.builder == nil {
 		return result, fmt.Errorf("no Stellar x402 payment builder configured")
 	}
-	payload, err := c.builder.CreatePaymentPayload(ctx, required, accepted)
+	var payload *PaymentPayload
+	if options.DryRun {
+		if ub, ok := c.builder.(unsignedPayloadBuilder); ok {
+			payload, err = ub.CreateUnsignedPaymentPayload(ctx, required, accepted)
+		} else {
+			payload, err = c.builder.CreatePaymentPayload(ctx, required, accepted)
+		}
+	} else {
+		payload, err = c.builder.CreatePaymentPayload(ctx, required, accepted)
+	}
 	if err != nil {
 		return result, fmt.Errorf("create Stellar payment payload: %w", err)
 	}
