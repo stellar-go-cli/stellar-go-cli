@@ -39,7 +39,10 @@ type VerifiableCredential struct {
 	IssuanceDate      time.Time              `json:"issuanceDate"`
 	ExpirationDate    time.Time              `json:"expirationDate"`
 	CredentialSubject map[string]interface{} `json:"credentialSubject"`
-	Proof             VCProof                `json:"proof"`
+	// CredentialStatus carries status-list entries (e.g. BitstringStatusListEntry)
+	// — preserved through signing so revocation references verify.
+	CredentialStatus interface{} `json:"credentialStatus,omitempty"`
+	Proof            VCProof     `json:"proof"`
 }
 
 const (

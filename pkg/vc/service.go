@@ -163,10 +163,29 @@ func (s *Service) CreateDID(method models.DIDMethod, opts ...string) (*models.DI
 // cannot be checked offline; the caller asserts control and the credential
 // verifies only if the document is actually published.
 func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*models.VerifiableCredential, error) {
+	return s.IssueVCWithValidity(did, vcType, subject, time.Now().UTC().Add(365*24*time.Hour))
+}
+
+// IssueVCWithValidity issues a credential with an explicit expiry — mandate
+// VCs and other bounded-authority credentials need shorter windows than the
+// default one-year validity.
+func (s *Service) IssueVCWithValidity(did, vcType string, subject map[string]interface{}, expiry time.Time) (*models.VerifiableCredential, error) {
+	return s.IssueVCWithExtras(did, vcType, subject, expiry, nil)
+}
+
+// IssueVCWithExtras issues a VC with additional top-level document properties
+// merged into the signed document — e.g. credentialStatus for status-list
+// entries. Recognized extras (credentialStatus) are set on the returned model.
+func (s *Service) IssueVCWithExtras(did, vcType string, subject map[string]interface{}, expiry time.Time, extras map[string]interface{}) (*models.VerifiableCredential, error) {
 	if err := s.checkIssuerControl(did); err != nil {
 		return nil, err
 	}
 	vcID := "urn:uuid:" + mpCrypto.RandomHex(16)
+	if extras != nil {
+		if id, _ := extras["id"].(string); id != "" {
+			vcID = id // caller-pinned id (e.g. a stable status-list URN) must be set before signing
+		}
+	}
 	now := time.Now().UTC()
 
 	var contexts []string
@@ -195,8 +214,13 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 		Type:              vcTypes,
 		Issuer:            did,
 		IssuanceDate:      now,
-		ExpirationDate:    now.Add(365 * 24 * time.Hour),
+		ExpirationDate:    expiry,
 		CredentialSubject: subject,
+	}
+	if extras != nil {
+		if st, ok := extras["credentialStatus"]; ok {
+			vc.CredentialStatus = st
+		}
 	}
 
 	proofConfig := map[string]interface{}{
@@ -247,25 +271,40 @@ func (s *Service) IssueVC(did, vcType string, subject map[string]interface{}) (*
 }
 
 // vcDocumentMap renders a VerifiableCredential as the JSON-LD map the proof
-// is computed over — the credential without its proof.
+// is computed over — the credential without its proof. Zero validity dates
+// are omitted rather than rendered as year-1 strings.
 func vcDocumentMap(vc *models.VerifiableCredential, subject map[string]interface{}) map[string]interface{} {
-	return map[string]interface{}{
+	doc := map[string]interface{}{
 		"@context":          toInterfaceSlice(vc.Context),
 		"id":                vc.ID,
 		"type":              toInterfaceSlice(vc.Type),
 		"issuer":            vc.Issuer,
-		"issuanceDate":      vc.IssuanceDate.Format(time.RFC3339Nano),
-		"expirationDate":    vc.ExpirationDate.Format(time.RFC3339Nano),
 		"credentialSubject": subject,
 	}
+	if !vc.IssuanceDate.IsZero() {
+		doc["issuanceDate"] = vc.IssuanceDate.Format(time.RFC3339Nano)
+	}
+	if !vc.ExpirationDate.IsZero() {
+		doc["expirationDate"] = vc.ExpirationDate.Format(time.RFC3339Nano)
+	}
+	if vc.CredentialStatus != nil {
+		doc["credentialStatus"] = vc.CredentialStatus
+	}
+	return doc
 }
 
 // IssueNationalIDVC issues a VC representing a verified National ID.
 // birthYear and level are optional — empty birthYear is omitted from the
-// subject; empty level defaults to KYC_LEVEL_2.
-func (s *Service) IssueNationalIDVC(did, holderDID, name, country, idNumber, birthYear, level string) (*models.VerifiableCredential, error) {
+// subject; empty level defaults to KYC_LEVEL_2. An optional vcTypes argument
+// overrides the credential type — the type must be set before signing, never
+// mutated on the returned credential, or the proof will not verify.
+func (s *Service) IssueNationalIDVC(did, holderDID, name, country, idNumber, birthYear, level string, vcTypes ...string) (*models.VerifiableCredential, error) {
 	if level == "" {
 		level = "KYC_LEVEL_2"
+	}
+	vcType := "NationalIdentityCredential"
+	if len(vcTypes) > 0 && vcTypes[0] != "" {
+		vcType = vcTypes[0]
 	}
 	subject := map[string]interface{}{
 		"id":       holderDID,
@@ -278,7 +317,7 @@ func (s *Service) IssueNationalIDVC(did, holderDID, name, country, idNumber, bir
 	if birthYear != "" {
 		subject["birthYear"] = birthYear
 	}
-	return s.IssueVC(did, "NationalIdentityCredential", subject)
+	return s.IssueVC(did, vcType, subject)
 }
 
 // Verify performs cryptographic verification of a VC model. Fields the

@@ -170,6 +170,7 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 			time.Sleep(800 * time.Millisecond)
 
 			var svc *vc.Service
+			var protectedIssuer, protectedAccount string
 			if *useWalletKey {
 				ws := wallet.NewService()
 				acc, werr := ws.GetActiveWallet()
@@ -177,27 +178,41 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 					spin.Stop(false, "No active wallet found")
 					return fmt.Errorf("no active wallet: %w", werr)
 				}
-				seed, serr := wallet.ResolveSeed(acc)
-				if serr != nil {
-					spin.Stop(false, "No usable key in active wallet")
-					return serr
-				}
-				if *proofType == proofTypeJWS {
-					key, kerr := mpCrypto.DeriveKeyFromSeed(seed)
-					if kerr != nil {
-						spin.Stop(false, "Key derivation failed")
-						return kerr
+				if acc.PasskeyProtected {
+					// Protected wallet: VC signing happens inside the custodian —
+					// the seed never enters this process. The daemon derives the
+					// issuer DID from the method + proof type (ed25519 and ECDSA
+					// issuers both supported).
+					if m == models.DIDMethodWeb {
+						spin.Stop(false, "did:web needs a hosted document")
+						return fmt.Errorf("did:web is not a wallet-derived issuer")
 					}
-					svc = vc.NewServiceWithECDSAKey(key)
+					protectedAccount = acc.Address
+					protectedIssuer = "method:" + string(m) + ":" + *proofType
+					ui.Info(fmt.Sprintf("VC signed by custodian for protected wallet (%s...)", acc.Address[:8]))
 				} else {
-					s, serr := vc.NewServiceWithStellarSeed(seed)
+					seed, serr := wallet.ResolveSeed(acc)
 					if serr != nil {
-						spin.Stop(false, "Stellar seed error: "+serr.Error())
+						spin.Stop(false, "No usable key in active wallet")
 						return serr
 					}
-					svc = s
+					if *proofType == proofTypeJWS {
+						key, kerr := mpCrypto.DeriveKeyFromSeed(seed)
+						if kerr != nil {
+							spin.Stop(false, "Key derivation failed")
+							return kerr
+						}
+						svc = vc.NewServiceWithECDSAKey(key)
+					} else {
+						s, serr := vc.NewServiceWithStellarSeed(seed)
+						if serr != nil {
+							spin.Stop(false, "Stellar seed error: "+serr.Error())
+							return serr
+						}
+						svc = s
+					}
+					ui.Info(fmt.Sprintf("VC signed with wallet key (%s...)", acc.Address[:8]))
 				}
-				ui.Info(fmt.Sprintf("VC signed with wallet key (%s...)", acc.Address[:8]))
 			} else {
 				if *proofType == proofTypeJWS {
 					eckey, eerr := mpCrypto.GenerateKeyPair()
@@ -216,23 +231,79 @@ func newDIDAttestCmd(cfg *config.Config) *Command {
 				}
 			}
 
-			doc, err := svc.CreateDID(m, *domain)
-			if err != nil {
-				spin.Stop(false, err.Error())
-				return err
-			}
-
-			holderDID := *subjectDID
-			if holderDID == "" {
-				holderDID = doc.ID
-			}
 			vcTypeName := vcTypeToName(*vcType)
-			cred, err := svc.IssueNationalIDVC(doc.ID, holderDID, *name, *country, "", *birthYear, *level)
-			if err != nil {
-				spin.Stop(false, err.Error())
-				return err
+			holderDID := *subjectDID
+			var doc *models.DIDDocument
+			var cred *models.VerifiableCredential
+			var err error
+			if protectedIssuer != "" {
+				// Unsigned subject + type only — the custodian builds and signs
+				// the VC internally with the wallet's derived key.
+				if *level == "" {
+					*level = "KYC_LEVEL_2"
+				}
+				subject := map[string]interface{}{
+					"id":       protectedIssuer,
+					"name":     *name,
+					"country":  *country,
+					"verified": true,
+					"level":    *level,
+				}
+				if *birthYear != "" {
+					subject["birthYear"] = *birthYear
+				}
+				if *subjectDID != "" {
+					subject["id"] = *subjectDID
+				}
+				holderDID = fmt.Sprint(subject["id"])
+				unsigned, merr := json.Marshal(map[string]interface{}{
+					"type":              []string{"VerifiableCredential", vcTypeToName(*vcType)},
+					"credentialSubject": subject,
+				})
+				if merr != nil {
+					spin.Stop(false, "Serialize credential failed")
+					return merr
+				}
+				rw, rerr := custodianRemote()
+				if rerr != nil {
+					spin.Stop(false, "Custodian unavailable")
+					return rerr
+				}
+				sres, serr := rw.SignCredential(protectedAccount, "", string(m), *proofType, string(unsigned))
+				if serr != nil {
+					spin.Stop(false, "Custodian credential signing failed")
+					return serr
+				}
+				signedVC, _ := sres["signed_vc"].(string)
+				issuerDID, _ := sres["issuer_did"].(string)
+				if issuerDID == "" {
+					issuerDID = cred.Issuer
+				}
+				if jerr := json.Unmarshal([]byte(signedVC), &cred); jerr != nil {
+					spin.Stop(false, "Invalid credential from custodian")
+					return fmt.Errorf("invalid signed credential: %w", jerr)
+				}
+				if issuerDID != "" {
+					cred.Issuer = issuerDID
+				}
+				doc = &models.DIDDocument{ID: issuerDID, Method: m}
+			} else {
+				var derr error
+				doc, derr = svc.CreateDID(m, *domain)
+				if derr != nil {
+					spin.Stop(false, derr.Error())
+					return derr
+				}
+
+				if holderDID == "" {
+					holderDID = doc.ID
+				}
+				cred, err = svc.IssueNationalIDVC(doc.ID, holderDID, *name, *country, "", *birthYear, *level, vcTypeName)
+				if err != nil {
+					spin.Stop(false, err.Error())
+					return err
+				}
 			}
-			cred.Type = append(cred.Type[:1], vcTypeName)
 
 			spin.Stop(true, "Attestation complete")
 

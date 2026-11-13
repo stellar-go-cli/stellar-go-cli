@@ -273,7 +273,7 @@ func VerifyEd25519(pub ed25519.PublicKey, data []byte, sig string) bool {
 // and returns canonical N-Quads as bytes.
 func CanonicalizeRDF(doc map[string]interface{}) ([]byte, error) {
 	proc := ld.NewJsonLdProcessor()
-	opts := ld.NewJsonLdOptions("")
+	opts := jsonLdProcessorOpts()
 	opts.Format = "application/n-quads"
 	opts.Algorithm = ld.AlgorithmURDNA2015
 	normalized, err := proc.Normalize(doc, opts)
@@ -292,7 +292,7 @@ func CanonicalizeRDF(doc map[string]interface{}) ([]byte, error) {
 // it returns an error indicating data loss.
 func DetectDataLoss(doc map[string]interface{}) error {
 	proc := ld.NewJsonLdProcessor()
-	opts := ld.NewJsonLdOptions("")
+	opts := jsonLdProcessorOpts()
 	opts.ProcessingMode = ld.JsonLd_1_1
 	expanded, err := proc.Expand(doc, opts)
 	if err != nil {
@@ -560,10 +560,10 @@ func base58Decode(input string) ([]byte, error) {
 	result := big.NewInt(0)
 	base := big.NewInt(int64(len(base58Alphabet)))
 
-	for _, c := range input {
-		idx := strings.IndexByte(base58Alphabet, byte(c))
+	for i := 0; i < len(input); i++ {
+		idx := strings.IndexByte(base58Alphabet, input[i])
 		if idx < 0 {
-			return nil, fmt.Errorf("invalid base58 character: %c", c)
+			return nil, fmt.Errorf("invalid base58 character: %c", input[i])
 		}
 		result.Mul(result, base)
 		result.Add(result, big.NewInt(int64(idx)))
