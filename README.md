@@ -169,6 +169,10 @@ stellar-go-cli mcp --transport sse --port 3000 # SSE over HTTP
 
 Tools include `wallet_list`, `wallet_balance`, `wallet_passkey`, `swap_quote`, `swap_execute`, `pay_send`, `pay_request`, `asset_list`, `asset_trust`, `system_status`, `system_health`, plus Tansu governance queries.
 
+Security model and roadmap for separating the MCP server from key custody: [docs/audit/agent-policy-engine.md](docs/audit/agent-policy-engine.md) (spec) and [docs/audit/mcp-signer-architecture.md](docs/audit/mcp-signer-architecture.md) (implementation).
+
+Verification roadmaps: [docs/audit/differentialfuzzing/differential-fuzzing.md](docs/audit/differentialfuzzing/differential-fuzzing.md) (differential fuzzing vs the Rust `stellar` CLI) and [docs/audit/specula/specula-tla-formal-verification.md](docs/audit/specula/specula-tla-formal-verification.md) (TLA+ model checking via Specula). Security assessment documentation: [docs/audit/](docs/audit/).
+
 ## Docker
 
 ```bash

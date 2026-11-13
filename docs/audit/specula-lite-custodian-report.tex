@@ -1,0 +1,459 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!50!black]{hyperref}
+\emergencystretch=2em
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  framesep=4pt,
+  xleftmargin=8pt,
+  xrightmargin=8pt,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\sev}[1]{\textbf{#1}}
+
+\title{\textbf{Formal Verification of the Custodian Daemon}\\[4pt]
+       \large Specula Lite / TLA+ Analysis of \texttt{internal/custodian}\\[2pt]
+       \normalsize stellar-go-cli}
+\author{Specula Lite workflow:\\[2pt]
+        \normalsize automated model synthesis, TLC model checking,\\
+        \normalsize counterexample-to-code mapping, remediation, re-verification}
+\date{November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We applied the Specula Lite methodology — a lightweight, single-agent variant of
+the Specula formal-verification pipeline — to the custodian signing daemon of
+stellar-go-cli (\file{internal/custodian/}), the component that owns key custody,
+enforces the operator policy (E1--E5), and brokers all passkey-protected and
+mandate-delegated signatures. A hand-audited TLA+ model of the enforcement state
+machine (~660 lines, file:line-annotated to the Go source) was exhaustively model
+checked with TLC. All seven targeted hunt invariants produced counterexamples,
+every one of which mapped to a concrete implementation defect — eleven confirmed
+findings (F1--F11) including two rated \sev{high} severity: an unguarded agent
+reactivation path and unsynchronized maps that produce an unrecoverable
+\code{fatal error: concurrent map writes} remote crash. Each finding was
+reproduced by an executable Go test. All findings were subsequently remediated;
+the model was updated to match the fixed implementation and the hunts re-run:
+four invariants now pass exhaustively at their bounds, one remains violated by
+design (a documented capacity bound), and two show only a microsecond-scale
+residual revocation window. The full test suite, race detector, \code{go vet},
+and \code{golangci-lint} pass on the remediated tree.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%==================================================================
+\section{Introduction}
+%==================================================================
+
+The custodian daemon (\file{internal/custodian/}, $\approx$5{,}000 LOC) is the
+security-critical core of the agent-facing signing architecture: it holds
+passkey unlock grants in memory, enforces the operator policy
+(\file{state/policy.json}) through the E1--E5 pipeline, brokers WebAuthn
+ceremonies, manages mandate escrow for delegated agents, and appends every
+decision to a hash-chained enforcement log. Because requests arrive over a Unix
+socket on per-connection goroutines, correctness depends on subtle ordering and
+synchronization invariants that unit tests struggle to cover — precisely the
+class of defects model checking is designed to find.
+
+This report documents a complete verification cycle:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Model synthesis} — a TLA+ specification of the enforcement
+        state machine, faithful to real lock boundaries.
+  \item \textbf{Targeted hunts} — seven invariants checked under
+        counter-bounded environment actions; all seven produced counterexamples.
+  \item \textbf{Code mapping \& reproduction} — each counterexample mapped to
+        concrete source lines and reproduced by a deterministic Go test.
+  \item \textbf{Remediation} — all findings fixed in the implementation.
+  \item \textbf{Re-verification} — model updated to match the fixes; hunts
+        re-run; regression suite asserts the new behavior.
+\end{enumerate}
+
+\subsection*{Headline results}
+
+\begin{itemize}[nosep]
+  \item 7/7 hunt invariants violated pre-fix $\Rightarrow$ 11 confirmed
+        findings (F1--F11): 2 \sev{high}, 4 medium, 5 low severity.
+  \item Post-fix re-verification: 4 invariants \textbf{PASS} exhaustively;
+        1 \textbf{expected violation} (accepted capacity bound, F11);
+        2 \textbf{residual violations} confined to a microsecond commit-tail
+        window (F9 remainder).
+  \item Convergence run on the updated model: \textbf{20{,}032{,}814} states
+        generated, \textbf{6{,}005{,}402} distinct, depth 22, full queue
+        exhausted, no invariant violations.
+  \item 15 \code{TestRepro\_*} regression tests assert the fixed behavior and
+        go red if a defect returns.
+\end{itemize}
+
+%==================================================================
+\section{Scope and Methodology}
+%==================================================================
+
+\subsection{Toolchain}
+
+Specula Lite is the officially supported lightweight path of the Specula
+project: it preserves the agentic spec-synthesis $\rightarrow$ model-checking
+$\rightarrow$ code-level reproduction loop while requiring no Specula
+installation, MCP server, Maven, or agent adapter — only a JRE and
+\code{tla2tools.jar}, bootstrapped into the per-user cache
+(\file{.cache/specula-lite/}).
+Checking was performed with TLC (TlaTools 1.8.0) under a bundled JRE 21:
+\begin{lstlisting}
+java -Xmx3g -XX:+UseParallelGC -cp tla2tools-1.8.0.jar \
+  tlc2.TLC -deadlock -workers 4 -cleanup MC
+\end{lstlisting}
+All artifacts live in the (gitignored) \file{.specula-lite/} directory:
+\begin{itemize}[nosep]
+  \item \file{spec/base.tla} — the model; \file{spec/MC.tla} — checking wrapper
+  \item \file{spec/MC.cfg} + seven \file{spec/MC\_hunt\_*.cfg} — run configs
+  \item \file{modeling-brief.md}, \file{analysis-report.md}, \file{report.md} —
+        methodology, audit trail, results
+\end{itemize}
+The durable review summary is
+\file{docs/audit/specula-lite-custodian-findings.md}.
+
+\subsection{System category and abstractions}
+
+The daemon is a \emph{Category A} (message-passing) system: client
+$\leftrightarrow$ Unix socket $\leftrightarrow$ per-connection handler
+goroutines over in-memory stores, TTL-limited authority, and crash/restart with
+log-based rebuild. The specification splits the E1--E5 pipeline at every real
+mutex/store boundary — the same points where Go interleavings occur — rather
+than collapsing the pipeline into one step. Key abstractions:
+
+\begin{itemize}[nosep]
+  \item WebAuthn ceremonies = atomic verify-or-fail oracles (the passkey itself
+        is trusted hardware, not the system under analysis).
+  \item XDR decode, Horizon I/O, socket-token check = environment.
+  \item Request payloads are well-formed; refusals of interest are
+        authority/escalation/replay/cap refusals, not parse errors.
+  \item The $>$10k-entry seen-set aging gate is modeled as pure time-based
+        eviction (sound: the trace is valid under the entry-pressure it
+        documents).
+\end{itemize}
+
+\subsection{Limits of this analysis}
+
+\begin{itemize}[nosep]
+  \item \emph{Lite mode} omits Specula's trace-validation harness phase;
+        spec$\leftrightarrow$code correspondence rests on the file:line-annotated
+        model plus the executable reproduction tests.
+  \item State space is bounded (2 in-flight requests, 1--2 hashes/refs,
+        MaxT 2--5, small caps) — finite by construction and fully exhausted in
+        every reported run. Violations at these bounds are real; absence of
+        violations is proven within the bounds, not beyond.
+  \item \code{sign\_credential} uses a separate lighter pipeline and is out of
+        scope.
+\end{itemize}
+
+%==================================================================
+\section{Model Overview}
+%==================================================================
+
+\begin{longtable}{@{}p{0.28\textwidth}p{0.66\textwidth}@{}}
+\toprule
+\textbf{Component} & \textbf{Modeled semantics} \\
+\midrule
+\endhead
+Grant store & wallet unlock grants + mandate escrow, TTL expiry, lock/drop \\
+Approval store & single-use bound approvals keyed by request hash, TTL \\
+Seen set (\code{decisions}) & single-use decision refs, claim/release, time aging \\
+Pending queue (\code{pendingReq}) & bounded E3-escalation tracking, lazy expiry \\
+Escalation limiter & sliding-window hit budget per account \\
+Spend counters & global daily caps and mandate cumulative caps, persisted \\
+Mandate registry & VC lifecycle: none/active/suspended/revoked \\
+Agent registry & enrolled$\to$active$\to$suspended$\to$retired lifecycle \\
+\code{issued} set & payload hashes the daemon signed, eligible for submit \\
+\code{submit\_tx} & atomic claim of an issued hash, Horizon result \\
+Restart & memory wipe; decisions/issued rebuilt from the log \\
+\bottomrule
+\end{longtable}
+
+Environment actions are counter-bounded in \file{MC.tla} (unlock, lock,
+disable, confirm, agent and mandate status, issue, restart, evict); pipeline stages
+and submit steps are unbounded so the real interleavings remain reachable.
+
+%==================================================================
+\section{Findings}
+%==================================================================
+
+\subsection{Summary}
+
+\begin{longtable}{@{}lp{0.09\textwidth}p{0.38\textwidth}p{0.30\textwidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Severity} & \textbf{Defect} & \textbf{Fix} \\
+\midrule
+\endhead
+F1 & low    & \code{issued} marked before the decision-ref claim; refused signs left a submittable blob & pure sign stage; mark moved inside the commit boundary \\
+F2 & med    & charge-step refusal burned the single-use decision ref & \code{decisions.release} on charge failure \\
+F3 & med    & multi-op partial charge committed earlier ops on refusal & atomic \code{chargeAll} on both counters + refund \\
+F4 & med    & configured escalation limiter rebuilt per call — never engaged & persistent \code{configuredLimiter} under \code{limiterMu} \\
+F5 & \sev{high} & \code{agent\_set\_status} reactivated suspended$\to$active with only the socket token & bound \code{agent\_activate} ceremony required \\
+F6 & low-med & restart resurrected \code{issued} for already-submitted payloads & \code{payload\_hash} on submit records; sequential tombstone replay \\
+F7 & med    & \code{submit\_tx} check-then-delete race $\to$ double submit & atomic \code{issuedTake} under \code{issuedMu} \\
+F8 & \sev{high} & \code{issued}/\code{pendingReq} unsynchronized maps $\to$ runtime-fatal concurrent-map crash & \code{issuedMu} + \code{pendingMu} guard all access \\
+F9 & low    & authority TOCTOU: revocation between E2 sampling and delivery & \code{authorityRevoked} re-check immediately before \code{sign} \\
+F10 & low   & \code{confirm} minted approvals for any hash — escalation funnel advisory & confirm requires a tracked \code{pendingReq} entry \\
+F11 & low   & seen-set aging ($>$10k/24h) allows decision-ref replay & \textbf{accepted bound} — documented; mitigated by F2 fix \\
+\bottomrule
+\end{longtable}
+
+\subsection{Commit boundary (F1--F3)}
+
+\textbf{Defect.} \file{enforce.go} produced the signature and marked
+\code{issued[sigHash] = true} \emph{before} the single-use
+\code{decisions.claim} and the per-op charge loop. The TLC s1 trace shows a
+request refused at claim retaining \code{rMut = \{issued\}}; the charge variant
+retains \code{\{issued, claimed, charged\}} with counters incremented.
+
+\textbf{Fix.} Commit boundary reordered to: authority re-check $\to$
+\code{d.sign} (pure output) $\to$ \code{claim} $\to$ \code{chargeSpend}
+(atomic \code{chargeAll} on mandate and global counters; global failure
+refunds the mandate charge) $\to$ \code{issuedMark}. A charge refusal calls
+\code{decisions.release}. Refused requests now commit nothing — verified by
+\code{TestRepro\_RefusedClaimLeavesNoResidue},
+\code{TestRepro\_RefSurvivesChargeRefusal}, and
+\code{TestRepro\_ChargeIsAtomic}, plus unit tests of \code{chargeAll} and
+\code{refund}.
+TLC: \textbf{RefusePure passes} (312{,}666 states, exhaustive).
+
+\subsection{Concurrency (F7, F8)}
+
+\textbf{Defect.} \code{d.issued} and \code{d.pendingReq} were plain maps
+accessed by per-connection goroutines while every neighboring store was
+mutex-guarded. A race-hammer test produced
+\code{fatal error: concurrent map writes} — an unrecoverable runtime fatal,
+i.e., any client able to open two connections could crash the custodian and
+drop every live grant (fail-closed availability violation). Separately,
+\code{submitTx}'s check-then-delete let two submitters both pass the issued
+check.
+
+\textbf{Fix.} \code{issuedMu} and \code{pendingMu} guard every access;
+\code{issuedTake} performs check+delete inside one critical section.
+Verified by \code{TestRepro\_IssuedTakeIsAtomic} (sequential + 8-goroutine
+single-winner hammer) and \code{TestRepro\_RaceHammer} under \code{-race}.
+TLC: \textbf{SubmitOnce passes}.
+
+\subsection{Escalation limiter (F4)}
+
+\textbf{Defect.} \code{limiterFor()} constructed a \emph{new}
+\code{escalationLimiter} on every call whenever
+\code{policy.Escalation.Rate} was configured, so \code{allow()} always saw an
+empty hit window and the configured rate never engaged.
+
+\textbf{Fix.} The configured limiter is built once under \code{limiterMu}
+and reused. Verified by \code{TestRepro\_ConfiguredLimiterEngages}
+(count=1 refuses the second escalation; identical instance returned).
+TLC: \textbf{PendingBound passes} (812{,}713 states).
+
+\subsection{Authorization (F5, F9, F10)}
+
+\textbf{F5 — unguarded agent reactivation (high).} \code{agent\_set\_status}
+accepted \code{suspended}$\to$\code{active} (and \code{enrolled}$\to$\code{active})
+with only the socket token — asymmetric with mandate reactivation, which
+requires a relayed principal ceremony. A token-holding agent could
+un-suspend itself. \emph{Fix:} every transition to \code{active} routes through
+a bound \code{agent\_activate} WebAuthn ceremony;
+\code{AgentSetStatus}/\code{signer agent reactivate} gained an \code{--account}
+flag selecting the operator wallet whose passkey authorizes it. Privilege
+reductions remain ceremony-free.
+
+\textbf{F9 — authority TOCTOU.} The pipeline sampled grant/escrow/mandate/agent
+authority once at E2; revocation mid-request did not stop delivery of the
+post-revocation signature. \emph{Fix:} \code{authorityRevoked} re-validates all
+mutable inputs immediately before \code{d.sign}. See \S\ref{sec:residuals}
+for the remaining commit-tail window.
+
+\textbf{F10 — blind confirms.} \code{completeApproval} minted a bound approval
+for whatever \code{requestHash} the client supplied — the escalation funnel
+(limiter + pending queue + operator triage) was advisory. \emph{Fix:}
+\code{MethodConfirm} refuses hashes absent from \code{pendingReq}; the operator
+can only approve requests the daemon actually escalated.
+TLC: \textbf{ApprovalBound passes} (754{,}688 states).
+
+\subsection{Persistence (F6, F11)}
+
+\textbf{F6 — restart resurrection.} \code{rebuildIssued} restored \code{issued}
+for every \code{signed:} log record; \code{submitted:} records (which carried
+the Horizon tx hash, not the payload hash) did not tombstone it, so a payload
+submitted pre-restart passed the E5 check again post-restart.
+\emph{Fix:} submit records now carry \code{payload\_hash}; rebuild replays the
+log sequentially — \code{signed:} adds, \code{submitted:} tombstones, and a
+legitimate re-sign re-adds. Verified by
+\code{TestRepro\_SubmittedTombstonedOnRestart}.
+
+\textbf{F11 — seen-set aging (accepted bound).} Refs older than 24h are
+evictable once the set exceeds 10{,}000 entries; an evicted ref can be
+re-claimed, authorizing a second signature for the same decision.
+\emph{Disposition:} documented bound — practical impact is bounded and
+shrinks further now that refused requests release their refs (F2).
+\code{TestRepro\_SeenSetAgingBound} documents the semantics; the s3 hunt
+remains violated \emph{by design} under the time-based-eviction abstraction.
+
+\subsection{Hygiene}
+
+\code{MethodDisable} dropped the wallet grant but left \code{mandate:} escrow
+entries (keyed by mandate ID) holding seed material in memory. \emph{Fix:}
+\code{dropWalletGrants} sweeps every mandate escrow on \code{passkey\_disable}
+and \code{remove\_wallet}
+(\code{TestRepro\_DropWalletGrantsSweepsEscrows}).
+
+%==================================================================
+\section{Verification Results}
+%==================================================================
+
+\subsection{Model-checking runs}
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.13\textwidth}p{0.45\textwidth}@{}}
+\toprule
+\textbf{Run} & \textbf{Outcome} & \textbf{Detail} \\
+\midrule
+\endhead
+\code{MC.cfg} convergence & \textbf{PASS} &
+  20{,}032{,}814 generated / 6{,}005{,}402 distinct, depth 22, queue exhausted;
+  TypeOK + DeliveredLogged hold \\
+s1\_commit (RefusePure) & \textbf{PASS} &
+  312{,}666 / 142{,}315, depth 18 — refused requests commit nothing \\
+s2\_submit (SubmitOnce) & \textbf{PASS} &
+  4{,}514 / 2{,}444, depth 14 — atomic take; restart tombstones \\
+s4\_approval (ApprovalBound) & \textbf{PASS} &
+  754{,}688 / 363{,}348, depth 20 — no blind approvals \\
+s4\_limiter (PendingBound) & \textbf{PASS} &
+  812{,}713 / 351{,}769, depth 19 — configured limiter engages \\
+s3\_lifecycle (DecisionOnce) & \textbf{expected viol.} &
+  F11 accepted bound: aged ref re-claimed $\to$ second sign \\
+s5\_agents (NoDirtyAgentSign) & \textbf{residual} &
+  violation only inside the commit tail (suspend post-recheck, pre-deliver) \\
+s6\_toctou (NoStale/ NoRevokedAuthority) & \textbf{residual} &
+  violation only inside the commit tail (lock/disable post-recheck, pre-deliver) \\
+\bottomrule
+\end{longtable}
+
+\subsection{Residual bounds}
+\label{sec:residuals}
+
+\textbf{F9 commit-tail window.} The s5/s6 traces now require revocation to
+land \emph{after} the pre-sign \code{authorityRevoked} re-check and \emph{before}
+response delivery — the claim$\to$charge$\to$mark$\to$return tail. In the real
+implementation that window shrank from the entire E2$\to$deliver pipeline
+(including escalation waits, milliseconds) to microseconds of commit code.
+Eliminating it requires revocation to be atomic with delivery — a daemon-level
+read lock spanning validation$\to$return on \code{grantStore}/\code{agentRegistry}
+(the deferred \code{sync.RWMutex} design). Severity: low; documented.
+
+\textbf{F11} and lazy \code{pendingReq} expiry are documented above.
+
+\subsection{Go-level verification}
+
+\begin{itemize}[nosep]
+  \item \code{go test ./internal/custodian/} — \textbf{pass} (full suite).
+  \item \code{go test -race ./internal/custodian/} — \textbf{pass}; the race
+        hammer is now a permanent detector test.
+  \item \code{go vet ./...}, \code{gofmt -l}, \code{golangci-lint run} —
+        \textbf{clean}, both modules.
+  \item 15 \code{TestRepro\_*} regression tests assert the fixed behavior;
+        each names its originating counterexample in comments.
+\end{itemize}
+
+%==================================================================
+\section{Model Artifacts Kept Honest}
+%==================================================================
+
+\begin{itemize}[nosep]
+  \item \code{EvictDecision} abstracts the $>$10k-entry aging gate as pure time
+        eviction — s3 traces are valid under that pressure.
+  \item \code{delivered}/\code{submitted}/\code{log} are observability vars;
+        hunt cfgs hide them via \code{VIEW} only where neither actions nor the
+        checked invariant read them (documented per cfg).
+  \item Restart kills in-flight requests to \code{refused} (connection death);
+        a mutated-but-refused in-flight request at restart is a real edge the
+        model keeps visible via \code{rMut}.
+  \item The ceremony path clears \code{agentDirty} — an operator-blessed
+        reactivation legitimately restores trust, so post-ceremony signatures
+        are not violations.
+\end{itemize}
+
+%==================================================================
+\section{Recommendations}
+%==================================================================
+
+\begin{enumerate}[nosep]
+  \item Add a \code{go test -race} job for \code{internal/custodian} to CI —
+        the F8 class is exactly what it catches.
+  \item Add conformance vectors C15 (``refusals are side-effect-free'') and
+        C16 (``escalation requires tracked pending'') to the C3--C14 suite.
+  \item If revocation promptness ever becomes a hard requirement, implement
+        the deferred \code{sync.RWMutex} design spanning E2$\to$delivery.
+  \item Re-run the hunts on any change to \file{enforce.go}, \file{grants.go},
+        \file{pending.go}, \file{submit.go}, or the agent/mandate lifecycle —
+        the cfgs are cheap to replay (\S\ref{sec:appendix}).
+\end{enumerate}
+
+%==================================================================
+\appendix
+\section{Reproduction Commands}
+\label{sec:appendix}
+%==================================================================
+
+\begin{lstlisting}
+# regression suite (fixed behavior)
+go test ./internal/custodian/ -run TestRepro_ -v
+go test -race ./internal/custodian/
+go vet ./... && golangci-lint run ./internal/custodian/...
+
+# TLC hunts: swap each .specula-lite/spec/MC_hunt_*.cfg into MC.cfg, then
+cd .specula-lite/spec
+java -Xmx3g -XX:+UseParallelGC -cp tla2tools-1.8.0.jar \
+  tlc2.TLC -deadlock -workers 4 -cleanup MC
+\end{lstlisting}
+
+\subsection{File inventory of the remediation}
+
+\begin{itemize}[nosep]
+  \item \file{internal/custodian/daemon.go} — \code{issuedMu}, \code{pendingMu},
+        \code{issuedMark}, \code{issuedTake}, \code{dropWalletGrants}, rebuild
+        tombstoning, F10 confirm gate, F5 ceremony dispatch, disable sweep.
+  \item \file{internal/custodian/enforce.go} — commit-boundary reorder,
+        \code{authorityRevoked}, \code{chargeSpend}, payload-hash records.
+  \item \file{internal/custodian/grants.go} — \code{seenSet.release}.
+  \item \file{internal/custodian/pending.go} — \code{pendingMu} guards,
+        persistent \code{configuredLimiter}.
+  \item \file{internal/custodian/policy.go} — \code{spendCounters.chargeAll},
+        \code{subAmount}.
+  \item \file{internal/custodian/mandate.go} — \code{mandateCounters.chargeAll},
+        \code{refund}.
+  \item \file{internal/custodian/submit.go} — atomic \code{issuedTake},
+        \code{payload\_hash} on records.
+  \item \file{internal/custodian/ceremony.go} — \code{agent\_activate} action.
+  \item \file{internal/custodian/agents.go} — unchanged (transition table was
+        already correct).
+  \item \file{internal/signsock/} — \code{protocol.go}, \code{client.go}:
+        ceremony fields, relayed \code{AgentSetStatus}.
+  \item \file{cmd/stellar-go-cli/commands/} \code{signer.go} —
+        \code{--account} flag for reactivation.
+  \item \file{internal/custodian/specula\_lite\_repro\_test.go} — 15
+        regression tests.
+  \item \file{.specula-lite/spec/} \code{base.tla}, \code{MC.tla},
+        \code{MC\_hunt\_*.cfg} — updated model + VIEW projections.
+\end{itemize}
+
+\end{document}

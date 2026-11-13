@@ -2,21 +2,34 @@
 
 ## 🎉 Implementation Progress
 
-### ✅ **Successfully Implemented (42 tools total)**
+### ✅ **Successfully Implemented (47 tools exposed)**
 
-#### **Wallet Tools (12)**
+#### **Wallet Tools (10)**
 - ✅ wallet_list - List connected wallets
 - ✅ wallet_show - Show active wallet details  
 - ✅ wallet_balance - Get wallet balances
 - ✅ wallet_assets - List trusted assets
 - ✅ wallet_connect - Connect wallet via stellar/external
-- ✅ wallet_import - Import wallet from secret key
+- 🚫 wallet_import - **Removed from MCP** (operator CLI only — secret-bearing)
 - ✅ wallet_fund - Fund wallet from faucet
 - ✅ wallet_switch - Switch active wallet
 - ✅ wallet_rename - Rename wallet
 - ✅ wallet_remove - Remove wallet
-- ✅ wallet_export - Export private key
+- 🚫 wallet_export - **Removed from MCP** (operator CLI only — key export)
 - ✅ wallet_passkey - Passkey (WebAuthn) seed protection: register/unlock/lock/status/disable
+
+#### **Security Hardening (shipped)**
+- ✅ Single `callTool` dispatch — stdio and HTTP share one validation/dispatch path; HTTP propagates the request context
+- ✅ Fail-closed validation — every tool validates against its own registered `InputSchema` (required params, types, enums)
+- ✅ `--profile` flag — `readonly` (T0) / `transact` (T0+T1+T3) / `admin` (all) tool exposure profiles; unclassified tools fail closed
+- ✅ `wallet_import`/`wallet_export` removed from the agent registry — operator CLI only
+- ✅ `rpc_url`/`allow_private_resource` moved to operator flags (`--x402-rpc-url`, `--allow-private-resources`)
+- ✅ Operator x402 hard spend cap (`--x402-max-amount`); effective cap = min(request, operator)
+- ✅ Key-free x402 dry-runs — previews resolve only the payer's address, no key material in the MCP process
+- ✅ `response_body` labelled untrusted third-party content
+- ✅ HTTP `Origin`/`Host` validation (DNS-rebinding defense) + restricted CORS (`--allowed-origins`)
+- ✅ Hash-chained JSONL audit log (`state/audit.log`) — every `tools/call` recorded, args stored as digests only
+- ✅ `system_network` switching refused on HTTP; requires `confirm=true` on stdio
 
 #### **Swap Tools (8)**
 - ✅ swap_quote - Get swap quote
@@ -59,7 +72,7 @@
 
 | Category | Original | Added | Total | Status |
 |----------|-----------|-------|-------|--------|
-| Wallet | 4 | 8 | 12 | ✅ Complete |
+| Wallet | 4 | 6 | 10 | ✅ Complete |
 | Swap | 4 | 4 | 8 | ✅ Complete |
 | Asset | 3 | 5 | 8 | ✅ Complete |
 | Payment | 3 | 4 | 7 | ✅ Complete |
@@ -108,8 +121,8 @@
 
 ## 🎯 **Current Capabilities**
 
-With 41 MCP tools, AI assistants can now:
-- **Manage complete wallet lifecycle** (connect, import, fund, switch, rename, remove, export)
+With the hardened tool registry, AI assistants can now:
+- **Manage wallet lifecycle** (connect, fund, switch, rename, remove — import/export are operator CLI only)
 - **Perform advanced swap operations** (scan, monitor, arbitrage, triangular)
 - **Create and manage assets** (FT/NFA creation, scoring, carbon credits)
 - **Execute multi-rail payments** (direct, x402, ZK, Tempo)
@@ -134,7 +147,7 @@ With 41 MCP tools, AI assistants can now:
 
 ## 🎉 **Impact**
 
-- **From 17 to 41 tools** - 141% increase
+- **From 17 to 47 tools** — with least-privilege profiles and audited dispatch
 - **82% CLI parity** achieved
 - **Complete wallet/swap/asset/payment coverage**
 - **Ready for AI assistant integration**

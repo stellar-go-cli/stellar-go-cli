@@ -18,9 +18,11 @@ encrypted seed. It is *not* a keyless smart contract account.
 - The encryption key lives in the OS keychain (`github.com/zalando/go-keyring`:
   macOS Keychain, Secret Service, or Windows Credential Manager).
 - `wallet passkey unlock` runs an assertion ceremony with
-  `userVerification: required`. On success a short-lived grant
-  (default 15 minutes) is stored in the keychain; every signing path
-  resolves the seed only through that grant.
+  `userVerification: required` **inside the custodian signer daemon**
+  (`stellar-go-cli signer` — the daemon must be running for all passkey
+  operations). On success a short-lived grant (default 15 minutes) is
+  stored **in custodian memory** — no seed material ever lands in the OS
+  keychain or any other process.
 - Signing while locked fails with a descriptive error. `wallet passkey lock`
   revokes the grant immediately.
 - Passkey credential records (credential ID, COSE public key, sign
@@ -37,6 +39,9 @@ stellar-go-cli wallet passkey register --address GABC...
 
 # Unlock for signing (default 15m; override with --ttl)
 stellar-go-cli wallet passkey unlock --ttl 30m
+
+# Approve a pending signing escalation (challenge-bound assertion)
+stellar-go-cli wallet passkey approve --request-hash <hex>
 
 # Lock immediately
 stellar-go-cli wallet passkey lock
@@ -63,7 +68,9 @@ Everything resolves seeds through `wallet.ResolveSeed`:
 - Protected + locked wallets fail with
   `wallet passkey unlock` instructions — no silent fallback.
 
-`wallet export --private` requires the wallet to be unlocked, and
+`wallet export --private` for a protected wallet runs a fresh local
+assertion ceremony bound to that export (no grant needed — the seed is
+revealed only after a dedicated passkey touch), and
 `wallet remove` cleans up the passkey file and keychain entries.
 
 ## MCP
@@ -73,6 +80,12 @@ Ceremony actions (`register`, `unlock`, `disable`) open a browser on the
 machine running the CLI — they require human interaction and do not work
 in a fully headless environment. `status`, `lock`, and subsequent
 signing tools work headlessly once a grant is active.
+
+Note: unlock grants live only in the custodian daemon's memory — the MCP
+server (and every other process) reaches signing exclusively through the
+`signer` daemon's Unix socket; nothing else can read a grant or a seed.
+See [docs/audit/mcp-signer-architecture.md](audit/mcp-signer-architecture.md) and the trust
+model in [docs/audit/agent-policy-engine.md](audit/agent-policy-engine.md).
 
 ## Platform requirements
 

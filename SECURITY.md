@@ -30,6 +30,7 @@ We follow responsible disclosure. Security researchers will be credited (with pe
 - Keys are **never** transmitted to external services unless explicitly signing a transaction
 - The `keypair.Full` type is used for in-memory signing — private key material is never logged or printed
 - Wallet and passkey state files are restricted to the owner (`0600`/`0700`)
+- The target architecture separates key custody from the MCP server — the agent-facing process holds no key material. See `docs/audit/agent-policy-engine.md` (policy/custody spec) and `docs/audit/mcp-signer-architecture.md` (separation design + roadmap)
 
 ### Wallet Operations
 
