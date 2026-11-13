@@ -2,11 +2,10 @@ package wallet
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
@@ -77,7 +76,7 @@ func TestPasskeyStoreRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	addr := "GTESTSTORE"
 
-	creds, err := loadPasskeys(addr)
+	creds, err := LoadPasskeys(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +88,11 @@ func TestPasskeyStoreRoundTrip(t *testing.T) {
 		ID:        []byte("credential-id-1"),
 		PublicKey: []byte{1, 2, 3},
 	}
-	if err := savePasskey(addr, cred); err != nil {
-		t.Fatalf("savePasskey: %v", err)
+	if err := SavePasskey(addr, cred); err != nil {
+		t.Fatalf("SavePasskey: %v", err)
 	}
 
-	creds, err = loadPasskeys(addr)
+	creds, err = LoadPasskeys(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,14 +122,14 @@ func TestPasskeyStoreUpsert(t *testing.T) {
 	addr := "GTESTUPSERT"
 
 	c1 := &webauthn.Credential{ID: []byte("id1"), PublicKey: []byte{1}}
-	if err := savePasskey(addr, c1); err != nil {
+	if err := SavePasskey(addr, c1); err != nil {
 		t.Fatal(err)
 	}
 	c1Updated := &webauthn.Credential{ID: []byte("id1"), PublicKey: []byte{9, 9}}
-	if err := savePasskey(addr, c1Updated); err != nil {
+	if err := SavePasskey(addr, c1Updated); err != nil {
 		t.Fatal(err)
 	}
-	creds, err := loadPasskeys(addr)
+	creds, err := LoadPasskeys(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,14 +140,14 @@ func TestPasskeyStoreUpsert(t *testing.T) {
 		t.Fatal("upsert did not replace credential")
 	}
 
-	if err := deletePasskeys(addr); err != nil {
+	if err := DeletePasskeys(addr); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(path2(t, addr)); !os.IsNotExist(err) {
 		t.Fatal("passkey file not deleted")
 	}
 	// delete of missing file is not an error
-	if err := deletePasskeys(addr); err != nil {
+	if err := DeletePasskeys(addr); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -186,39 +185,20 @@ func TestResolveSeedProtectedLocked(t *testing.T) {
 	}
 }
 
-func TestResolveSeedProtectedUnlocked(t *testing.T) {
+func TestResolveSeedProtectedRoutesToCustodian(t *testing.T) {
 	keyring.MockInit()
+	// Grants live in the custodian daemon's memory — local ResolveSeed must
+	// never produce a protected wallet's seed, regardless of keyring state.
 	addr := "GUNLOCKED"
-	grant := unlockGrant{Seed: "SUNLOCKEDSEED", Expires: time.Now().Add(time.Hour).Unix()}
-	data, _ := json.Marshal(grant)
-	if err := keyring.Set(keyringService, unlockItem(addr), string(data)); err != nil {
+	if err := keyring.Set(keyringService, unlockItem(addr), `{"seed":"STALE","expires":9999999999}`); err != nil {
 		t.Fatal(err)
 	}
-
-	acc := &models.Account{Address: addr, PasskeyProtected: true, PrivateKeyEnc: "AAAA"}
-	seed, err := ResolveSeed(acc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if seed != "SUNLOCKEDSEED" {
-		t.Fatalf("got %q", seed)
-	}
-}
-
-func TestResolveSeedProtectedExpiredGrant(t *testing.T) {
-	keyring.MockInit()
-	addr := "GEXPIRED"
-	grant := unlockGrant{Seed: "SX", Expires: time.Now().Add(-time.Hour).Unix()}
-	data, _ := json.Marshal(grant)
-	_ = keyring.Set(keyringService, unlockItem(addr), string(data))
 
 	acc := &models.Account{Address: addr, PasskeyProtected: true, PrivateKeyEnc: "AAAA"}
 	if _, err := ResolveSeed(acc); err == nil {
-		t.Fatal("expired grant resolved a seed")
-	}
-	// expired grant must be purged
-	if _, err := keyring.Get(keyringService, unlockItem(addr)); err != keyring.ErrNotFound {
-		t.Fatal("expired grant not purged")
+		t.Fatal("protected wallet resolved a seed locally")
+	} else if !strings.Contains(err.Error(), "custodian") {
+		t.Fatalf("expected custodian-directed error, got %v", err)
 	}
 }
 
@@ -246,7 +226,7 @@ func TestDecryptWalletSeedViaKeyring(t *testing.T) {
 
 	svc := NewService()
 	acc := &models.Account{Address: addr, PrivateKeyEnc: enc}
-	seed, err := svc.decryptWalletSeed(acc)
+	seed, err := svc.DecryptWalletSeed(acc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +235,7 @@ func TestDecryptWalletSeedViaKeyring(t *testing.T) {
 	}
 
 	// Missing keychain key → descriptive error
-	if _, err := svc.decryptWalletSeed(&models.Account{Address: "GNOKEY", PrivateKeyEnc: enc}); err == nil {
+	if _, err := svc.DecryptWalletSeed(&models.Account{Address: "GNOKEY", PrivateKeyEnc: enc}); err == nil {
 		t.Fatal("decrypt without keychain key succeeded")
 	}
 }

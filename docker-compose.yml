@@ -1,4 +1,29 @@
 services:
+  # Custodian signer daemon — holds all key material, grants, and policy.
+  # Wallet/passkey state lives only in this container's volume; it exposes no
+  # network ports. The MCP gatekeeper reaches it exclusively through the
+  # shared Unix socket.
+  #
+  # NOTE: WebAuthn passkey ceremonies open a browser on the local machine —
+  # they do not work inside a container. For passkey-protected wallets, run
+  # `stellar-go-cli signer` on the host instead and point the MCP container
+  # at that socket, or use plaintext (non-protected) wallets in Docker.
+  signer:
+    image: ghcr.io/stellar-go-cli/stellar-go-cli-mcp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    command: ["stellar-go-cli", "signer", "--socket", "/run/stellar-sock/signer.sock"]
+    volumes:
+      - stellar-state:/home/stellar/.stellar-go-cli
+      - signer-sock:/run/stellar-sock
+    environment:
+      - LOG_LEVEL=info
+      - NETWORK=stellar-testnet
+    networks:
+      - stellar-go-cli
+    restart: unless-stopped
+
   mcp:
     # Published to ghcr.io by the release workflow — `docker compose pull`
     # fetches it; `docker compose up --build` builds from source instead.
@@ -16,8 +41,15 @@ services:
       # refuses non-loopback binds without a token, so MCP_TOKEN is required.
       - MCP_BIND=0.0.0.0
       - MCP_TOKEN=${MCP_TOKEN:?set MCP_TOKEN before starting the MCP container}
+      # Custodian socket shared with the signer service. If this socket is
+      # absent, signing tools fail closed — there is no in-process fallback.
+      - MCP_SIGNER_SOCKET=/run/stellar-sock/signer.sock
       - LOG_LEVEL=info
       - NETWORK=stellar-testnet
+    volumes:
+      - signer-sock:/run/stellar-sock
+    depends_on:
+      - signer
     networks:
       - stellar-go-cli
     restart: unless-stopped
@@ -27,6 +59,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  stellar-state:
+  signer-sock:
 
 networks:
   stellar-go-cli:

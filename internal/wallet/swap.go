@@ -2,18 +2,18 @@ package wallet
 
 import (
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
-	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
-// NewSwapService builds a swap service for the network, attaching the
-// configured Stellar wallet as the transaction signer when available.
-// The returned keypair is nil when no swap-compatible wallet is configured —
-// the service still works for quotes and unsigned transaction building.
-func NewSwapService(net models.Network) (*swap.Service, *keypair.Full) {
-	kp, err := LoadStellarKeypairForSwap()
-	if err != nil {
-		return swap.NewService(net), nil
+// NewSwapService builds a swap service for the network with the given
+// transaction signer attached. A nil signer yields a quote-only service
+// (no execution capability). A custodian-backed signer also routes
+// submission through the daemon — swap.SubmitTransaction auto-detects the
+// signer's Submit method.
+func NewSwapService(net models.Network, sg signer.Signer) *swap.Service {
+	if sg == nil {
+		return swap.NewService(net)
 	}
-	return swap.NewService(net, swap.WithKeypair(kp)), kp
+	return swap.NewService(net, swap.WithSigner(sg))
 }

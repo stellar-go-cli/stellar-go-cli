@@ -1,7 +1,8 @@
 package commands
 
 import (
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signsock"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
@@ -35,6 +37,7 @@ func newWalletCmd(cfg *config.Config) *Command {
 	cmd.addSub(newWalletRemoveCmd(cfg))
 	cmd.addSub(newWalletExportCmd(cfg))
 	cmd.addSub(newWalletPasskeyCmd(cfg))
+	cmd.addSub(newWalletMandateCmd(cfg))
 	cmd.Run = func(c *Command, args []string) error {
 		c.printHelp()
 		return nil
@@ -128,19 +131,16 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 				ui.Success("DID linked: " + truncateStr(linkedDID, 40) + "...")
 			}
 
-			if *output == "json" {
-				fmt.Println(prettyJSON(acc))
-				return nil
-			}
-
-			ui.SectionLabel("Account Details")
-			ui.KV("Address", acc.Address)
-			ui.KV("Network", wallet.NetworkDisplayName(net))
-			ui.KV("Type", string(acc.Type))
-			ui.KV("Balance", acc.Balance)
-			ui.KV("Funded", fmt.Sprintf("%v", acc.Funded))
-			if acc.DID != "" {
-				ui.KV("DID", safeTruncW(acc.DID, 40)+"...")
+			if *output != "json" {
+				ui.SectionLabel("Account Details")
+				ui.KV("Address", acc.Address)
+				ui.KV("Network", wallet.NetworkDisplayName(net))
+				ui.KV("Type", string(acc.Type))
+				ui.KV("Balance", acc.Balance)
+				ui.KV("Funded", fmt.Sprintf("%v", acc.Funded))
+				if acc.DID != "" {
+					ui.KV("DID", safeTruncW(acc.DID, 40)+"...")
+				}
 			}
 			// Migrate from legacy if needed
 			svc.MigrateFromLegacy() //nolint:errcheck // best-effort migration
@@ -155,11 +155,16 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 				}
 			}
 
-			// If this is a new wallet (not just a reconnect), ask if user wants to make it active
+			// If this is a new wallet (not just a reconnect), ask if user wants to make it active.
+			// In JSON mode the prompt goes to stderr so stdout stays machine-readable.
 			makeActive := true
 			if !walletExists && len(existingWallets) > 0 {
-				fmt.Println()
-				fmt.Printf("You have %d other wallet(s). Make this your active wallet? [Y/n]: ", len(existingWallets))
+				if *output == "json" {
+					fmt.Fprintf(os.Stderr, "\nYou have %d other wallet(s). Make this your active wallet? [Y/n]: ", len(existingWallets)) //nolint:errcheck // prompt write failure is non-fatal
+				} else {
+					fmt.Println()
+					fmt.Printf("You have %d other wallet(s). Make this your active wallet? [Y/n]: ", len(existingWallets))
+				}
 				var response string
 				fmt.Scanln(&response) //nolint:errcheck // empty input falls through to the default
 				if response != "" && response != "Y" && response != "y" {
@@ -182,6 +187,11 @@ func newWalletConnectCmd(cfg *config.Config) *Command {
 				ui.Success("Wallet created (not active)")
 				ui.Info(fmt.Sprintf("Active wallet remains: %s", safeTruncW(activeWallet, 30)))
 				ui.Info("Use 'stellar-go-cli wallet switch' to activate this wallet")
+			}
+
+			if *output == "json" {
+				fmt.Println(prettyJSON(acc))
+				return nil
 			}
 			ui.KV("Address", acc.Address)
 
@@ -806,9 +816,18 @@ func newWalletExportCmd(cfg *config.Config) *Command {
 			ui.KV("Network", wallet.NetworkDisplayName(acc.Network))
 			ui.KV("Public Key", acc.PublicKey)
 
-			// Show private key if requested and available
+			// Show private key if requested and available. Protected
+			// wallets require a fresh local ceremony bound to this export —
+			// grants stay inside the custodian and cannot export a seed.
 			if *showPrivate {
-				seed, serr := wallet.ResolveSeed(acc)
+				var seed string
+				var serr error
+				if acc.PasskeyProtected {
+					challenge := sha256.Sum256([]byte("stellar-go-cli wallet export " + acc.Address))
+					seed, serr = svc.AssertBoundAndDecrypt(acc.Address, challenge[:])
+				} else {
+					seed, serr = wallet.ResolveSeed(acc)
+				}
 				if serr != nil {
 					ui.Warn("Private key not available: " + serr.Error())
 				} else {
@@ -1085,6 +1104,7 @@ func newWalletPasskeyCmd(cfg *config.Config) *Command {
 	cmd.addSub(newWalletPasskeyStatusCmd(cfg))
 	cmd.addSub(newWalletPasskeyListCmd(cfg))
 	cmd.addSub(newWalletPasskeyDisableCmd(cfg))
+	cmd.addSub(newWalletPasskeyApproveCmd(cfg))
 	cmd.Run = func(c *Command, args []string) error {
 		c.printHelp()
 		return nil
@@ -1104,6 +1124,17 @@ func resolvePasskeyTarget(svc *wallet.Service, address string) (string, error) {
 	return acc.Address, nil
 }
 
+// custodianRemote returns a RemoteWallet bound to the default custodian
+// socket. The daemon must be running ('stellar-go-cli signer') — passkey
+// unlock grants live in custodian memory only.
+func custodianRemote() (*signsock.RemoteWallet, error) {
+	sockPath, err := signsock.DefaultSocketPath()
+	if err != nil {
+		return nil, err
+	}
+	return signsock.Dial(sockPath).RemoteWallet(), nil
+}
+
 func newWalletPasskeyRegisterCmd(cfg *config.Config) *Command {
 	fs := flag.NewFlagSet("passkey register", flag.ContinueOnError)
 	address := fs.String("address", "", "Wallet address to protect (default: active wallet)")
@@ -1121,9 +1152,13 @@ func newWalletPasskeyRegisterCmd(cfg *config.Config) *Command {
 				return err
 			}
 
-			spin := ui.NewSpinner("Running WebAuthn registration ceremony...")
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			spin := ui.NewSpinner("Running WebAuthn registration ceremony (in signer daemon)...")
 			spin.Start()
-			cred, err := svc.RegisterPasskey(target)
+			res, err := rw.RegisterPasskey(target, wallet.OpenCeremony)
 			if err != nil {
 				spin.Stop(false, "Passkey registration failed")
 				return err
@@ -1132,7 +1167,9 @@ func newWalletPasskeyRegisterCmd(cfg *config.Config) *Command {
 
 			ui.SectionLabel("Credential")
 			ui.KV("Wallet", target)
-			ui.KV("Credential ID", safeTruncW(base64.RawURLEncoding.EncodeToString(cred.ID), 24)+"...")
+			if credID, ok := res["credential_id"].(string); ok && credID != "" {
+				ui.KV("Credential ID", safeTruncW(credID, 24)+"...")
+			}
 			ui.Info("The wallet seed is now encrypted at rest.")
 			ui.Info("Run 'stellar-go-cli wallet passkey unlock' before signing operations.")
 			return nil
@@ -1158,17 +1195,20 @@ func newWalletPasskeyUnlockCmd(cfg *config.Config) *Command {
 				return err
 			}
 
-			spin := ui.NewSpinner("Waiting for passkey assertion...")
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			spin := ui.NewSpinner("Waiting for passkey assertion (in signer daemon)...")
 			spin.Start()
-			if err := svc.Unlock(target, *ttl); err != nil {
+			res, err := rw.Unlock(target, int64((*ttl).Seconds()), wallet.OpenCeremony)
+			if err != nil {
 				spin.Stop(false, "Unlock failed")
 				return err
 			}
-
-			st, _ := svc.GetPasskeyStatus(target) //nolint:errcheck // display-only best effort
 			spin.Stop(true, "Wallet unlocked")
-			if st != nil && st.UnlockedUntil != nil {
-				ui.KV("Valid until", st.UnlockedUntil.Format(time.RFC3339))
+			if until, ok := res["unlocked_until"].(string); ok && until != "" {
+				ui.KV("Valid until", until)
 			}
 			ui.Info("Lock early with 'stellar-go-cli wallet passkey lock'")
 			return nil
@@ -1190,7 +1230,11 @@ func newWalletPasskeyLockCmd(cfg *config.Config) *Command {
 			if err != nil {
 				return err
 			}
-			if err := svc.Lock(target); err != nil {
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			if err := rw.Lock(target); err != nil {
 				return err
 			}
 			ui.Success("Wallet locked: " + target)
@@ -1215,6 +1259,12 @@ func newWalletPasskeyStatusCmd(cfg *config.Config) *Command {
 				return fmt.Errorf("failed to list wallets: %w", err)
 			}
 
+			// Unlock grants live in the custodian — overlay live grant
+			// state when the daemon is reachable.
+			var rw *signsock.RemoteWallet
+			if r, rerr := custodianRemote(); rerr == nil {
+				rw = r
+			}
 			any := false
 			for _, w := range wallets {
 				st, err := svc.GetPasskeyStatus(w.Address)
@@ -1223,8 +1273,12 @@ func newWalletPasskeyStatusCmd(cfg *config.Config) *Command {
 				}
 				any = true
 				state := "locked"
-				if st.Unlocked && st.UnlockedUntil != nil {
-					state = "unlocked until " + st.UnlockedUntil.Format("15:04:05")
+				if rw != nil {
+					if rs, rerr := rw.Status(w.Address); rerr == nil {
+						if until, _ := rs["unlocked_until"].(string); until != "" {
+							state = "unlocked until " + until
+						}
+					}
 				}
 				ui.KV(w.Address[:12]+"...", fmt.Sprintf("%s (%d passkey(s))", state, len(st.Credentials)))
 			}
@@ -1262,7 +1316,7 @@ func newWalletPasskeyListCmd(cfg *config.Config) *Command {
 			}
 			ui.SectionLabel("Passkeys for " + target)
 			for _, c := range st.Credentials {
-				ui.KV("Credential", c.CredentialID[:16]+"...")
+				ui.KV("Credential", safeTruncW(c.CredentialID, 16)+"...")
 				ui.KV("  Sign count", fmt.Sprintf("%d", c.SignCount))
 				if len(c.Transports) > 0 {
 					ui.KV("  Transports", fmt.Sprintf("%v", c.Transports))
@@ -1290,10 +1344,14 @@ func newWalletPasskeyDisableCmd(cfg *config.Config) *Command {
 				return err
 			}
 
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
 			ui.Warn("This restores the plaintext seed in the wallet file.")
-			spin := ui.NewSpinner("Waiting for passkey assertion...")
+			spin := ui.NewSpinner("Waiting for passkey assertion (in signer daemon)...")
 			spin.Start()
-			if err := svc.DisablePasskey(target); err != nil {
+			if _, err := rw.DisablePasskey(target); err != nil {
 				spin.Stop(false, "Disable failed")
 				return err
 			}
@@ -1319,4 +1377,312 @@ func stellarExplorerURL(address string, network models.Network) string {
 	default:
 		return fmt.Sprintf("https://stellar.expert/explorer/testnet/account/%s", address)
 	}
+}
+
+func newWalletPasskeyApproveCmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("passkey approve", flag.ContinueOnError)
+	address := fs.String("address", "", "Wallet address (default: active wallet)")
+	requestHash := fs.String("request-hash", "", "Exact request hash the approval must bind to (required)")
+
+	return &Command{
+		Name:  "approve",
+		Short: "Answer a pending signing escalation with a challenge-bound passkey assertion",
+		Flags: fs,
+		Run: func(c *Command, args []string) error {
+			if strings.TrimSpace(*requestHash) == "" {
+				return fmt.Errorf("--request-hash is required (from the escalation record / prompt)")
+			}
+			svc := wallet.NewService()
+			target, err := resolvePasskeyTarget(svc, *address)
+			if err != nil {
+				return err
+			}
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			// §10.3 — show the operator what the approval binds to before the
+			// ceremony; flag values sourced from untrusted content.
+			if info, ierr := rw.RequestInfo(*requestHash); ierr == nil {
+				ui.SectionLabel("Pending approval")
+				ui.KV("Tool", info.Tool)
+				ui.KV("Account", info.Account)
+				ui.KV("Requested", info.Timestamp)
+				if info.Description != "" {
+					ui.KV("Payload", info.Description)
+				}
+				if info.Untrusted {
+					ui.Warn("UNTRUSTED CONTENT — values in this request trace to third-party content (e.g., a merchant's payment challenge), not to your own instruction. Verify out-of-band before approving.")
+				}
+			} else {
+				ui.Warn("No pending escalation found for this request hash — verify out-of-band that it matches the request you intend to approve.")
+			}
+			spin := ui.NewSpinner("Waiting for passkey assertion (in signer daemon)...")
+			spin.Start()
+			res, err := rw.Confirm(target, *requestHash, wallet.OpenCeremony)
+			if err != nil {
+				spin.Stop(false, "Approval failed")
+				return err
+			}
+			spin.Stop(true, "Approved")
+			if dec, ok := res["decision_ref"].(string); ok && dec != "" {
+				ui.KV("Decision ref", dec)
+			}
+			ui.Info("Retry the signing operation — the approval is bound to this request only.")
+			return nil
+		},
+	}
+}
+
+// ─── wallet mandate ───────────────────────────
+
+func newWalletMandateCmd(cfg *config.Config) *Command {
+	cmd := &Command{
+		Name:  "mandate",
+		Short: "Delegated-authority mandates for agent signing",
+		Long: "Issue, list, and revoke mandate VCs that grant a bound agent identity " +
+			"scoped signing authority without a session unlock. The custodian daemon " +
+			"must be running ('stellar-go-cli signer').",
+	}
+	cmd.addSub(newWalletMandateIssueCmd(cfg))
+	cmd.addSub(newWalletMandateListCmd(cfg))
+	cmd.addSub(newWalletMandateStatusCmd(cfg))
+	cmd.addSub(newWalletMandateSetStatusCmd(cfg))
+	cmd.addSub(newWalletMandateStatusListCmd(cfg))
+	cmd.Run = func(c *Command, args []string) error {
+		c.printHelp()
+		return nil
+	}
+	return cmd
+}
+
+func newWalletMandateIssueCmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("mandate issue", flag.ContinueOnError)
+	account := fs.String("account", "", "Wallet address (default: active wallet)")
+	agent := fs.String("agent", "", "Agent did:key the mandate binds to (required)")
+	scope := fs.String("scope", "", "Comma-separated tool names or globs (required, e.g. pay_send,x402_fetch)")
+	perTx := fs.String("per-tx", "", "Comma-separated asset:amount per-tx caps (e.g. native:50)")
+	cumulative := fs.String("per-day", "", "Comma-separated asset:amount daily caps")
+	counterparties := fs.String("allow-counterparty", "", "Comma-separated counterparty allowlist")
+	validUntil := fs.String("valid-until", "", "Mandate expiry, RFC3339 (required)")
+	payloadDigest := fs.String("payload-digest", "", "Bind to a single payload hash (closed mandate)")
+
+	return &Command{
+		Name:  "issue",
+		Short: "Issue a mandate VC to an agent (fresh passkey ceremony required)",
+		Flags: fs,
+		Run: func(c *Command, args []string) error {
+			ui.Header("Issue Mandate")
+			if strings.TrimSpace(*agent) == "" || strings.TrimSpace(*scope) == "" || strings.TrimSpace(*validUntil) == "" {
+				return fmt.Errorf("--agent, --scope, and --valid-until are required")
+			}
+			svc := wallet.NewService()
+			target, err := resolvePasskeyTarget(svc, *account)
+			if err != nil {
+				return err
+			}
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+
+			parseCaps := func(s string) map[string]string {
+				m := map[string]string{}
+				for _, pair := range strings.Split(s, ",") {
+					pair = strings.TrimSpace(pair)
+					if pair == "" {
+						continue
+					}
+					kv := strings.SplitN(pair, ":", 2)
+					if len(kv) == 2 {
+						m[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+					}
+				}
+				return m
+			}
+			opts := map[string]interface{}{
+				"valid_until": *validUntil,
+			}
+			if caps := parseCaps(*perTx); len(caps) > 0 {
+				opts["per_tx"] = caps
+			}
+			if caps := parseCaps(*cumulative); len(caps) > 0 {
+				opts["cumulative"] = caps
+			}
+			if *counterparties != "" {
+				var cps []string
+				for _, cp := range strings.Split(*counterparties, ",") {
+					if cp = strings.TrimSpace(cp); cp != "" {
+						cps = append(cps, cp)
+					}
+				}
+				opts["counterparties"] = cps
+			}
+			if *payloadDigest != "" {
+				opts["payload_digest"] = *payloadDigest
+			}
+
+			ui.SectionLabel("Mandate")
+			ui.KV("Principal", target)
+			ui.KV("Agent", safeTruncW(*agent, 32))
+			ui.KV("Scope", *scope)
+			ui.KV("Valid until", *validUntil)
+			ui.Info("A passkey ceremony will open to approve this exact mandate.")
+
+			spin := ui.NewSpinner("Waiting for principal assertion (in signer daemon)...")
+			spin.Start()
+			res, err := rw.IssueMandate(target, *agent, strings.Split(*scope, ","), opts, wallet.OpenCeremony)
+			if err != nil {
+				spin.Stop(false, "Issuance failed")
+				return err
+			}
+			spin.Stop(true, "Mandate issued")
+
+			ui.KV("Mandate ID", fmt.Sprint(res["vc_id"]))
+			ui.KV("Issuer", fmt.Sprint(res["issuer"]))
+			ui.KV("Status", fmt.Sprint(res["status"]))
+			return nil
+		},
+	}
+}
+
+func newWalletMandateListCmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("mandate list", flag.ContinueOnError)
+	account := fs.String("account", "", "Filter by wallet address (default: all)")
+
+	return &Command{
+		Name:  "list",
+		Short: "List mandates and their status",
+		Flags: fs,
+		Run: func(c *Command, args []string) error {
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			list, err := rw.ListMandates(*account)
+			if err != nil {
+				return err
+			}
+			if len(list) == 0 {
+				ui.Info("No mandates issued.")
+				return nil
+			}
+			ui.SectionLabel(fmt.Sprintf("%d mandate(s)", len(list)))
+			for _, m := range list {
+				ui.KV(fmt.Sprint(m["id"]), fmt.Sprintf("%s — scope %v, agent %v, until %v",
+					m["status"], m["scope"], m["agent"], m["until"]))
+			}
+			return nil
+		},
+	}
+}
+
+func newWalletMandateStatusCmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("mandate status", flag.ContinueOnError)
+
+	return &Command{
+		Name:  "status",
+		Short: "Show a mandate's status",
+		Flags: fs,
+		Run: func(c *Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("usage: wallet mandate status <vc-id>")
+			}
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			list, err := rw.ListMandates("")
+			if err != nil {
+				return err
+			}
+			for _, m := range list {
+				if m["id"] == args[0] {
+					ui.KV("ID", fmt.Sprint(m["id"]))
+					ui.KV("Status", fmt.Sprint(m["status"]))
+					ui.KV("Agent", fmt.Sprint(m["agent"]))
+					ui.KV("Principal", fmt.Sprint(m["principal"]))
+					ui.KV("Scope", fmt.Sprint(m["scope"]))
+					ui.KV("Valid until", fmt.Sprint(m["until"]))
+					return nil
+				}
+			}
+			return fmt.Errorf("mandate %s not found", args[0])
+		},
+	}
+}
+
+func newWalletMandateStatusListCmd(cfg *config.Config) *Command {
+	fs := flag.NewFlagSet("mandate statuslist", flag.ContinueOnError)
+	out := fs.String("out", "", "Write the status-list JSON to this file")
+
+	return &Command{
+		Name:  "statuslist",
+		Short: "Export the issuer's signed status-list credentials",
+		Flags: fs,
+		Run: func(c *Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("usage: wallet mandate statuslist <issuer-did|vc-id> [--out file]")
+			}
+			rw, err := custodianRemote()
+			if err != nil {
+				return err
+			}
+			lists, err := rw.StatusList(args[0])
+			if err != nil {
+				return err
+			}
+			data, err := json.MarshalIndent(lists, "", "  ")
+			if err != nil {
+				return err
+			}
+			if *out != "" {
+				if err := os.WriteFile(*out, data, 0600); err != nil {
+					return err
+				}
+				ui.Success("Status lists written to " + *out)
+				return nil
+			}
+			fmt.Println(string(data))
+			return nil
+		},
+	}
+}
+
+func newWalletMandateSetStatusCmd(cfg *config.Config) *Command {
+	mk := func(name, status string) *Command {
+		return &Command{
+			Name:  name,
+			Short: name + " a mandate",
+			Run: func(c *Command, args []string) error {
+				if len(args) == 0 {
+					return fmt.Errorf("usage: wallet mandate %s <vc-id>", name)
+				}
+				rw, err := custodianRemote()
+				if err != nil {
+					return err
+				}
+				res, err := rw.SetMandateStatus(args[0], status, wallet.OpenCeremony)
+				if err != nil {
+					return err
+				}
+				if e, ok := res["error"].(string); ok && e != "" {
+					return fmt.Errorf("%s", e)
+				}
+				ui.Success(fmt.Sprintf("Mandate %s: %s", args[0], status))
+				return nil
+			},
+		}
+	}
+	cmd := &Command{
+		Name:  "set",
+		Short: "Mandate status transitions",
+	}
+	cmd.addSub(mk("revoke", "revoked"))
+	cmd.addSub(mk("suspend", "suspended"))
+	cmd.Run = func(c *Command, args []string) error {
+		c.printHelp()
+		return nil
+	}
+	return cmd
 }

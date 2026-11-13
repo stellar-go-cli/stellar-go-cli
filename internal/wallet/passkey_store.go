@@ -30,9 +30,9 @@ func passkeyPath(addr string) (string, error) {
 	return filepath.Join(dir, addr+".json"), nil
 }
 
-// loadPasskeys returns the WebAuthn credentials registered for a wallet.
+// LoadPasskeys returns the WebAuthn credentials registered for a wallet.
 // A missing file yields an empty slice, not an error.
-func loadPasskeys(addr string) ([]webauthn.Credential, error) {
+func LoadPasskeys(addr string) ([]webauthn.Credential, error) {
 	path, err := passkeyPath(addr)
 	if err != nil {
 		return nil, err
@@ -51,9 +51,9 @@ func loadPasskeys(addr string) ([]webauthn.Credential, error) {
 	return creds, nil
 }
 
-// savePasskey upserts a credential (matched by ID) for a wallet.
-func savePasskey(addr string, cred *webauthn.Credential) error {
-	creds, err := loadPasskeys(addr)
+// SavePasskey upserts a credential (matched by ID) for a wallet.
+func SavePasskey(addr string, cred *webauthn.Credential) error {
+	creds, err := LoadPasskeys(addr)
 	if err != nil {
 		return err
 	}
@@ -84,8 +84,8 @@ func savePasskey(addr string, cred *webauthn.Credential) error {
 	return nil
 }
 
-// deletePasskeys removes the passkey file for a wallet (best effort on missing).
-func deletePasskeys(addr string) error {
+// DeletePasskeys removes the passkey file for a wallet (best effort on missing).
+func DeletePasskeys(addr string) error {
 	path, err := passkeyPath(addr)
 	if err != nil {
 		return err

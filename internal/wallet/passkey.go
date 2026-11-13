@@ -19,20 +19,15 @@ import (
 )
 
 const (
-	keyringService   = "stellar-go-cli"
-	ceremonyTimeout  = 2 * time.Minute
-	defaultUnlockTTL = 15 * time.Minute
+	keyringService  = "stellar-go-cli"
+	ceremonyTimeout = 2 * time.Minute
 )
 
-// unlockGrant is the short-lived session record stored in the OS keyring after
-// a successful passkey assertion.
-type unlockGrant struct {
-	Seed    string `json:"seed"`
-	Expires int64  `json:"expires"`
-}
-
 func walletKeyItem(addr string) string { return "wallet-key-" + addr }
-func unlockItem(addr string) string    { return "unlock-" + addr }
+
+// unlockItem names the legacy keyring item that held unlock grants. Grants
+// moved into custodian memory; the name remains so stale items can be deleted.
+func unlockItem(addr string) string { return "unlock-" + addr }
 
 // encryptSeed encrypts a seed with AES-256-GCM and returns base64(nonce‖ciphertext).
 func encryptSeed(seed string, key []byte) (string, error) {
@@ -75,9 +70,9 @@ func decryptSeed(enc string, key []byte) (string, error) {
 	return string(seed), nil
 }
 
-// openCeremony opens the browser at the ceremony URL and always prints a
+// OpenCeremony opens the browser at the ceremony URL and always prints a
 // clickable fallback link so the flow survives browsers that fail to launch.
-func openCeremony(url string) error {
+func OpenCeremony(url string) error {
 	if err := wan.OpenBrowser(url); err != nil {
 		ui.Warn("Could not open a browser automatically.")
 	}
@@ -100,31 +95,37 @@ func (s *Service) RegisterPasskey(address string) (*webauthn.Credential, error) 
 		return nil, fmt.Errorf("wallet %s has no private key to protect", address)
 	}
 
-	creds, err := loadPasskeys(address)
+	creds, err := LoadPasskeys(address)
 	if err != nil {
 		return nil, err
 	}
 
 	user := &wan.User{Address: acc.Address, Name: acc.Address[:12], Credentials: creds}
 	ui.Info("Starting passkey registration — a browser window will open.")
-	cred, err := wan.Register(user, openCeremony, ceremonyTimeout)
+	cred, err := wan.Register(user, OpenCeremony, ceremonyTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("passkey registration failed: %w", err)
 	}
+	return s.applyPasskeyProtection(acc, cred)
+}
 
+// applyPasskeyProtection runs the post-ceremony part of registration:
+// encryption key to OS keychain, seed re-stored encrypted, passkey persisted.
+// Shared by the local ceremony path and the relayed (client-side) ceremony.
+func (s *Service) applyPasskeyProtection(acc *models.Account, cred *webauthn.Credential) (*webauthn.Credential, error) {
 	// Generate the encryption key and store it in the OS keychain before
 	// touching the wallet file, so a later failure leaves no half-protected state.
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("key generation failed: %w", err)
 	}
-	if err := keyring.Set(keyringService, walletKeyItem(address), base64.StdEncoding.EncodeToString(key)); err != nil {
+	if err := keyring.Set(keyringService, walletKeyItem(acc.Address), base64.StdEncoding.EncodeToString(key)); err != nil {
 		return nil, fmt.Errorf("could not store encryption key in OS keychain: %w", err)
 	}
 
 	enc, err := encryptSeed(acc.PrivateKey, key)
 	if err != nil {
-		keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup on failure
+		keyring.Delete(keyringService, walletKeyItem(acc.Address)) //nolint:errcheck // best-effort cleanup on failure
 		return nil, err
 	}
 
@@ -132,17 +133,17 @@ func (s *Service) RegisterPasskey(address string) (*webauthn.Credential, error) 
 	acc.PrivateKey = ""
 	acc.PasskeyProtected = true
 	if err := s.AddWalletToRegistry(acc, false); err != nil {
-		keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup on failure
+		keyring.Delete(keyringService, walletKeyItem(acc.Address)) //nolint:errcheck // best-effort cleanup on failure
 		return nil, fmt.Errorf("failed to save protected wallet: %w", err)
 	}
 
-	if err := savePasskey(address, cred); err != nil {
+	if err := SavePasskey(acc.Address, cred); err != nil {
 		return nil, fmt.Errorf("passkey registered but could not be stored: %w", err)
 	}
 
 	// Scrub plaintext seed copies from legacy state caches so the protected
 	// seed cannot be recovered or used to bypass the lock.
-	scrubLegacySeedCaches(address)
+	scrubLegacySeedCaches(acc.Address)
 
 	return cred, nil
 }
@@ -173,57 +174,88 @@ func scrubLegacySeedCaches(address string) {
 	}
 }
 
-// Unlock runs a WebAuthn assertion ceremony; on success the decrypted seed is
-// placed in the OS keychain as a session grant valid for ttl (default 15m).
-func (s *Service) Unlock(address string, ttl time.Duration) error {
+// AssertAndDecrypt runs a WebAuthn assertion ceremony and returns the
+// wallet's decrypted seed. The caller owns the returned seed — the custodian
+// daemon uses it to place an unlock grant in its own memory (grants no longer
+// live in the OS keychain, where any same-UID process could read them).
+func (s *Service) AssertAndDecrypt(address string) (string, error) {
+	return s.assertAndDecrypt(address, nil)
+}
+
+// AssertBoundAndDecrypt runs a challenge-bound assertion ceremony and returns
+// the decrypted seed — operator paths that reveal key material (wallet
+// export) bind the ceremony to the exact intent.
+func (s *Service) AssertBoundAndDecrypt(address string, challenge []byte) (string, error) {
+	return s.assertAndDecrypt(address, challenge)
+}
+
+func (s *Service) assertAndDecrypt(address string, challenge []byte) (string, error) {
 	acc, err := s.GetWalletByAddress(address)
 	if err != nil {
-		return fmt.Errorf("wallet not found: %w", err)
+		return "", fmt.Errorf("wallet not found: %w", err)
 	}
 	if !acc.PasskeyProtected {
-		return fmt.Errorf("wallet %s is not passkey-protected", address)
+		return "", fmt.Errorf("wallet %s is not passkey-protected", address)
 	}
 
-	creds, err := loadPasskeys(address)
+	creds, err := LoadPasskeys(address)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if len(creds) == 0 {
-		return fmt.Errorf("no passkey registered for wallet %s", address)
-	}
-	if ttl <= 0 {
-		ttl = defaultUnlockTTL
+		return "", fmt.Errorf("no passkey registered for wallet %s", address)
 	}
 
 	user := &wan.User{Address: acc.Address, Name: acc.Address[:12], Credentials: creds}
 	ui.Info("Starting passkey authentication — a browser window will open.")
-	cred, err := wan.Assert(user, openCeremony, ceremonyTimeout)
+	var cred *webauthn.Credential
+	if len(challenge) > 0 {
+		cred, err = wan.AssertBound(user, challenge, OpenCeremony, ceremonyTimeout)
+	} else {
+		cred, err = wan.Assert(user, OpenCeremony, ceremonyTimeout)
+	}
 	if err != nil {
-		return fmt.Errorf("passkey authentication failed: %w", err)
+		return "", fmt.Errorf("passkey authentication failed: %w", err)
 	}
 
 	// Persist updated sign counter (clone detection).
-	if err := savePasskey(address, cred); err != nil {
+	if err := SavePasskey(acc.Address, cred); err != nil {
 		ui.Warn("Could not update passkey counter: " + err.Error())
 	}
 
-	seed, err := s.decryptWalletSeed(acc)
-	if err != nil {
-		return err
-	}
-
-	grant := unlockGrant{Seed: seed, Expires: time.Now().Add(ttl).Unix()}
-	data, err := json.Marshal(grant)
-	if err != nil {
-		return fmt.Errorf("grant encoding failed: %w", err)
-	}
-	if err := keyring.Set(keyringService, unlockItem(address), string(data)); err != nil {
-		return fmt.Errorf("could not store unlock grant in OS keychain: %w", err)
-	}
-	return nil
+	return s.DecryptWalletSeed(acc)
 }
 
-// Lock drops the unlock grant for a wallet.
+// AssertBound runs a WebAuthn assertion whose challenge binds to the given
+// request hash — the approval mechanism for custodian escalation (spec §10.2
+// dynamic linking). Returns the updated credential on success.
+func (s *Service) AssertBound(address string, challenge []byte) (*webauthn.Credential, error) {
+	acc, err := s.GetWalletByAddress(address)
+	if err != nil {
+		return nil, fmt.Errorf("wallet not found: %w", err)
+	}
+	creds, err := LoadPasskeys(address)
+	if err != nil {
+		return nil, err
+	}
+	if len(creds) == 0 {
+		return nil, fmt.Errorf("no passkey registered for wallet %s", address)
+	}
+	user := &wan.User{Address: acc.Address, Name: acc.Address[:12], Credentials: creds}
+	ui.Info("Confirm the requested operation with your passkey — a browser window will open.")
+	cred, err := wan.AssertBound(user, challenge, OpenCeremony, ceremonyTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("passkey authentication failed: %w", err)
+	}
+	if err := SavePasskey(acc.Address, cred); err != nil {
+		ui.Warn("Could not update passkey counter: " + err.Error())
+	}
+	return cred, nil
+}
+
+// Lock drops any legacy keyring unlock grant for a wallet. Grants now live in
+// the custodian daemon's memory; this stays for cleanup of pre-daemon grants
+// and as the operator's best-effort keyring scrub.
 func (s *Service) Lock(address string) error {
 	if err := keyring.Delete(keyringService, unlockItem(address)); err != nil && err != keyring.ErrNotFound {
 		return fmt.Errorf("could not remove unlock grant: %w", err)
@@ -242,7 +274,7 @@ func (s *Service) DisablePasskey(address string) error {
 		return fmt.Errorf("wallet %s is not passkey-protected", address)
 	}
 
-	creds, err := loadPasskeys(address)
+	creds, err := LoadPasskeys(address)
 	if err != nil {
 		return err
 	}
@@ -252,11 +284,11 @@ func (s *Service) DisablePasskey(address string) error {
 
 	user := &wan.User{Address: acc.Address, Name: acc.Address[:12], Credentials: creds}
 	ui.Info("Verify your passkey to remove protection — a browser window will open.")
-	if _, err := wan.Assert(user, openCeremony, ceremonyTimeout); err != nil {
+	if _, err := wan.Assert(user, OpenCeremony, ceremonyTimeout); err != nil {
 		return fmt.Errorf("passkey authentication failed: %w", err)
 	}
 
-	seed, err := s.decryptWalletSeed(acc)
+	seed, err := s.DecryptWalletSeed(acc)
 	if err != nil {
 		return err
 	}
@@ -268,9 +300,9 @@ func (s *Service) DisablePasskey(address string) error {
 		return fmt.Errorf("failed to save wallet: %w", err)
 	}
 
-	s.Lock(address)                                        //nolint:errcheck // best-effort cleanup
-	keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup
-	deletePasskeys(address)                                //nolint:errcheck // best-effort cleanup
+	s.Lock(address)                                            //nolint:errcheck // best-effort cleanup
+	keyring.Delete(keyringService, walletKeyItem(acc.Address)) //nolint:errcheck // best-effort cleanup
+	DeletePasskeys(address)                                    //nolint:errcheck // best-effort cleanup
 	return nil
 }
 
@@ -299,7 +331,7 @@ func (s *Service) GetPasskeyStatus(address string) (*PasskeyStatus, error) {
 
 	st := &PasskeyStatus{Address: address, Protected: acc.PasskeyProtected}
 
-	creds, err := loadPasskeys(address)
+	creds, err := LoadPasskeys(address)
 	if err != nil {
 		return nil, err
 	}
@@ -315,16 +347,13 @@ func (s *Service) GetPasskeyStatus(address string) (*PasskeyStatus, error) {
 		})
 	}
 
-	if grant, err := readUnlockGrant(address); err == nil && time.Now().Unix() < grant.Expires {
-		st.Unlocked = true
-		exp := time.Unix(grant.Expires, 0)
-		st.UnlockedUntil = &exp
-	}
+	// Unlock state lives in the custodian daemon's memory — the local view
+	// always reports locked. Query the daemon for grant state.
 	return st, nil
 }
 
-// decryptWalletSeed decrypts the at-rest encrypted seed using the keychain key.
-func (s *Service) decryptWalletSeed(acc *models.Account) (string, error) {
+// DecryptWalletSeed decrypts the at-rest encrypted seed using the keychain key.
+func (s *Service) DecryptWalletSeed(acc *models.Account) (string, error) {
 	if acc.PrivateKeyEnc == "" {
 		return "", fmt.Errorf("wallet %s has no encrypted seed", acc.Address)
 	}
@@ -339,48 +368,110 @@ func (s *Service) decryptWalletSeed(acc *models.Account) (string, error) {
 	return decryptSeed(acc.PrivateKeyEnc, key)
 }
 
-// readUnlockGrant loads the session grant for an unlocked wallet.
-func readUnlockGrant(address string) (*unlockGrant, error) {
-	data, err := keyring.Get(keyringService, unlockItem(address))
-	if err != nil {
-		return nil, err
-	}
-	var grant unlockGrant
-	if err := json.Unmarshal([]byte(data), &grant); err != nil {
-		return nil, fmt.Errorf("bad unlock grant: %w", err)
-	}
-	return &grant, nil
-}
-
-// unlockedSeed returns the decrypted seed for a wallet with a live unlock grant,
-// or an error if locked/expired.
-func unlockedSeed(address string) (string, error) {
-	grant, err := readUnlockGrant(address)
-	if err != nil {
-		return "", fmt.Errorf("no unlock grant")
-	}
-	if time.Now().Unix() >= grant.Expires {
-		keyring.Delete(keyringService, unlockItem(address)) //nolint:errcheck // clean expired grant
-		return "", fmt.Errorf("unlock grant expired")
-	}
-	return grant.Seed, nil
-}
-
-// ResolveSeed returns the plaintext seed for an account: directly if stored,
-// or from a live passkey unlock grant for protected wallets.
-// All seed readers (keypair loaders, exports, signers) must go through this.
+// ResolveSeed returns the plaintext seed for an account. Only unprotected
+// (plaintext) wallets resolve locally — protected-wallet seeds resolve inside
+// the custodian daemon's grant store, never in the caller's process.
+// All local seed readers (keypair loaders, exports) must go through this.
 func ResolveSeed(acc *models.Account) (string, error) {
 	if acc.PrivateKey != "" {
 		return acc.PrivateKey, nil
 	}
-	if !acc.PasskeyProtected || acc.PrivateKeyEnc == "" {
-		return "", fmt.Errorf("no private key for wallet %s", acc.Address)
-	}
-	seed, err := unlockedSeed(acc.Address)
-	if err != nil {
+	if acc.PasskeyProtected && acc.PrivateKeyEnc != "" {
 		return "", fmt.Errorf(
-			"wallet %s is passkey-protected and locked — run 'stellar-go-cli wallet passkey unlock %s'",
+			"wallet %s is passkey-protected — sign through the custodian daemon ('stellar-go-cli signer' + 'wallet passkey unlock %s')",
 			acc.Address, acc.Address)
 	}
-	return seed, nil
+	return "", fmt.Errorf("no private key for wallet %s", acc.Address)
+}
+
+// ─── Relayed ceremonies ──────────────────────────────────────────────────
+// The custodian daemon builds the WebAuthn session; the CLIENT machine runs
+// the browser ceremony and relays the raw credential response back. The
+// daemon host needs no browser (headless deployments).
+
+// BeginAssertRelay starts a challenge-bound assertion for a relayed ceremony:
+// returns the daemon-side RelaySession (kept for Finish) and the options JSON
+// the client's browser needs.
+func (s *Service) BeginAssertRelay(address string, challenge []byte, origin string) (*wan.RelaySession, []byte, error) {
+	acc, err := s.GetWalletByAddress(address)
+	if err != nil {
+		return nil, nil, fmt.Errorf("wallet not found: %w", err)
+	}
+	if !acc.PasskeyProtected {
+		return nil, nil, fmt.Errorf("wallet %s is not passkey-protected", address)
+	}
+	creds, err := LoadPasskeys(address)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(creds) == 0 {
+		return nil, nil, fmt.Errorf("no passkey registered for wallet %s", address)
+	}
+	user := &wan.User{Address: acc.Address, Name: acc.Address[:12], Credentials: creds}
+	return wan.BeginRelayFor(wan.ModeAssert, user, challenge, origin)
+}
+
+// FinishAssertRelay verifies the relayed assertion, updates the passkey sign
+// counter, and returns the decrypted seed (caller owns it — custodian memory
+// only).
+func (s *Service) FinishAssertRelay(rs *wan.RelaySession, address string, assertionJSON []byte) (string, error) {
+	cred, err := wan.FinishRelayAssert(rs, assertionJSON)
+	if err != nil {
+		return "", err
+	}
+	if err := SavePasskey(address, cred); err != nil {
+		ui.Warn("Could not update passkey counter: " + err.Error())
+	}
+	acc, err := s.GetWalletByAddress(address)
+	if err != nil {
+		return "", err
+	}
+	return s.DecryptWalletSeed(acc)
+}
+
+// VerifyAssertRelay is FinishAssertRelay without decryption — for actions
+// that bind approval without revealing key material (approve, reactivate).
+func (s *Service) VerifyAssertRelay(rs *wan.RelaySession, address string, assertionJSON []byte) error {
+	cred, err := wan.FinishRelayAssert(rs, assertionJSON)
+	if err != nil {
+		return err
+	}
+	if err := SavePasskey(address, cred); err != nil {
+		ui.Warn("Could not update passkey counter: " + err.Error())
+	}
+	return nil
+}
+
+// BeginRegisterRelay starts a passkey registration for a relayed ceremony.
+func (s *Service) BeginRegisterRelay(address, origin string) (*wan.RelaySession, []byte, error) {
+	acc, err := s.GetWalletByAddress(address)
+	if err != nil {
+		return nil, nil, fmt.Errorf("wallet not found: %w", err)
+	}
+	if acc.PasskeyProtected {
+		return nil, nil, fmt.Errorf("wallet %s is already passkey-protected", address)
+	}
+	if acc.PrivateKey == "" {
+		return nil, nil, fmt.Errorf("wallet %s has no private key to protect", address)
+	}
+	creds, err := LoadPasskeys(address)
+	if err != nil {
+		return nil, nil, err
+	}
+	user := &wan.User{Address: acc.Address, Name: acc.Address[:12], Credentials: creds}
+	return wan.BeginRelayFor(wan.ModeRegister, user, nil, origin)
+}
+
+// FinishRegisterRelay verifies the relayed registration and applies passkey
+// protection to the wallet.
+func (s *Service) FinishRegisterRelay(rs *wan.RelaySession, address string, creationJSON []byte) (*webauthn.Credential, error) {
+	cred, err := wan.FinishRelayRegister(rs, creationJSON)
+	if err != nil {
+		return nil, err
+	}
+	acc, err := s.GetWalletByAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyPasskeyProtection(acc, cred)
 }

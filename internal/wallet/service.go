@@ -716,7 +716,7 @@ func (s *Service) RemoveWallet(address string) error {
 	}
 
 	// Clean up passkey state and keychain entries (best effort)
-	deletePasskeys(address)                                //nolint:errcheck // best-effort cleanup
+	DeletePasskeys(address)                                //nolint:errcheck // best-effort cleanup
 	keyring.Delete(keyringService, walletKeyItem(address)) //nolint:errcheck // best-effort cleanup
 	keyring.Delete(keyringService, unlockItem(address))    //nolint:errcheck // best-effort cleanup
 	scrubLegacySeedCaches(address)
