@@ -78,6 +78,12 @@ type Pacs008Options struct {
 	UETR           string
 	TxID           string
 	InstrID        string
+	// InitgPtyName names the initiating party (agent identity when a PME
+	// agent initiated the transfer). Defaults to "Stellar Go CLI".
+	InitgPtyName string
+	// Evidence carries PME mandate/decision evidence into SplmtryData
+	// (spec §12.3); nil for operator-initiated payments.
+	Evidence *AgentEvidence
 }
 
 // Pacs008BatchOptions configures a batch pacs.008. Per-payment overrides come
@@ -203,6 +209,12 @@ func pacs008TxInf(instr *CreditTransferInstruction, opts *Pacs008Options, debtor
 	if assetSuppl != nil {
 		txInf.SplmtryData = []SupplementaryData1{*assetSuppl}
 	}
+	if opts.Evidence != nil {
+		txInf.SplmtryData = append(txInf.SplmtryData, SupplementaryData1{
+			PlcAndNm: "PME-Evidence",
+			Envlp:    &SupplementaryDataEnvelope1{Evidence: opts.Evidence},
+		})
+	}
 
 	if opts.ChargeBearer != "" {
 		txInf.ChrgBr = opts.ChargeBearer
@@ -211,7 +223,11 @@ func pacs008TxInf(instr *CreditTransferInstruction, opts *Pacs008Options, debtor
 	}
 
 	// InitgPty lives at transaction level in pacs.008 (not in GrpHdr)
-	txInf.InitgPty = &PartyIdentification272{Nm: "Stellar Go CLI"}
+	initgPty := opts.InitgPtyName
+	if initgPty == "" {
+		initgPty = "Stellar Go CLI"
+	}
+	txInf.InitgPty = &PartyIdentification272{Nm: initgPty}
 
 	// Debtor side — instruction party wins, then the batch-level debtor,
 	// then opts, then payment-derived defaults.

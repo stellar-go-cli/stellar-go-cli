@@ -529,9 +529,25 @@ type SupplementaryData1 struct {
 }
 
 // SupplementaryDataEnvelope1 — Envlp content. The XSD allows any XML here;
-// we emit a proprietary Asset element carrying the non-ISO asset details.
+// we emit a proprietary Asset element carrying the non-ISO asset details,
+// and (for agent-delegated payments) an Evidence element tying the message
+// to the PME mandate/decision records (spec §12.3).
 type SupplementaryDataEnvelope1 struct {
-	Asset *SupplementaryAsset `xml:"Asset,omitempty"`
+	Asset    *SupplementaryAsset `xml:"Asset,omitempty"`
+	Evidence *AgentEvidence      `xml:"Evidence,omitempty"`
+}
+
+// AgentEvidence — PME evidence carried in SplmtryData for agent-initiated
+// credit transfers. The direct-debit Mndt element is deliberately NOT used —
+// it has a specific scheme meaning (spec §12.3).
+type AgentEvidence struct {
+	MandateRef   string `xml:"MandateRef,omitempty"`  // mandate VC id
+	DecisionRef  string `xml:"DecisionRef,omitempty"` // gatekeeper decision record hash
+	RecordHash   string `xml:"RecordHash,omitempty"`  // enforcement record chain hash
+	PolicyStamp  string `xml:"PolicyStamp,omitempty"` // version:hash of the enforced policy
+	AgentID      string `xml:"AgentId,omitempty"`     // agent did:key (holder of the mandate)
+	ApprovalHash string `xml:"ApprHash,omitempty"`    // bound-ceremony assertion hash, if any
+	TxHash       string `xml:"TxHash,omitempty"`      // on-chain transaction hash linkage
 }
 
 // SupplementaryAsset — proprietary asset identification inside Envlp.
