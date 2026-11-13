@@ -1,0 +1,68 @@
+name: Fuzz Nightly
+
+# Longer differential + local fuzz campaign (docs/audit/differential-fuzzing.md
+# Phase 3). Runs the full local suite plus the stellar-CLI differential oracle.
+# Divergence artifacts (fuzzer-written testdata/fuzz/ + crash output) are
+# uploaded for triage.
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # nightly 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install stellar CLI oracle
+        run: |
+          cargo install --locked stellar-cli@28.0.0 --features vendored-openssl || \
+            echo "oracle install failed — differential targets will self-skip"
+
+      - name: Oracle version
+        run: stellar version || true
+
+      - name: Tier-1 corpus replay
+        run: cd pkg && go test -run TestCorpusDifferential -v ./soroban/
+
+      - name: Fuzz local targets (10m each)
+        run: |
+          cd pkg
+          go test -fuzz=FuzzCompareScVal -fuzztime=10m ./soroban/
+          go test -fuzz=FuzzScMapSortDeterminism -fuzztime=5m ./soroban/
+          go test -fuzz=FuzzToScVal -fuzztime=5m ./soroban/
+          go test -fuzz=FuzzParseDocuments -fuzztime=5m ./iso20022/
+          go test -fuzz=FuzzMarshalUnmarshalRoundTrip -fuzztime=5m ./iso20022/
+          go test -fuzz=FuzzDecodeHeaders -fuzztime=5m ./x402/
+          go test -fuzz=FuzzParseAtomicAmount -fuzztime=5m ./x402/
+          cd .. && go test -fuzz=FuzzCallTool -fuzztime=5m ./internal/mcp/
+          go test -fuzz=FuzzValidateAndCollect -fuzztime=5m ./internal/mcp/
+
+      - name: Fuzz differential targets (10m each)
+        run: |
+          cd pkg
+          go test -fuzz=FuzzScValEncodeDifferential -fuzztime=10m ./soroban/
+          go test -fuzz=FuzzScValDecodeDifferential -fuzztime=10m ./soroban/
+          go test -fuzz=FuzzStrkeyDifferential -fuzztime=5m ./soroban/
+          go test -fuzz=FuzzTxEnvelopeDifferential -fuzztime=5m ./soroban/
+
+      - name: Upload divergence artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-divergence-${{ github.run_id }}
+          path: |
+            pkg/**/testdata/fuzz/
+            **/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 30

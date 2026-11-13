@@ -1,0 +1,1 @@
+{"map":[{"key":{"symbol":"data"},"val":{"vec":[{"string":"hello"},{"bytes":"deadbeef"},{"symbol":"sym"}]}},{"key":{"symbol":"err"},"val":{"error":{"contract":7}}},{"key":{"symbol":"n"},"val":{"map":[{"key":{"u32":1},"val":{"bool":false}}]}}]}

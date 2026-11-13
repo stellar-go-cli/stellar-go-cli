@@ -59,3 +59,38 @@ jobs:
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.13.2
+
+  # Bounded local fuzz smoke on every PR/push — oracle-free targets only
+  # (differential targets self-skip without the stellar CLI; the nightly
+  # workflow runs them with the oracle installed).
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fuzz seed corpus (both modules)
+        run: |
+          go test -run 'Fuzz' ./...
+          cd pkg && go test -run 'Fuzz' ./...
+
+      - name: Fuzz pkg/soroban local targets
+        run: |
+          cd pkg
+          go test -fuzz=FuzzCompareScVal -fuzztime=60s ./soroban/
+          go test -fuzz=FuzzScMapSortDeterminism -fuzztime=30s ./soroban/
+          go test -fuzz=FuzzToScVal -fuzztime=30s ./soroban/
+
+      - name: Fuzz pkg/iso20022 + pkg/x402
+        run: |
+          cd pkg
+          go test -fuzz=FuzzParseDocuments -fuzztime=30s ./iso20022/
+          go test -fuzz=FuzzDecodeHeaders -fuzztime=30s ./x402/
+
+      - name: Fuzz internal/mcp + internal/config
+        run: |
+          go test -fuzz=FuzzCallTool -fuzztime=30s ./internal/mcp/
+          go test -fuzz=FuzzConfigLoad -fuzztime=20s ./internal/config/
