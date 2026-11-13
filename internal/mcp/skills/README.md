@@ -40,18 +40,18 @@ stellar-go-cli/internal/mcp/skills/
 
 ## Core Skills Summary
 
-### Wallet Operations (12 skills)
+### Wallet Operations (10 skills)
 **File**: `core/wallet_operations.md`
 
 | Skill | MCP Tool | Description | Complexity |
 |-------|----------|-------------|------------|
 | wallet_connect | wallet_connect | Connect wallet via stellar/external | Medium |
-| wallet_import | wallet_import | Import wallet from secret key or recovery phrase | High |
+| wallet_import | *(removed — operator CLI only)* | Import wallet from secret key or recovery phrase | High |
 | wallet_fund | wallet_fund | Fund wallet from testnet faucet | Low |
 | wallet_switch | wallet_switch | Switch active wallet | Low |
 | wallet_rename | wallet_rename | Rename wallet for identification | Low |
 | wallet_remove | wallet_remove | Remove wallet from registry | Medium |
-| wallet_export | wallet_export | Export private key (high security) | High |
+| wallet_export | *(removed — operator CLI only)* | Export private key | High |
 | wallet_passkey | wallet_passkey | Passkey protection: register/unlock/lock/status/disable | High |
 | wallet_list | wallet_list | List all connected wallets | Low |
 | wallet_show | wallet_show | Show active wallet details | Low |

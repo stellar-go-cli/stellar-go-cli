@@ -42,44 +42,14 @@ Comprehensive wallet management capabilities for the Stellar Go CLI platform, in
 
 ---
 
-### wallet_import
+### wallet_import — NOT AN MCP TOOL
 **Description**: Import wallet from secret key or recovery phrase
 **Category**: wallet_operations
-**MCP Tool**: wallet_import
+**MCP Tool**: *removed* — secret-bearing wallet lifecycle is an operator CLI
+operation (`stellar-go-cli wallet import`), never reachable by an agent.
 
-**Parameters**:
-- `secret` (string, required): Secret key or recovery phrase
-- `name` (string): Wallet name for easy identification (optional)
-- `network` (enum): stellar-testnet | stellar-mainnet (default: stellar-testnet)
-
-**Natural Language Patterns**:
-- "import wallet with secret key"
-- "restore wallet from recovery phrase"
-- "add wallet using private key"
-- "import my backup wallet"
-- "restore from seed phrase"
-
-**Examples**:
-```bash
-# Secret key import
-"import wallet with secret S..."
-
-# Recovery phrase
-"restore wallet from phrase: twelve words here"
-
-# Named wallet
-"import wallet named 'My Trading Wallet'"
-```
-
-**Security Notes**:
-- Always confirm before handling secret keys
-- Warn about security implications
-- Suggest secure storage after import
-
-**Follow-up Questions**:
-- "Would you like me to back up this wallet securely?"
-- "Should I set this as your active wallet?"
-- "Do you want to fund this wallet from the testnet faucet?"
+If the user asks to import a wallet, direct them to run the CLI themselves —
+never ask for a secret key or recovery phrase in this channel.
 
 ---
 
@@ -229,41 +199,14 @@ Comprehensive wallet management capabilities for the Stellar Go CLI platform, in
 
 ---
 
-### wallet_export
-**Description**: Export wallet private key (use with extreme caution)
+### wallet_export — NOT AN MCP TOOL
+**Description**: Export wallet private key
 **Category**: wallet_operations
-**MCP Tool**: wallet_export
+**MCP Tool**: *removed* — private-key export is an operator CLI operation
+(`stellar-go-cli wallet export`), never reachable by an agent.
 
-**Parameters**:
-- `address` (string): Wallet address to export (optional, uses active if omitted)
-- `confirm` (boolean): Confirmation required for security
-
-**Natural Language Patterns**:
-- "export my private key"
-- "show wallet secret key"
-- "backup my wallet keys"
-- "export wallet GD...ADDRESS"
-- "get private key for backup"
-
-**Security Warnings**:
-- Multiple confirmation steps
-- Security best practices advice
-- Warning about exposure risks
-- Suggest secure storage
-
-**Examples**:
-```bash
-# Export with confirmation
-"export my private key - I understand the risks"
-
-# Export specific wallet
-"export wallet GD...ADDRESS - confirmed"
-```
-
-**Follow-up Actions**:
-- Suggest secure storage methods
-- Offer to generate paper wallet
-- Recommend hardware wallet backup
+If the user asks to export or reveal a private key, direct them to run the
+CLI themselves — never produce or request key material in this channel.
 
 ---
 

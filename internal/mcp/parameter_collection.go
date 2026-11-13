@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -43,11 +44,6 @@ var ParameterSchemas = map[string][]ParameterInfo{
 		{Name: "network", Type: "string", Required: false, Description: "Network: stellar-testnet | stellar-mainnet | evm-sepolia | evm-mainnet", Default: "stellar-testnet", Enum: []string{"stellar-testnet", "stellar-mainnet", "evm-sepolia", "evm-mainnet"}},
 		{Name: "address", Type: "string", Required: false, Description: "External address for external provider", Examples: []string{"GD5DQYPNQFSX4TVWV5EHG63IZW5KQ5B4R6J3AY3ARJ2V2QZVX6A3Q..."}},
 	},
-	"wallet_import": {
-		{Name: "secret", Type: "string", Required: true, Description: "Secret key or recovery phrase", Examples: []string{"S...", "word1 word2 word3..."}},
-		{Name: "name", Type: "string", Required: false, Description: "Wallet name for easy identification", Examples: []string{"My Trading Wallet", "Savings Account"}},
-		{Name: "network", Type: "string", Required: false, Description: "Network", Default: "stellar-testnet", Enum: []string{"stellar-testnet", "stellar-mainnet"}},
-	},
 	"wallet_fund": {
 		{Name: "address", Type: "string", Required: false, Description: "Wallet address to fund (uses active if omitted)"},
 		{Name: "network", Type: "string", Required: false, Description: "Network", Default: "stellar-testnet", Enum: []string{"stellar-testnet", "stellar-mainnet"}},
@@ -62,10 +58,6 @@ var ParameterSchemas = map[string][]ParameterInfo{
 	"wallet_remove": {
 		{Name: "address", Type: "string", Required: true, Description: "Wallet address to remove"},
 		{Name: "confirm", Type: "boolean", Required: false, Description: "Confirm removal for safety"},
-	},
-	"wallet_export": {
-		{Name: "address", Type: "string", Required: false, Description: "Wallet address to export (uses active if omitted)"},
-		{Name: "confirm", Type: "boolean", Required: false, Description: "Confirm export for security"},
 	},
 	"wallet_passkey": {
 		{Name: "action", Type: "string", Required: false, Description: "Action: register | unlock | lock | status | disable", Default: "status", Enum: []string{"register", "unlock", "lock", "status", "disable"}},
@@ -84,7 +76,7 @@ var ParameterSchemas = map[string][]ParameterInfo{
 		{Name: "amount", Type: "string", Required: true, Description: "Amount to swap"},
 		{Name: "type", Type: "string", Required: false, Description: "Swap type", Default: "strict-send", Enum: []string{"strict-send", "strict-receive"}},
 		{Name: "slippage", Type: "number", Required: false, Description: "Maximum slippage percentage"},
-		{Name: "execute", Type: "boolean", Required: false, Description: "Actually execute the transaction", Default: true},
+		{Name: "execute", Type: "boolean", Required: false, Description: "Actually execute the transaction", Default: false},
 	},
 	"pay_send": {
 		{Name: "destination", Type: "string", Required: true, Description: "Recipient Stellar address", Examples: []string{"GD5DQYPNQFSX4TVWV5EHG63IZW5KQ5B4R6J3AY3ARJ2V2QZVX6A3Q..."}},
@@ -117,49 +109,147 @@ var ParameterSchemas = map[string][]ParameterInfo{
 		{Name: "code", Type: "string", Required: true, Description: "Asset code", Examples: []string{"USDC", "EURC"}},
 		{Name: "issuer", Type: "string", Required: true, Description: "Asset issuer address"},
 		{Name: "limit", Type: "string", Required: false, Description: "Trustline limit"},
-		{Name: "execute", Type: "boolean", Required: false, Description: "Execute the transaction", Default: true},
+		{Name: "execute", Type: "boolean", Required: false, Description: "Execute the transaction", Default: false},
 	},
 }
 
-// ValidateAndCollectParameters checks for missing parameters and returns a collection response if needed
-func ValidateAndCollectParameters(toolName string, providedArgs map[string]interface{}) (*ParameterCollectionResponse, error) {
-	schema, exists := ParameterSchemas[toolName]
-	if !exists {
-		// No schema defined, allow execution
+// inputSchemaProperty is the subset of a JSON Schema property used for
+// fail-closed tools/call validation.
+type inputSchemaProperty struct {
+	Type        string        `json:"type"`
+	Description string        `json:"description"`
+	Enum        []interface{} `json:"enum"`
+	Default     interface{}   `json:"default"`
+}
+
+// toolInputSchema is the registered InputSchema of a tool — the single
+// source of truth for required parameters and argument types.
+type toolInputSchema struct {
+	Type       string                         `json:"type"`
+	Required   []string                       `json:"required"`
+	Properties map[string]inputSchemaProperty `json:"properties"`
+}
+
+// validateAndCollect checks a tools/call request against the tool's own
+// registered InputSchema. Unlike the legacy name-keyed ParameterSchemas
+// lookup this is fail-closed: every registered tool must carry a valid
+// object schema, so there is no unvalidated dispatch path. ParameterSchemas
+// remains only as prompt-presentation metadata (examples, context strings).
+func validateAndCollect(tool Tool, providedArgs map[string]interface{}) (*ParameterCollectionResponse, error) {
+	if len(tool.InputSchema) == 0 {
+		return nil, fmt.Errorf("tool %q has no input schema — refusing to dispatch", tool.Name)
+	}
+	var schema toolInputSchema
+	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+		return nil, fmt.Errorf("tool %q has an invalid input schema: %w", tool.Name, err)
+	}
+	if schema.Type != "object" {
+		return nil, fmt.Errorf("tool %q input schema must declare type \"object\"", tool.Name)
+	}
+	if providedArgs == nil {
+		providedArgs = map[string]interface{}{}
+	}
+
+	// Type and enum checks on every provided argument.
+	for name, value := range providedArgs {
+		prop, declared := schema.Properties[name]
+		if !declared {
+			continue // JSON Schema default: additional properties allowed
+		}
+		if err := checkArgType(tool.Name, name, value, prop); err != nil {
+			return nil, err
+		}
+	}
+
+	// Required-parameter check, in declared order for stable prompts.
+	var missing []ParameterInfo
+	for _, name := range schema.Required {
+		if v, ok := providedArgs[name]; ok && v != nil && v != "" {
+			continue
+		}
+		info := parameterInfoFor(tool.Name, name, schema.Properties[name])
+		missing = append(missing, info)
+	}
+
+	if len(missing) == 0 {
 		return nil, nil
 	}
-
-	var missingParams []ParameterInfo
-
-	for _, param := range schema {
-		if !param.Required {
-			continue // Skip optional parameters
-		}
-
-		// Check if required parameter is provided
-		value, exists := providedArgs[param.Name]
-		if !exists || value == nil || value == "" {
-			missingParams = append(missingParams, param)
-		}
-	}
-
-	// If no missing parameters, return nil to indicate execution can proceed
-	if len(missingParams) == 0 {
-		return nil, nil
-	}
-
-	// Generate conversational prompt
-	prompt := generateParameterPrompt(toolName, missingParams)
-	contextMsg := generateContextMessage(toolName)
-
 	return &ParameterCollectionResponse{
 		Type:           "missing_parameters",
-		ToolName:       toolName,
-		MissingParams:  missingParams,
-		Prompt:         prompt,
-		ContextMessage: contextMsg,
+		ToolName:       tool.Name,
+		MissingParams:  missing,
+		Prompt:         generateParameterPrompt(tool.Name, missing),
+		ContextMessage: generateContextMessage(tool.Name),
 		CanProceed:     false,
 	}, nil
+}
+
+// checkArgType validates one argument against its declared JSON Schema
+// property: primitive type plus enum membership.
+func checkArgType(toolName, name string, value interface{}, prop inputSchemaProperty) error {
+	typeOK := true
+	switch prop.Type {
+	case "string":
+		_, typeOK = value.(string)
+	case "number", "integer":
+		switch value.(type) {
+		case float64, float32, int, int64, json.Number:
+		default:
+			typeOK = false
+		}
+	case "boolean":
+		_, typeOK = value.(bool)
+	case "object":
+		_, typeOK = value.(map[string]interface{})
+	case "array":
+		_, typeOK = value.([]interface{})
+	case "":
+		// No declared type — nothing to check.
+	}
+	if !typeOK {
+		return fmt.Errorf("%s: parameter %q must be of type %s", toolName, name, prop.Type)
+	}
+	if len(prop.Enum) == 0 {
+		return nil
+	}
+	str, ok := value.(string)
+	if !ok {
+		return nil // enum applies to string values
+	}
+	for _, e := range prop.Enum {
+		if es, ok := e.(string); ok && es == str {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: parameter %q must be one of the declared enum values", toolName, name)
+}
+
+// parameterInfoFor builds prompt-facing ParameterInfo for a missing required
+// parameter, preferring the registered schema and enriching it with the
+// legacy ParameterSchemas metadata (examples, descriptions) when present.
+func parameterInfoFor(toolName, name string, prop inputSchemaProperty) ParameterInfo {
+	info := ParameterInfo{
+		Name:        name,
+		Type:        prop.Type,
+		Required:    true,
+		Description: prop.Description,
+		Default:     prop.Default,
+	}
+	for _, e := range prop.Enum {
+		if es, ok := e.(string); ok {
+			info.Enum = append(info.Enum, es)
+		}
+	}
+	for _, mp := range ParameterSchemas[toolName] {
+		if mp.Name == name {
+			if info.Description == "" {
+				info.Description = mp.Description
+			}
+			info.Examples = mp.Examples
+			break
+		}
+	}
+	return info
 }
 
 // generateParameterPrompt creates a user-friendly prompt for missing parameters
@@ -216,7 +306,6 @@ func generateParameterQuestion(param ParameterInfo) string {
 func generateContextMessage(toolName string) string {
 	messages := map[string]string{
 		"wallet_connect":  "💼 I can help you connect a wallet! Let me get a few details:",
-		"wallet_import":   "🔑 I'll help you import your wallet. I need some information:",
 		"wallet_fund":     "💸 Let's fund your wallet with testnet XLM!",
 		"wallet_switch":   "🔄 I can switch your active wallet. Which one?",
 		"wallet_rename":   "✏️ Let's rename your wallet. What would you like to call it?",
@@ -234,12 +323,6 @@ func generateContextMessage(toolName string) string {
 	}
 
 	return fmt.Sprintf("🤖 I'm ready to help with %s! I need some information:", strings.ReplaceAll(toolName, "_", " "))
-}
-
-// HasRequiredParams checks if all required parameters are present for a tool
-func HasRequiredParams(toolName string, args map[string]interface{}) bool {
-	response, _ := ValidateAndCollectParameters(toolName, args) //nolint:errcheck // nil response means no collection needed
-	return response == nil
 }
 
 // GetParameterHelp returns helpful information about a specific parameter

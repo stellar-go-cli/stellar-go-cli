@@ -114,16 +114,9 @@ func (s *Server) registerWalletTools() {
 		}, []string{}),
 	}, s.handleWalletConnect)
 
-	// wallet_import - Import wallet from secret key or recovery phrase
-	s.RegisterTool(Tool{
-		Name:        "wallet_import",
-		Description: "Import wallet from secret key or recovery phrase",
-		InputSchema: buildInputSchema(map[string]interface{}{
-			"secret":  createStringSchema("Secret key or recovery phrase (required)", true),
-			"name":    createStringSchema("Wallet name (optional)", false),
-			"network": createEnumSchema("Network", []string{"stellar-testnet", "stellar-mainnet"}, "stellar-testnet"),
-		}, []string{"secret"}),
-	}, s.handleWalletImport)
+	// NOTE: wallet_import and wallet_export are deliberately not registered —
+	// secret-bearing wallet lifecycle operations are operator CLI commands
+	// (stellar-go-cli wallet import/export), never agent-reachable tools.
 
 	// wallet_fund - Fund wallet from faucet
 	s.RegisterTool(Tool{
@@ -163,16 +156,6 @@ func (s *Server) registerWalletTools() {
 			"confirm": createBooleanSchema("Confirm removal (required for safety)", false),
 		}, []string{"address"}),
 	}, s.handleWalletRemove)
-
-	// wallet_export - Export wallet private key
-	s.RegisterTool(Tool{
-		Name:        "wallet_export",
-		Description: "Export wallet private key (use with caution)",
-		InputSchema: buildInputSchema(map[string]interface{}{
-			"address": createStringSchema("Wallet address to export (optional, uses active if omitted)", false),
-			"confirm": createBooleanSchema("Confirm export (required for security)", false),
-		}, []string{}),
-	}, s.handleWalletExport)
 
 	// wallet_passkey - WebAuthn passkey protection for wallet keys
 	s.RegisterTool(Tool{
@@ -433,16 +416,17 @@ func (s *Server) registerPayTools() {
 		Name:        "pay_x402",
 		Description: "Execute a Stellar x402 v2 HTTP payment against a protected resource",
 		InputSchema: buildInputSchema(map[string]interface{}{
-			"resource":               createStringSchema("HTTP resource URL that returns an x402 v2 challenge", true),
-			"method":                 createStringSchema("HTTP method for the resource request", false),
-			"body":                   createStringSchema("Optional HTTP request body", false),
-			"headers":                createObjectSchema("Optional request headers", false),
-			"network":                createEnumSchema("Stellar network", []string{"stellar-testnet", "stellar-mainnet"}, "stellar-testnet"),
-			"payer":                  createStringSchema("Payer Stellar address (defaults to active wallet)", false),
-			"max_atomic_amount":      createStringSchema("Spend cap in token atomic units (required when execute=true)", false),
-			"rpc_url":                createStringSchema("Optional Soroban RPC URL override", false),
-			"execute":                createBooleanSchema("Send the paid retry after signing (dry-run if false)", false),
-			"allow_private_resource": createBooleanSchema("Allow resource URLs resolving to private/local addresses", false),
+			"resource":          createStringSchema("HTTP resource URL that returns an x402 v2 challenge", true),
+			"method":            createStringSchema("HTTP method for the resource request", false),
+			"body":              createStringSchema("Optional HTTP request body", false),
+			"headers":           createObjectSchema("Optional request headers", false),
+			"network":           createEnumSchema("Stellar network", []string{"stellar-testnet", "stellar-mainnet"}, "stellar-testnet"),
+			"payer":             createStringSchema("Payer Stellar address (defaults to active wallet)", false),
+			"max_atomic_amount": createStringSchema("Spend cap in token atomic units (required when execute=true)", false),
+			"execute":           createBooleanSchema("Send the paid retry after signing (dry-run if false)", false),
+			// rpc_url and allow_private_resource are operator configuration
+			// (mcp --x402-rpc-url / --allow-private-resources), never agent
+			// arguments — spec §9.5 egress policy.
 		}, []string{"resource"}),
 	}, s.handlePayX402)
 
@@ -483,9 +467,10 @@ func (s *Server) registerSystemTools() {
 	// system_network - Network operations
 	s.RegisterTool(Tool{
 		Name:        "system_network",
-		Description: "Get or set the active network (testnet/mainnet)",
+		Description: "Get or set the active network (testnet/mainnet). Switching is refused on the HTTP transport and requires confirm=true on stdio.",
 		InputSchema: buildInputSchema(map[string]interface{}{
 			"network": createEnumSchema("Network to switch to", []string{"stellar-testnet", "stellar-mainnet"}, ""),
+			"confirm": createBooleanSchema("Confirm the persistent network switch", false),
 		}, nil),
 	}, s.handleSystemNetwork)
 
