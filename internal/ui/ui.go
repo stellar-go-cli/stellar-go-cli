@@ -163,7 +163,7 @@ func Header(title string) {
 
 func SectionLabel(label string) {
 	fmt.Fprintln(os.Stderr)
-	dots := strings.Repeat("·", 40-len(label))
+	dots := strings.Repeat("·", max(0, 40-len(label)))
 	fmt.Fprintf(os.Stderr, "  %s %s\n", Dim_(label), Dim_(dots))
 }
 

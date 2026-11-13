@@ -1,13 +1,13 @@
 BINARY     = stellar-go-cli
 MODULE     = github.com/stellar-go-cli/stellar-go-cli
 CMD        = ./cmd/stellar-go-cli
-VERSION    = 0.4.0
+VERSION    = 0.8.0
 BUILD_DIR  = ./dist
 GOFLAGS    =
 
 LDFLAGS = -ldflags "-X $(MODULE)/internal/config.Version=$(VERSION) -s -w"
 
-.PHONY: all build run clean test test-e2e test-e2e-mainnet lint install help
+.PHONY: all build run clean test test-e2e test-e2e-mainnet test-e2e-cli test-e2e-cli-ext lint install help
 
 ## all: Build the binary (default)
 all: build
@@ -45,6 +45,50 @@ test-e2e:
 test-e2e-mainnet:
 	@echo "→ Running live mainnet e2e tests (requires X402_MAINNET_SEED)..."
 	@cd pkg && go test -tags e2e ./x402/ -run TestX402EndToEndMainnet -v -timeout 15m
+
+## test-e2e-cli: Run the CLI e2e suite (sandboxed HOME, fresh funded testnet wallet, real tx)
+test-e2e-cli:
+	@echo "→ Running CLI end-to-end test on testnet..."
+	@scripts/e2e_testnet.sh
+
+## test-e2e-cli-ext: Run the extended CLI e2e suite (registry ops, SEP-41 deploy, DEX exec, MCP)
+test-e2e-cli-ext:
+	@echo "→ Running extended CLI end-to-end test on testnet..."
+	@scripts/e2e_extended.sh
+
+## fuzz: Bounded fuzz campaign across all targets (FUZZTIME per target, default 30s)
+## Local targets always run; differential targets need the `stellar` CLI oracle.
+FUZZTIME ?= 30s
+fuzz:
+	@echo "→ Fuzzing pkg/soroban local targets ($(FUZZTIME) each)..."
+	@cd pkg && go test -fuzz=FuzzCompareScVal -fuzztime=$(FUZZTIME) ./soroban/
+	@cd pkg && go test -fuzz=FuzzToScVal -fuzztime=$(FUZZTIME) ./soroban/
+	@cd pkg && go test -fuzz=FuzzScMapSortDeterminism -fuzztime=$(FUZZTIME) ./soroban/
+	@echo "→ Fuzzing pkg/iso20022 ($(FUZZTIME) each)..."
+	@cd pkg && go test -fuzz=FuzzParseDocuments -fuzztime=$(FUZZTIME) ./iso20022/
+	@cd pkg && go test -fuzz=FuzzMarshalUnmarshalRoundTrip -fuzztime=$(FUZZTIME) ./iso20022/
+	@echo "→ Fuzzing pkg/x402 ($(FUZZTIME) each)..."
+	@cd pkg && go test -fuzz=FuzzDecodeHeaders -fuzztime=$(FUZZTIME) ./x402/
+	@cd pkg && go test -fuzz=FuzzParseAtomicAmount -fuzztime=$(FUZZTIME) ./x402/
+	@echo "→ Fuzzing internal/mcp + internal/config ($(FUZZTIME) each)..."
+	@go test -fuzz=FuzzCallTool -fuzztime=$(FUZZTIME) ./internal/mcp/
+	@go test -fuzz=FuzzValidateAndCollect -fuzztime=$(FUZZTIME) ./internal/mcp/
+	@go test -fuzz=FuzzConfigLoad -fuzztime=$(FUZZTIME) ./internal/config/
+	@if command -v stellar >/dev/null 2>&1; then \
+		echo "→ Fuzzing differential targets vs stellar oracle ($(FUZZTIME) each)..."; \
+		cd pkg && go test -fuzz=FuzzScValEncodeDifferential -fuzztime=$(FUZZTIME) ./soroban/ && \
+		go test -fuzz=FuzzScValDecodeDifferential -fuzztime=$(FUZZTIME) ./soroban/ && \
+		go test -fuzz=FuzzStrkeyDifferential -fuzztime=$(FUZZTIME) ./soroban/ && \
+		go test -fuzz=FuzzTxEnvelopeDifferential -fuzztime=$(FUZZTIME) ./soroban/; \
+	else \
+		echo "⚠️  stellar CLI not installed — differential targets skipped"; \
+	fi
+	@echo "✓ Fuzz campaign complete"
+
+## diff-corpus: Replay the Tier-1 canned-diff corpus through both implementations
+diff-corpus:
+	@echo "→ Replaying differential corpus (requires stellar CLI)..."
+	@cd pkg && go test -run TestCorpusDifferential -v ./soroban/
 
 ## lint: Run go vet + golangci-lint
 lint:

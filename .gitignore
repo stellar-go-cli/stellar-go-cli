@@ -2,6 +2,7 @@
 /dist/
 /stellar-go-cli
 *.wasm
+!scripts/testdata/e2e_hello.wasm
 /demo-output/
 
 # ISO 20022 test schemas are copied from messages/ by `make xsd`
@@ -11,3 +12,7 @@ pkg/iso20022/testdata/xsd/*.xsd
 .DS_Store
 *.swp
 notes.md
+
+# Specula investigation artifacts
+.specula-lite/
+.specula-output/

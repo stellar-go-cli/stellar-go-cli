@@ -51,6 +51,8 @@ func NewRootCmd(cfg *config.Config) *RootCmd {
 	r.register(newFlowCmd(cfg))
 	r.register(newNetworkCmd(cfg))
 	r.register(newMcpCmd(cfg))
+	r.register(newSignerCmd(cfg))
+	r.register(newAuditCmd(cfg))
 	r.register(newContractCmd(cfg))
 	r.register(newVCApiCmd(cfg))
 	r.registerExtras(cfg)
@@ -159,12 +161,23 @@ func (c *Command) execute(args []string) error {
 		}
 	}
 
-	// Parse flags
+	// Parse flags. flag.Parse stops at the first positional argument, so
+	// interspersed flags after positionals (e.g. `network set stellar-mainnet
+	// --force`) would be silently dropped. Consume positionals one at a time
+	// and re-parse the remainder so flags work in any order.
 	if c.Flags != nil {
-		if err := c.Flags.Parse(args); err != nil {
-			return err
+		c.Args = nil
+		for len(args) > 0 {
+			if err := c.Flags.Parse(args); err != nil {
+				return err
+			}
+			rest := c.Flags.Args()
+			if len(rest) == 0 {
+				break
+			}
+			c.Args = append(c.Args, rest[0])
+			args = rest[1:]
 		}
-		c.Args = c.Flags.Args()
 	} else {
 		c.Args = args
 	}

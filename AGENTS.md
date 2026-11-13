@@ -108,7 +108,11 @@ All CLI commands follow the `Command` struct pattern defined in `cmd/stellar-go-
 - Config stored at `~/.stellar-go-cli/config.json` via `internal/config`
 - State files in `~/.stellar-go-cli/state/`
 - The legacy `~/.mozartpay` directory is migrated to `~/.stellar-go-cli` on first run (one-release migration in `config.migrateLegacyDir`)
-- Seed access goes through `wallet.ResolveSeed(account)` — returns `PrivateKey` for plaintext wallets, or the decrypted seed from a live passkey unlock grant for protected wallets (`PrivateKeyEnc` + `PasskeyProtected` fields). All signing paths must use the resolver, never `account.PrivateKey` directly; a locked protected wallet must fail, not fall back. See `docs/passkeys.md`
+- Seed access is split by custody:
+  - **Operator CLI / services** resolve signers via `internal/signresolve` (`ForActive`, `ForAddress`, `ForSwap`, `Resolver`) — protected wallets yield a `custodian.RemoteSigner` over the daemon socket; plaintext wallets yield a local `signer.KeypairSigner`. Services accept signers (`ResolveSigner` field or signer params), never `*keypair.Full` loads; a locked protected wallet must fail, not fall back.
+  - **MCP gatekeeper** never imports `internal/wallet` — it reaches wallet state/signing only through `custodian.RemoteWallet`/`RemoteSigner` (sanitized accounts; no `PrivateKey`/`PrivateKeyEnc`).
+  - **Custodian daemon** (`stellar-go-cli signer`, `internal/custodian/`) holds grants in memory, enforces `state/policy.json` (E1–E5), and logs hash-chained decisions to `state/enforcement.log`. No API returns seeds. If the socket is absent, signing fails closed.
+  - `wallet.ResolveSeed` remains for operator-local reads (export/backup); grants no longer live in the OS keychain. See `docs/passkeys.md`
 - `cfg.ContractID` stores the last deployed contract ID
 
 ### Linting & Code Style
@@ -118,6 +122,7 @@ All CLI commands follow the `Command` struct pattern defined in `cmd/stellar-go-
 - Shadow checking enabled in `govet`
 - Test files excluded from `gosec`, `gocyclo`, `errcheck`, `dupl`, `lll`
 - `gofmt -l` must return empty — CI enforces it
+- Fuzz targets (when added) live in `*_test.go` in the module owning the code — `pkg/` vs root; run `go test -fuzz=FuzzX` per module. See `docs/audit/differential-fuzzing.md`
 
 ---
 
@@ -156,6 +161,7 @@ stellar-go-cli mcp --verbose                    # Enable verbose logging
 - **Handlers**: `internal/mcp/handlers.go` — Tool execution handlers
 - **Parameter Collection**: `internal/mcp/parameter_collection.go` — Interactive parameter gathering
 - **Skills**: `internal/mcp/skills/` — Skill definitions for AI assistants
+- **Security model**: `docs/audit/agent-policy-engine.md` (policy/custody spec) and `docs/audit/mcp-signer-architecture.md` (gatekeeper/custodian separation design + roadmap) — when adding MCP tools, consider their risk tier (T0–T3) per the table there
 
 ### Docker Deployment
 
@@ -235,6 +241,39 @@ secret of a funded mainnet account (skipped otherwise) and **spends real XLM**
 — a few XLM of account reserves, mostly recovered because the fresh
 payer/merchant accounts are merged back into the funder on cleanup. The seed
 is read from the environment only, never logged or persisted.
+
+`make test-e2e-cli` (`scripts/e2e_testnet.sh`) is a shell e2e for the CLI
+binary itself: it runs in a throwaway `HOME`, creates a fresh testnet wallet,
+funds it via Friendbot, submits a real 1 XLM self-payment, and asserts on the
+offline/read-only surfaces (init/status, `did create`/`did attest`,
+`wallet balance/show/list`, `report generate`/`iso20022`, `swap quote`,
+`network show`). Exits non-zero on failure; `--offline` runs only the
+network-free steps. It never touches the real `~/.stellar-go-cli`.
+
+`make test-e2e-cli-ext` (`scripts/e2e_extended.sh`) covers the remaining
+surface in the same sandboxed style, 17 sections: `version`/`flow`/`network
+set`; DID create (key/ethr/ebsi/web), `did attest`/`did verify` roundtrips on
+both Ed25519 and JWS/ES256 proofs, tamper rejection, and `did show`; `pay
+rails`/`pay quote`/`pay x402` arg checks; all ISO 20022 message types
+(pacs.008/002/004/009, pain.001/002, camt.053/054); `audit
+verify`/`events`/`latency`/`inventory`/`evidence`; the MCP server over both
+stdio JSON-RPC and SSE (`initialize`/`tools/list`/`tools/call`); wallet
+registry ops (switch/rename/export/remove/import round-trip), wallet-key
+attestation, `passkey status`/`list`, and `mandate` fail-closed paths; real
+SEP-41 SAC deploys via `asset create-ft`/`create-nfa`, carbon-credit attach,
+and the `asset show` state checks; trustline lifecycle (`asset
+trust`/`untrust`); live `swap execute` and `swap zk` path payments; claimable
+balance create/list/accept/decline (creation uses the
+`scripts/e2e_helpers/create_claimable` helper since the CLI has no create
+command); a real `contract deploy` + `contract invoke --simulate` against the
+Soroban testnet using the committed `scripts/testdata/e2e_hello.wasm` fixture
+(`git add -f`'d past the `*.wasm` gitignore — a 626-byte hello_world built
+with `stellar contract build`); `pay zk` settlement; integrations list/ping
+and unconfigured-provider status paths; trade strategy records; `network
+set`/`switch`; and the legacy `~/.mozartpay` migration. Takes several
+minutes — it funds wallets and submits real testnet transactions.
+`--no-contract` skips the deploy/invoke section; `--offline` runs only the
+network-free steps.
 
 ---
 

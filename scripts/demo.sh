@@ -14,8 +14,10 @@
 #   --real           Use your real ~/.stellar-go-cli config and existing wallet
 #   --no-pause       Don't wait for <enter> between sections
 #   --skip-network   Offline mode — only local commands (DID/VC, no testnet)
-#   --wasm FILE      Also demo a Soroban contract deploy with this .wasm
-#   --fn NAME        Contract method to simulate after deploy (requires --wasm)
+#   --no-contract    Skip the Soroban contract deploy section
+#   --wasm FILE      Contract to deploy (default: bundled scripts/testdata/e2e_hello.wasm)
+#   --fn NAME        Contract method to simulate after deploy (default: hello)
+#   --contract-args X  base64 XDR ScVal args for --fn (default: hello "demo")
 #   --out DIR        Directory for generated artifacts (default: ./demo-output)
 #   -h, --help       Show this help
 
@@ -26,8 +28,10 @@ set -u
 USE_REAL=false
 NO_PAUSE=false
 SKIP_NETWORK=false
+CONTRACT=true
 WASM=""
 FN=""
+CONTRACT_ARGS=""
 OUTDIR="demo-output"
 NET="stellar-testnet"
 
@@ -38,8 +42,10 @@ while [ $# -gt 0 ]; do
 	--real)         USE_REAL=true ;;
 	--no-pause|-y)  NO_PAUSE=true ;;
 	--skip-network) SKIP_NETWORK=true ;;
+	--no-contract)  CONTRACT=false ;;
 	--wasm)         WASM="${2:?--wasm needs a path}"; shift ;;
 	--fn)           FN="${2:?--fn needs a method name}"; shift ;;
+	--contract-args) CONTRACT_ARGS="${2:?--contract-args needs base64 XDR}"; shift ;;
 	--out)          OUTDIR="${2:?--out needs a directory}"; shift ;;
 	-h|--help)      usage; exit 0 ;;
 	*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -47,7 +53,7 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-[ -n "$FN" ] && [ -z "$WASM" ] && echo "note: --fn ignored without --wasm" >&2
+[ -n "$FN" ] && ! $CONTRACT && echo "note: --fn ignored with --no-contract" >&2
 
 # ─── presentation helpers ─────────────────────────────────────────────────────
 
@@ -90,17 +96,28 @@ run() {
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Prefer the freshly-built repo binary over a possibly-stale PATH install —
+# the demo should show what this checkout does.
 if [ -n "${STELLAR_CLI:-}" ]; then
 	CLI="$STELLAR_CLI"
-elif command -v stellar-go-cli >/dev/null 2>&1; then
-	CLI="stellar-go-cli"
 elif [ -x "$ROOT/dist/stellar-go-cli" ]; then
 	CLI="$ROOT/dist/stellar-go-cli"
+elif command -v stellar-go-cli >/dev/null 2>&1; then
+	CLI="stellar-go-cli"
 else
 	note "stellar-go-cli not found — building via make build"
 	make -C "$ROOT" build || { echo "build failed" >&2; exit 1; }
 	CLI="$ROOT/dist/stellar-go-cli"
 fi
+
+# ─── contract defaults — bundled hello_world fixture ─────────────────────────
+
+# Default to the committed test fixture so the contract section works out of
+# the box; --wasm overrides it. The fixture exposes hello(to: String) — the
+# default --contract-args below is the base64 XDR ScVal for "demo".
+[ -z "$WASM" ] && WASM="$ROOT/scripts/testdata/e2e_hello.wasm"
+[ -z "$FN" ] && FN="hello"
+[ -z "$CONTRACT_ARGS" ] && CONTRACT_ARGS="AAAADgAAAARkZW1v"
 
 # ─── sandboxed HOME ───────────────────────────────────────────────────────────
 
@@ -129,18 +146,21 @@ pause
 
 # 1 ── identity & credentials (fully offline, instant) ────────────────────────
 
-section "1/6 — Decentralized identity & verifiable credentials (offline)"
+section "1/7 — Decentralized identity & verifiable credentials (offline)"
 note "DID creation and VC issuance are pure cryptography — no network needed."
 
 run did create --method key || true
 pause
 
+# did:ebsi issues over ECDSA → the VC carries a JWS proof; verify the roundtrip.
 run did attest --method ebsi --vc kyc --name "Demo User" --country AT || true
+run did verify || true
+run did show || true
 pause
 
 # 2 ── init & status ───────────────────────────────────────────────────────────
 
-section "2/6 — Configuration & system status"
+section "2/7 — Configuration & system status"
 
 run init || true
 run status || true
@@ -152,7 +172,7 @@ ADDR=""
 FUNDED=false
 
 if ! $SKIP_NETWORK; then
-	section "3/6 — Testnet wallet (keypair + Friendbot faucet)"
+	section "3/7 — Testnet wallet (keypair + Friendbot faucet)"
 
 	ADDR="$(active_addr || true)"
 	if $USE_REAL && [ -n "$ADDR" ]; then
@@ -171,28 +191,28 @@ if ! $SKIP_NETWORK; then
 	fi
 	pause
 else
-	section "3/6 — Testnet wallet"
+	section "3/7 — Testnet wallet"
 	note "skipped (--skip-network)"
 fi
 
 # 4 ── payment ─────────────────────────────────────────────────────────────────
 
 if $FUNDED; then
-	section "4/6 — Payment on the direct Stellar rail"
+	section "4/7 — Payment on the direct Stellar rail"
 	note "Sending 1 XLM to the wallet's own address — deterministic and safe."
 	note "--vc-attach embeds the credential ID from step 1 in the tx memo."
 
 	run pay send --to "$ADDR" --amount 1 --asset XLM --rail direct --vc-attach
 	pause
 elif ! $SKIP_NETWORK; then
-	section "4/6 — Payment"
+	section "4/7 — Payment"
 	note "skipped (wallet not funded)"
 fi
 
 # 5 ── DEX quote (read-only) ───────────────────────────────────────────────────
 
 if ! $SKIP_NETWORK; then
-	section "5/6 — DEX path-payment quote (read-only)"
+	section "5/7 — DEX path-payment quote (read-only)"
 	note "Quotes hit Horizon only — nothing is submitted."
 
 	run swap quote --from XLM --to USDC --amount 10 --network "$NET" || true
@@ -202,7 +222,7 @@ fi
 # 6 ── compliance reporting ────────────────────────────────────────────────────
 
 if $FUNDED; then
-	section "6/6 — Compliance report + ISO 20022 export"
+	section "6/7 — Compliance report + ISO 20022 export"
 	note "ui/* writes status to stderr, so stdout stays clean for redirection."
 
 	mkdir -p "$OUTDIR"
@@ -216,26 +236,33 @@ if $FUNDED; then
 	fi
 	pause
 elif ! $SKIP_NETWORK; then
-	section "6/6 — Compliance reporting"
+	section "6/7 — Compliance reporting"
 	note "skipped (no payment to report on)"
 fi
 
-# ── optional: soroban contract deploy ─────────────────────────────────────────
+# 7 ── soroban contract deploy + simulate ─────────────────────────────────────
 
-if [ -n "$WASM" ]; then
-	if ! $FUNDED; then
-		warn "--wasm given but wallet not funded — skipping contract deploy"
-	elif [ ! -f "$WASM" ]; then
-		warn "wasm file not found: $WASM"
-	else
-		section "Optional — Soroban contract deploy (pure Go, no stellar CLI)"
-		run contract deploy --wasm "$WASM" --network "$NET" || true
-		if [ -n "$FN" ]; then
-			note "simulate = read-only, no transaction submitted"
-			run contract invoke --fn "$FN" --simulate || true
-		fi
-		pause
+if ! $CONTRACT; then
+	section "7/7 — Soroban contract deploy + simulate"
+	note "skipped (--no-contract)"
+elif $SKIP_NETWORK; then
+	section "7/7 — Soroban contract deploy + simulate"
+	note "skipped (--skip-network)"
+elif ! $FUNDED; then
+	section "7/7 — Soroban contract deploy + simulate"
+	note "skipped (wallet not funded)"
+elif [ ! -f "$WASM" ]; then
+	section "7/7 — Soroban contract deploy + simulate"
+	warn "wasm file not found: $WASM — pass --wasm or restore scripts/testdata/e2e_hello.wasm"
+else
+	section "7/7 — Soroban contract deploy + simulate (pure Go, no stellar CLI)"
+	note "Deploying $WASM via Soroban RPC, then a read-only invoke --simulate."
+	run contract deploy --wasm "$WASM" --network "$NET" || true
+	if [ -n "$FN" ]; then
+		note "simulate = read-only, no transaction submitted"
+		run contract invoke --fn "$FN" --args "$CONTRACT_ARGS" --simulate || true
 	fi
+	pause
 fi
 
 # ─── outro ────────────────────────────────────────────────────────────────────
@@ -243,16 +270,20 @@ fi
 section "Done"
 cat <<EOF
   What you saw:
-    • offline DID creation + VC issuance (did:key, did:ebsi)
+    • offline DID creation + VC issue/verify roundtrip (did:key, did:ebsi/JWS)
     • testnet wallet: keypair generation + Friendbot funding
     • direct-rail XLM payment with a VC attached to the memo
     • read-only DEX path-payment quote
     • post-transaction report → ISO 20022 pacs.008 XML on stdout
+    • Soroban contract deploy + invoke --simulate (pure Go, no stellar CLI)
 
   Try next:
     stellar-go-cli mcp                          # MCP server for AI assistants
-    stellar-go-cli contract deploy --wasm <f>   # deploy any Soroban contract
-    stellar-go-cli asset create-ft --help       # SEP-41 token issuance
+    stellar-go-cli signer &                     # custodian daemon for passkey-protected keys
+    stellar-go-cli wallet passkey register      # protect this wallet's seed with a passkey
+    stellar-go-cli pay x402 --help              # HTTP 402 payments that settle on-chain
+    stellar-go-cli asset create-ft --help       # SEP-41 token issuance (real SAC deploy)
+    stellar-go-cli audit inventory              # wallets/mandates/policy scope report
     stellar-go-cli pay rails                    # all payment rails compared
 EOF
 $USE_REAL || note "sandbox wiped — your real config was never touched"
