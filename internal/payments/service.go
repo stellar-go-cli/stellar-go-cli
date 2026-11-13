@@ -2,20 +2,25 @@ package payments
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signsock"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/zk"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/network"
+	"github.com/stellar/go-stellar-sdk/protocols/horizon"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
@@ -44,9 +49,63 @@ func validateStellarAddress(address string) error {
 	return nil
 }
 
-type Service struct{}
+type Service struct {
+	// ResolveSigner resolves signing authority for an address — local
+	// keypair for plaintext wallets, custodian RemoteSigner for protected
+	// ones. Nil uses the local loader (trusted-surface call sites only).
+	ResolveSigner func(address string) (signer.TxSigner, error) // empty address = active wallet
+}
 
 func NewService() *Service { return &Service{} }
+
+// signerFor resolves the signer for an address via ResolveSigner, falling
+// back to the local plaintext loader.
+// submitSignedXDR submits a signed envelope: through the custodian when the
+// signer is remote (submission stays inside the custody boundary — the
+// caller never gets Horizon egress for signed payloads), else directly.
+func submitSignedXDR(client *horizonclient.Client, sg signer.TxSigner, txB64 string) (*horizon.Transaction, error) {
+	if rs, ok := sg.(*signsock.RemoteSigner); ok {
+		res, err := rs.Submit(txB64)
+		if err != nil {
+			return nil, fmt.Errorf("custodian submit: %w", err)
+		}
+		tx := &horizon.Transaction{}
+		if h, _ := res["hash"].(string); h != "" {
+			tx.Hash = h
+		}
+		if l, _ := res["ledger"].(json.Number); l != "" {
+			if li, lerr := l.Int64(); lerr == nil && li <= math.MaxInt32 {
+				tx.Ledger = int32(li) // #nosec G115 -- range-checked above
+			}
+		} else if lf, _ := res["ledger"].(float64); lf > 0 && lf <= math.MaxInt32 {
+			tx.Ledger = int32(lf) // #nosec G115 -- range-checked above
+		}
+		return tx, nil
+	}
+	resp, err := client.SubmitTransactionXDR(txB64)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (s *Service) signerFor(address string) (signer.TxSigner, error) {
+	if s.ResolveSigner != nil {
+		return s.ResolveSigner(address)
+	}
+	if address == "" {
+		sg, err := wallet.LoadStellarSigner()
+		if err != nil {
+			return nil, err
+		}
+		return sg, nil
+	}
+	sg, err := wallet.LoadStellarSignerForAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	return sg, nil
+}
 
 func (s *Service) Pay(
 	from, to, amount, asset string,
@@ -153,8 +212,9 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
-	// Load keypair for the specific from address to ensure correct wallet is used
-	kp, err := wallet.LoadStellarKeypairForAddress(from)
+	// Resolve the signer for the specific from address to ensure the
+	// correct wallet is used (custodian for protected wallets).
+	sg, err := s.signerFor(from)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +232,7 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 
 	// Fetch source account for sequence number
 	sourceAcct, err := client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("horizon: account not found — run 'stellar-go-cli wallet fund' first (testnet) or fund your mainnet account: %w", err)
@@ -208,7 +268,7 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 	}
 
 	// Sign with Ed25519 keypair
-	tx, err = tx.Sign(passphrase, kp)
+	tx, err = sg.Sign(tx, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("sign transaction: %w", err)
 	}
@@ -219,8 +279,8 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 		return nil, fmt.Errorf("serialize transaction: %w", err)
 	}
 
-	// Submit to Horizon
-	resp, err := client.SubmitTransactionXDR(txB64)
+	// Submit — through the custodian when the signer is remote.
+	resp, err := submitSignedXDR(client, sg, txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
 			if rc, rcErr := herr.ResultCodes(); rcErr == nil && rc != nil {
@@ -235,7 +295,7 @@ func (s *Service) payDirect(from, to, amount, asset string, net models.Network, 
 	confirmed := now.Add(5 * time.Second)
 	return &models.Payment{
 		ID:          "direct-" + resp.Hash[:12],
-		From:        kp.Address(),
+		From:        sg.Address(),
 		To:          to,
 		Amount:      amount,
 		Asset:       asset,
@@ -262,8 +322,9 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
-	// Load keypair for the specific from address to ensure correct wallet is used
-	kp, err := wallet.LoadStellarKeypairForAddress(from)
+	// Resolve the signer for the specific from address to ensure the
+	// correct wallet is used (custodian for protected wallets).
+	sg, err := s.signerFor(from)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +368,7 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 
 	// Fetch source account for sequence number
 	sourceAcct, err := client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("horizon: account not found for ZK payment: %w", err)
@@ -321,14 +382,14 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 
 	// Build ZK transaction with verification and payment
 	tx, err := contractService.BuildZKTransaction(
-		kp, sourceAcct, proofData, inputs.PublicInputs, to, amount, memo,
+		sg, sourceAcct, proofData, inputs.PublicInputs, to, amount, memo,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build ZK transaction: %w", err)
 	}
 
 	// Sign transaction
-	tx, err = tx.Sign(passphrase, kp)
+	tx, err = sg.Sign(tx, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign ZK transaction: %w", err)
 	}
@@ -339,8 +400,8 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 		return nil, fmt.Errorf("failed to serialize ZK transaction: %w", err)
 	}
 
-	// Submit to Horizon
-	resp, err := client.SubmitTransactionXDR(txB64)
+	// Submit — through the custodian when the signer is remote.
+	resp, err := submitSignedXDR(client, sg, txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
 			if rc, rcErr := herr.ResultCodes(); rcErr == nil && rc != nil {
@@ -366,11 +427,12 @@ func (s *Service) payZK(from, to, amount, asset string, net models.Network, memo
 	}
 
 	// Save verification data for compliance reporting
+	// #nosec G104 -- best-effort cache, result intentionally ignored
 	config.SaveState("zk_verification_latest", verification) //nolint:errcheck // best-effort cache
 
 	return &models.Payment{
 		ID:          "zk-" + resp.Hash[:12],
-		From:        kp.Address(),
+		From:        sg.Address(),
 		To:          to,
 		Amount:      amount,
 		Asset:       asset,
@@ -411,14 +473,14 @@ func (s *Service) paySwap(from, to, amount, asset string, net models.Network, me
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
-	// Check if keypair exists
-	kp, err := wallet.LoadStellarKeypairForSwap()
+	// Resolve the swap signer (custodian for protected wallets).
+	sg, err := s.signerFor("")
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize swap service
-	swapService := swap.NewService(net, swap.WithKeypair(kp))
+	swapService := swap.NewService(net, swap.WithSigner(sg))
 
 	// Parse asset pair from memo or use defaults
 	// Expected format: "from XLM to USDC" or just use default swap

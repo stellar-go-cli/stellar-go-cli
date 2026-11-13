@@ -6,8 +6,8 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
-	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/network"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
@@ -28,6 +28,9 @@ type ClaimableBalance struct {
 type Service struct {
 	client     *horizonclient.Client
 	passphrase string
+	// ResolveSigner resolves signing authority — nil uses the local
+	// plaintext loader (trusted-surface call sites only).
+	ResolveSigner func(address string) (signer.TxSigner, error)
 }
 
 // NewService creates a new claimable balance service
@@ -115,14 +118,14 @@ func (s *Service) ListClaimableBalances(address string) ([]ClaimableBalance, err
 
 // AcceptClaimableBalance claims a specific balance
 func (s *Service) AcceptClaimableBalance(balanceID string) (string, error) {
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor()
 	if err != nil {
 		return "", fmt.Errorf("no keypair found: %w", err)
 	}
 
 	// Fetch source account
 	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch account: %w", err)
@@ -148,7 +151,7 @@ func (s *Service) AcceptClaimableBalance(balanceID string) (string, error) {
 	}
 
 	// Sign
-	tx, err = tx.Sign(s.passphrase, kp)
+	tx, err = sg.Sign(tx, s.passphrase)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -173,14 +176,14 @@ func (s *Service) AcceptAllClaimableBalances(address string) ([]string, []error)
 		return []string{}, nil
 	}
 
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor()
 	if err != nil {
 		return nil, []error{err}
 	}
 
 	// Fetch source account
 	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return nil, []error{err}
@@ -214,7 +217,7 @@ func (s *Service) AcceptAllClaimableBalances(address string) ([]string, []error)
 	}
 
 	// Sign
-	tx, err = tx.Sign(s.passphrase, kp)
+	tx, err = sg.Sign(tx, s.passphrase)
 	if err != nil {
 		return nil, []error{fmt.Errorf("failed to sign transaction: %w", err)}
 	}
@@ -231,21 +234,21 @@ func (s *Service) AcceptAllClaimableBalances(address string) ([]string, []error)
 
 // DeclineClaimableBalance claims the balance and returns it to the sponsor
 func (s *Service) DeclineClaimableBalance(balanceID string, assetCode, assetIssuer, amount string) (string, error) {
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor()
 	if err != nil {
 		return "", fmt.Errorf("no keypair found: %w", err)
 	}
 
 	// Fetch source account
 	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch account: %w", err)
 	}
 
 	// Get the balance details to find sponsor
-	balances, err := s.ListClaimableBalances(kp.Address())
+	balances, err := s.ListClaimableBalances(sg.Address())
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch balance details: %w", err)
 	}
@@ -297,7 +300,7 @@ func (s *Service) DeclineClaimableBalance(balanceID string, assetCode, assetIssu
 	}
 
 	// Sign
-	tx, err = tx.Sign(s.passphrase, kp)
+	tx, err = sg.Sign(tx, s.passphrase)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -323,14 +326,14 @@ func (s *Service) DeclineAllClaimableBalances(address string) ([]string, []Claim
 		return []string{}, nil, nil, nil
 	}
 
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor()
 	if err != nil {
 		return nil, nil, nil, []error{err}
 	}
 
 	// Fetch source account to check existing trustlines
 	sourceAcct, err := s.client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return nil, nil, nil, []error{err}
@@ -418,7 +421,7 @@ func (s *Service) DeclineAllClaimableBalances(address string) ([]string, []Claim
 	}
 
 	// Sign
-	tx, err = tx.Sign(s.passphrase, kp)
+	tx, err = sg.Sign(tx, s.passphrase)
 	if err != nil {
 		return nil, skippedBalances, skipReasons, []error{fmt.Errorf("failed to sign transaction: %w", err)}
 	}
@@ -432,7 +435,15 @@ func (s *Service) DeclineAllClaimableBalances(address string) ([]string, []Claim
 	return []string{resp.Hash}, skippedBalances, skipReasons, nil
 }
 
-// loadStellarKeypair loads the keypair from wallet
-func (s *Service) loadStellarKeypair() (*keypair.Full, error) {
-	return wallet.LoadStellarKeypair()
+// signerFor resolves the active wallet's signer via ResolveSigner, falling
+// back to the local plaintext loader.
+func (s *Service) signerFor() (signer.TxSigner, error) {
+	if s.ResolveSigner != nil {
+		return s.ResolveSigner("")
+	}
+	sg, err := wallet.LoadStellarSigner()
+	if err != nil {
+		return nil, err
+	}
+	return sg, nil
 }

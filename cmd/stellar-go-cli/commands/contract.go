@@ -11,6 +11,7 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
 	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -40,7 +41,7 @@ func newContractDeployCmd(cfg *config.Config) *Command {
 	wasmPath := fs.String("wasm", "", "Path to the .wasm file to deploy (required)")
 	network := fs.String("network", "", "Stellar network: stellar-testnet or stellar-mainnet (defaults to config)")
 	constructorArgsStr := fs.String("constructor-args", "", "Constructor args as comma-separated XDR ScVal base64 strings (optional)")
-	ownerAddr := fs.String("owner", "", "Owner address for contracts with __constructor(owner: Address). Defaults to deployer address")
+	ownerAddr := fs.String("owner", "", "Owner address for contracts with __constructor(owner: Address)")
 
 	return &Command{
 		Name:  "deploy",
@@ -110,15 +111,12 @@ func newContractDeployCmd(cfg *config.Config) *Command {
 					return fmt.Errorf("invalid owner address: %w", err)
 				}
 				constructorArgs = []xdr.ScVal{soroban.ScvAddress(ownerScAddr)}
-			} else {
-				deployerScAddr, err := soroban.AccountToScAddress(account.Address)
-				if err != nil {
-					return fmt.Errorf("failed to convert deployer address: %w", err)
-				}
-				constructorArgs = []xdr.ScVal{soroban.ScvAddress(deployerScAddr)}
 			}
+			// No constructor args → nil → the V1 createContract path. Passing
+			// args unconditionally (e.g. a default owner address) forces V2 and
+			// fails with InvalidAction on contracts without a __constructor.
 
-			result, err := client.DeployWithConstructorArgs(ctx, kp, wasmBytes, constructorArgs)
+			result, err := client.DeployWithConstructorArgs(ctx, signer.KeypairSigner{KP: kp}, wasmBytes, constructorArgs)
 			if err != nil {
 				ui.Error(fmt.Sprintf("Deployment failed: %v", err))
 				return fmt.Errorf("deploy failed: %w", err)
@@ -230,7 +228,7 @@ func newContractInvokeCmd(cfg *config.Config) *Command {
 
 			ui.SectionLabel("Submitting transaction...")
 
-			result, err := client.Invoke(ctx, kp, id, *fnName, invArgs)
+			result, err := client.Invoke(ctx, signer.KeypairSigner{KP: kp}, id, *fnName, invArgs)
 			if err != nil {
 				ui.Error(fmt.Sprintf("Transaction failed: %v", err))
 				return fmt.Errorf("invoke failed: %w", err)

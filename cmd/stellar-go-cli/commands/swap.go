@@ -11,6 +11,7 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/zkswaps"
@@ -73,10 +74,10 @@ func newSwapQuoteCmd(cfg *config.Config) *Command {
 			}
 
 			// Check for keypair and use appropriate service
-			kp, keypairErr := wallet.LoadStellarKeypairForSwap()
+			sg, signerErr := signresolve.ForSwap()
 			svc := swap.NewService(net)
-			if keypairErr == nil {
-				svc = swap.NewService(net, swap.WithKeypair(kp))
+			if signerErr == nil {
+				svc = swap.NewService(net, swap.WithSigner(sg))
 			}
 
 			var quote *models.SwapQuote
@@ -94,7 +95,7 @@ func newSwapQuoteCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(800 * time.Millisecond)
 
-			if keypairErr == nil {
+			if signerErr == nil {
 				// Has keypair - use real service
 				quote, err = svc.GetQuote(req)
 			} else {
@@ -178,14 +179,14 @@ func newSwapExecuteCmd(cfg *config.Config) *Command {
 			}
 
 			// Initialize swap service and check for keypair
-			kp, keypairErr := wallet.LoadStellarKeypairForSwap()
+			sg, signerErr := signresolve.ForSwap()
 			svc := swap.NewService(net)
-			if keypairErr == nil {
-				svc = swap.NewService(net, swap.WithKeypair(kp))
+			if signerErr == nil {
+				svc = swap.NewService(net, swap.WithSigner(sg))
 			}
 
 			var useRealService bool
-			if keypairErr == nil {
+			if signerErr == nil {
 				useRealService = true
 			}
 
@@ -321,14 +322,14 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			}
 
 			// Initialize swap service and check for keypair
-			kp, keypairErr := wallet.LoadStellarKeypairForSwap()
+			sg, signerErr := signresolve.ForSwap()
 			svc := swap.NewService(net)
-			if keypairErr == nil {
-				svc = swap.NewService(net, swap.WithKeypair(kp))
+			if signerErr == nil {
+				svc = swap.NewService(net, swap.WithSigner(sg))
 			}
 
 			var useRealService bool
-			if keypairErr == nil {
+			if signerErr == nil {
 				useRealService = true
 			}
 
@@ -346,7 +347,7 @@ func newSwapZKCmd(cfg *config.Config) *Command {
 			// Get sender address
 			var fromAddr string
 			if useRealService {
-				fromAddr = kp.Address()
+				fromAddr = sg.Address()
 			} else {
 				fromAddr = cfg.ActiveAddress
 				if fromAddr == "" {
@@ -855,12 +856,12 @@ func newSwapArbitrageAllCmd(cfg *config.Config) *Command {
 				}
 
 				// Initialize swap service for execution
-				kp, keyErr := wallet.LoadStellarKeypairForSwap()
+				sg, keyErr := signresolve.ForSwap()
 				if keyErr != nil {
-					ui.Error("No Stellar keypair configured - cannot execute")
+					ui.Error("No signing authority configured - cannot execute (start 'stellar-go-cli signer' for protected wallets)")
 					return fmt.Errorf("wallet not configured: %w", keyErr)
 				}
-				swapSvc := swap.NewService(net, swap.WithKeypair(kp))
+				swapSvc := swap.NewService(net, swap.WithSigner(sg))
 
 				// Execute Leg A: Base -> Quote
 				ui.PrintStep(1, "Executing Leg A: "+best.BaseAsset+" -> "+best.QuoteAsset)
@@ -1202,9 +1203,9 @@ func performArbitrageScan(cfg *config.Config, net models.Network, amount, baseAs
 	if opts.baseFee > 0 {
 		svcOpts = append(svcOpts, swap.WithBaseFee(opts.baseFee))
 	}
-	kp, keyErr := wallet.LoadStellarKeypairForSwap()
+	sg, keyErr := signresolve.ForSwap()
 	if keyErr == nil {
-		svcOpts = append(svcOpts, swap.WithKeypair(kp))
+		svcOpts = append(svcOpts, swap.WithSigner(sg))
 	}
 	svc := swap.NewService(net, svcOpts...)
 	useSim := simulated || keyErr != nil

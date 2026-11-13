@@ -7,6 +7,7 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/claimables"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
@@ -62,6 +63,7 @@ func newClaimableListCmd(cfg *config.Config) *Command {
 			}
 
 			svc := claimables.NewService(net)
+			svc.ResolveSigner = signresolve.Resolver()
 
 			ui.PrintStep(1, "Fetching Claimable Balances")
 			spin := ui.NewSpinner("Querying Horizon...")
@@ -132,6 +134,7 @@ func newClaimableAcceptCmd(cfg *config.Config) *Command {
 			}
 
 			svc := claimables.NewService(net)
+			svc.ResolveSigner = signresolve.Resolver()
 
 			ui.PrintStep(1, "Claiming Balance")
 			spin := ui.NewSpinner(fmt.Sprintf("Claiming balance %s...", truncateStr(*balanceID, 12)))
@@ -193,6 +196,7 @@ func newClaimableAcceptAllCmd(cfg *config.Config) *Command {
 			}
 
 			svc := claimables.NewService(net)
+			svc.ResolveSigner = signresolve.Resolver()
 
 			// First, get count
 			ui.PrintStep(1, "Checking Balances")
@@ -285,6 +289,7 @@ func newClaimableDeclineCmd(cfg *config.Config) *Command {
 			}
 
 			svc := claimables.NewService(net)
+			svc.ResolveSigner = signresolve.Resolver()
 
 			ui.SectionLabel("Decline Details")
 			ui.KV("Balance ID", truncateStr(*balanceID, 16))
@@ -358,6 +363,7 @@ func newClaimableDeclineAllCmd(cfg *config.Config) *Command {
 			}
 
 			svc := claimables.NewService(net)
+			svc.ResolveSigner = signresolve.Resolver()
 
 			// First, get count and list
 			ui.PrintStep(1, "Checking Balances")

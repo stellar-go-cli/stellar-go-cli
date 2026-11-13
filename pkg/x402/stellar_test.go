@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
 	"github.com/stellar/go-stellar-sdk/hash"
 	"github.com/stellar/go-stellar-sdk/keypair"
@@ -21,9 +22,9 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
-func testAuthorizationEntry(t *testing.T, signer *keypair.Full) xdr.SorobanAuthorizationEntry {
+func testAuthorizationEntry(t *testing.T, kp *keypair.Full) xdr.SorobanAuthorizationEntry {
 	t.Helper()
-	from, err := ParseDestinationAddress(signer.Address())
+	from, err := ParseDestinationAddress(kp.Address())
 	if err != nil {
 		t.Fatalf("parse signer address: %v", err)
 	}
@@ -65,9 +66,9 @@ func testAuthorizationEntry(t *testing.T, signer *keypair.Full) xdr.SorobanAutho
 }
 
 func TestSignAuthorizationEntry(t *testing.T) {
-	signer := keypair.MustRandom()
-	entry := testAuthorizationEntry(t, signer)
-	signed, err := SignAuthorizationEntry(entry, signer, network.TestNetworkPassphrase, 123456)
+	kp := keypair.MustRandom()
+	entry := testAuthorizationEntry(t, kp)
+	signed, err := SignAuthorizationEntry(entry, signer.KeypairSigner{KP: kp}, network.TestNetworkPassphrase, 123456)
 	if err != nil {
 		t.Fatalf("SignAuthorizationEntry: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestSignAuthorizationEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode public key: %v", err)
 	}
-	if encodedPublicKey != signer.Address() {
+	if encodedPublicKey != kp.Address() {
 		t.Fatalf("signature public key %s does not match signer", encodedPublicKey)
 	}
 
@@ -133,7 +134,7 @@ func TestSignAuthorizationEntry(t *testing.T) {
 		t.Fatalf("marshal authorization preimage: %v", err)
 	}
 	payload := hash.Hash(preimageBytes)
-	if err := signer.Verify(payload[:], signature); err != nil {
+	if err := kp.Verify(payload[:], signature); err != nil {
 		t.Fatalf("verify signed authorization: %v", err)
 	}
 }
@@ -141,14 +142,14 @@ func TestSignAuthorizationEntry(t *testing.T) {
 func TestSignAuthorizationEntryRejectsWrongSigner(t *testing.T) {
 	entry := testAuthorizationEntry(t, keypair.MustRandom())
 	other := keypair.MustRandom()
-	if _, err := SignAuthorizationEntry(entry, other, network.TestNetworkPassphrase, 123456); err == nil {
+	if _, err := SignAuthorizationEntry(entry, signer.KeypairSigner{KP: other}, network.TestNetworkPassphrase, 123456); err == nil {
 		t.Fatal("expected signer/address mismatch error")
 	}
 }
 
 func TestValidateTransferAuthEntry(t *testing.T) {
-	signer := keypair.MustRandom()
-	entry := testAuthorizationEntry(t, signer)
+	kp := keypair.MustRandom()
+	entry := testAuthorizationEntry(t, kp)
 	from := entry.Credentials.Address.Address
 	to := entry.RootInvocation.Function.ContractFn.Args[1]
 	toAddress, ok := to.GetAddress()
@@ -157,7 +158,7 @@ func TestValidateTransferAuthEntry(t *testing.T) {
 	}
 	contract := entry.RootInvocation.Function.ContractFn.ContractAddress
 	amount := big.NewInt(1000000)
-	if err := validateTransferAuthEntry(entry, contract, from, toAddress, amount, signer.Address()); err != nil {
+	if err := validateTransferAuthEntry(entry, contract, from, toAddress, amount, kp.Address()); err != nil {
 		t.Fatalf("validate auth entry: %v", err)
 	}
 }
@@ -186,42 +187,14 @@ func TestNormalizeRPCURL(t *testing.T) {
 	}
 }
 
-func TestBuildTransferTransactionWithMockRPC(t *testing.T) {
-	signer := keypair.MustRandom()
-	recipient := keypair.MustRandom().Address()
-	contractID := testContractID(t)
-	authEntry := testAuthorizationEntry(t, signer)
-	recipientAddress, err := ParseDestinationAddress(recipient)
-	if err != nil {
-		t.Fatalf("parse recipient: %v", err)
-	}
-	authEntry.RootInvocation.Function.ContractFn.Args[1] = soroban.ScvAddress(recipientAddress)
-	contractAddress, err := soroban.ParseContractID(contractID)
-	if err != nil {
-		t.Fatalf("parse contract: %v", err)
-	}
-	authEntry.RootInvocation.Function.ContractFn.ContractAddress = contractAddress
-
-	sorobanData := xdr.SorobanTransactionData{
-		Resources: xdr.SorobanResources{
-			Instructions:  1000,
-			DiskReadBytes: 10,
-			WriteBytes:    10,
-		},
-		ResourceFee: 100,
-	}
-	sorobanDataBytes, err := sorobanData.MarshalBinary()
-	if err != nil {
-		t.Fatalf("marshal Soroban data: %v", err)
-	}
-	authBytes, err := authEntry.MarshalBinary()
-	if err != nil {
-		t.Fatalf("marshal auth entry: %v", err)
-	}
-
-	var recordCalls atomic.Int32
-	var enforceCalls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// mockSorobanRPC serves a minimal Soroban JSON-RPC surface for builder
+// tests: getLatestLedger plus simulateTransaction in record and enforce
+// auth modes.
+func mockSorobanRPC(t *testing.T, authBytes, sorobanDataBytes []byte) (server *httptest.Server, recordCalls, enforceCalls *atomic.Int32) {
+	t.Helper()
+	recordCalls = &atomic.Int32{}
+	enforceCalls = &atomic.Int32{}
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
@@ -284,11 +257,48 @@ func TestBuildTransferTransactionWithMockRPC(t *testing.T) {
 			writeError()
 		}
 	}))
+	return server, recordCalls, enforceCalls
+}
+
+func TestBuildTransferTransactionWithMockRPC(t *testing.T) {
+	kp := keypair.MustRandom()
+	recipient := keypair.MustRandom().Address()
+	contractID := testContractID(t)
+	authEntry := testAuthorizationEntry(t, kp)
+	recipientAddress, err := ParseDestinationAddress(recipient)
+	if err != nil {
+		t.Fatalf("parse recipient: %v", err)
+	}
+	authEntry.RootInvocation.Function.ContractFn.Args[1] = soroban.ScvAddress(recipientAddress)
+	contractAddress, err := soroban.ParseContractID(contractID)
+	if err != nil {
+		t.Fatalf("parse contract: %v", err)
+	}
+	authEntry.RootInvocation.Function.ContractFn.ContractAddress = contractAddress
+
+	sorobanData := xdr.SorobanTransactionData{
+		Resources: xdr.SorobanResources{
+			Instructions:  1000,
+			DiskReadBytes: 10,
+			WriteBytes:    10,
+		},
+		ResourceFee: 100,
+	}
+	sorobanDataBytes, err := sorobanData.MarshalBinary()
+	if err != nil {
+		t.Fatalf("marshal Soroban data: %v", err)
+	}
+	authBytes, err := authEntry.MarshalBinary()
+	if err != nil {
+		t.Fatalf("marshal auth entry: %v", err)
+	}
+
+	server, recordCalls, enforceCalls := mockSorobanRPC(t, authBytes, sorobanDataBytes)
 	defer server.Close()
 
 	rpcClient := soroban.NewClient(server.URL, network.PublicNetworkPassphrase)
 	defer rpcClient.Close()
-	builder, err := NewStellarExactBuilder(signer, rpcClient)
+	builder, err := NewStellarExactBuilder(signer.KeypairSigner{KP: kp}, rpcClient)
 	if err != nil {
 		t.Fatalf("NewStellarExactBuilder: %v", err)
 	}
@@ -333,5 +343,89 @@ func TestBuildTransferTransactionWithMockRPC(t *testing.T) {
 	}
 	if credentials.SignatureExpirationLedger > 1012 {
 		t.Fatalf("expiration ledger %d exceeds timeout bound", credentials.SignatureExpirationLedger)
+	}
+}
+
+// TestPreviewBuilderProducesUnsignedPayload verifies the key-free preview
+// path: an address-only builder produces an unsigned auth entry without
+// touching key material and refuses to produce a signed payload.
+func TestPreviewBuilderProducesUnsignedPayload(t *testing.T) {
+	kp := keypair.MustRandom()
+	recipient := keypair.MustRandom().Address()
+	contractID := testContractID(t)
+	authEntry := testAuthorizationEntry(t, kp)
+	recipientAddress, err := ParseDestinationAddress(recipient)
+	if err != nil {
+		t.Fatalf("parse recipient: %v", err)
+	}
+	authEntry.RootInvocation.Function.ContractFn.Args[1] = soroban.ScvAddress(recipientAddress)
+	contractAddress, err := soroban.ParseContractID(contractID)
+	if err != nil {
+		t.Fatalf("parse contract: %v", err)
+	}
+	authEntry.RootInvocation.Function.ContractFn.ContractAddress = contractAddress
+
+	sorobanData := xdr.SorobanTransactionData{
+		Resources:   xdr.SorobanResources{Instructions: 1000, DiskReadBytes: 10, WriteBytes: 10},
+		ResourceFee: 100,
+	}
+	sorobanDataBytes, err := sorobanData.MarshalBinary()
+	if err != nil {
+		t.Fatalf("marshal Soroban data: %v", err)
+	}
+	authBytes, err := authEntry.MarshalBinary()
+	if err != nil {
+		t.Fatalf("marshal auth entry: %v", err)
+	}
+
+	server, recordCalls, enforceCalls := mockSorobanRPC(t, authBytes, sorobanDataBytes)
+	defer server.Close()
+
+	rpcClient := soroban.NewClient(server.URL, network.PublicNetworkPassphrase)
+	defer rpcClient.Close()
+	builder, err := NewStellarPreviewBuilder(kp.Address(), rpcClient)
+	if err != nil {
+		t.Fatalf("NewStellarPreviewBuilder: %v", err)
+	}
+	requirement := validRequirement(t, NetworkStellarPubnet)
+	requirement.Asset = contractID
+	requirement.PayTo = recipient
+	requirement.Amount = "1000000"
+	requirement.MaxTimeoutSeconds = 60
+
+	transaction, err := builder.BuildUnsignedTransferTransaction(context.Background(), &requirement)
+	if err != nil {
+		t.Fatalf("BuildUnsignedTransferTransaction: %v", err)
+	}
+	if enforceCalls.Load() != 0 {
+		t.Fatalf("preview must not trigger enforce-mode simulation, got %d calls", enforceCalls.Load())
+	}
+	if recordCalls.Load() != 1 {
+		t.Fatalf("expected one record-mode simulation, got %d", recordCalls.Load())
+	}
+
+	var envelope xdr.TransactionEnvelope
+	if err := xdr.SafeUnmarshalBase64(transaction, &envelope); err != nil {
+		t.Fatalf("decode transaction envelope: %v", err)
+	}
+	op := envelope.V1.Tx.Operations[0].Body.InvokeHostFunctionOp
+	if op == nil || len(op.Auth) != 1 {
+		t.Fatal("expected one invokeHostFunction auth entry")
+	}
+	credentials := op.Auth[0].Credentials.Address
+	if credentials == nil {
+		t.Fatal("missing address credentials")
+	}
+	// Preview entries stay unsigned: ScvVoid signature, unset expiration.
+	if credentials.Signature.Type != xdr.ScValTypeScvVoid {
+		t.Fatalf("preview auth entry carries a %s signature — must be unsigned", credentials.Signature.Type)
+	}
+	if credentials.SignatureExpirationLedger != 0 {
+		t.Fatalf("preview auth entry expiration %d must be unset", credentials.SignatureExpirationLedger)
+	}
+
+	// The signed path is refused on a preview builder — no key material.
+	if _, err := builder.CreatePaymentPayload(context.Background(), &PaymentRequired{}, &requirement); err == nil {
+		t.Fatal("preview builder must refuse CreatePaymentPayload")
 	}
 }

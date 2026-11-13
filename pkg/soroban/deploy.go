@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/stellar/go-stellar-sdk/keypair"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar/go-stellar-sdk/network"
 	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
 	"github.com/stellar/go-stellar-sdk/strkey"
@@ -22,8 +22,8 @@ type DeployResult struct {
 }
 
 // UploadWasm uploads WASM bytecode to the Soroban network and returns the wasm hash.
-func (c *Client) UploadWasm(ctx context.Context, kp *keypair.Full, wasmBytes []byte) (wasmHash xdr.Hash, txHash string, err error) {
-	sourceAccount, err := c.LoadAccount(ctx, kp.Address())
+func (c *Client) UploadWasm(ctx context.Context, s signer.TxSigner, wasmBytes []byte) (wasmHash xdr.Hash, txHash string, err error) {
+	sourceAccount, err := c.LoadAccount(ctx, s.Address())
 	if err != nil {
 		return xdr.Hash{}, "", fmt.Errorf("failed to load source account: %w", err)
 	}
@@ -34,7 +34,7 @@ func (c *Client) UploadWasm(ctx context.Context, kp *keypair.Full, wasmBytes []b
 			Type: xdr.HostFunctionTypeHostFunctionTypeUploadContractWasm,
 			Wasm: &wasmCopy,
 		},
-		SourceAccount: kp.Address(),
+		SourceAccount: s.Address(),
 	}
 
 	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0, 0, "")
@@ -48,7 +48,7 @@ func (c *Client) UploadWasm(ctx context.Context, kp *keypair.Full, wasmBytes []b
 		return xdr.Hash{}, "", fmt.Errorf("failed to extract wasm hash from simulation: %w", err)
 	}
 
-	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, kp)
+	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, s)
 	if err != nil {
 		return xdr.Hash{}, txHash, err
 	}
@@ -58,13 +58,13 @@ func (c *Client) UploadWasm(ctx context.Context, kp *keypair.Full, wasmBytes []b
 
 // CreateContract creates a contract instance from an uploaded wasm hash.
 // If constructorArgs is non-nil, uses CreateContractV2 to pass them; otherwise uses V1.
-func (c *Client) CreateContract(ctx context.Context, kp *keypair.Full, wasmHash xdr.Hash, salt [32]byte, constructorArgs []xdr.ScVal) (contractID string, txHash string, err error) {
-	sourceAccount, err := c.LoadAccount(ctx, kp.Address())
+func (c *Client) CreateContract(ctx context.Context, s signer.TxSigner, wasmHash xdr.Hash, salt [32]byte, constructorArgs []xdr.ScVal) (contractID string, txHash string, err error) {
+	sourceAccount, err := c.LoadAccount(ctx, s.Address())
 	if err != nil {
 		return "", "", fmt.Errorf("failed to load source account: %w", err)
 	}
 
-	accountScAddr, err := AccountToScAddress(kp.Address())
+	accountScAddr, err := AccountToScAddress(s.Address())
 	if err != nil {
 		return "", "", fmt.Errorf("failed to convert account to ScAddress: %w", err)
 	}
@@ -92,7 +92,7 @@ func (c *Client) CreateContract(ctx context.Context, kp *keypair.Full, wasmHash 
 					ConstructorArgs:    constructorArgs,
 				},
 			},
-			SourceAccount: kp.Address(),
+			SourceAccount: s.Address(),
 		}
 	} else {
 		op = &txnbuild.InvokeHostFunction{
@@ -103,7 +103,7 @@ func (c *Client) CreateContract(ctx context.Context, kp *keypair.Full, wasmHash 
 					Executable:         executable,
 				},
 			},
-			SourceAccount: kp.Address(),
+			SourceAccount: s.Address(),
 		}
 	}
 
@@ -118,7 +118,7 @@ func (c *Client) CreateContract(ctx context.Context, kp *keypair.Full, wasmHash 
 		return "", "", fmt.Errorf("failed to extract contract ID from simulation: %w", err)
 	}
 
-	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, kp)
+	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, s)
 	if err != nil {
 		return "", txHash, err
 	}
@@ -157,8 +157,8 @@ func ContractIDForAsset(passphrase string, asset txnbuild.Asset) (string, error)
 // CreateContractForAsset deploys the Stellar Asset Contract (SAC) for a
 // classic Stellar asset and returns its contract ID. The deployed contract
 // implements SEP-41 and shares balances with the asset's trustlines.
-func (c *Client) CreateContractForAsset(ctx context.Context, kp *keypair.Full, asset txnbuild.Asset) (contractID string, txHash string, err error) {
-	sourceAccount, err := c.LoadAccount(ctx, kp.Address())
+func (c *Client) CreateContractForAsset(ctx context.Context, s signer.TxSigner, asset txnbuild.Asset) (contractID string, txHash string, err error) {
+	sourceAccount, err := c.LoadAccount(ctx, s.Address())
 	if err != nil {
 		return "", "", fmt.Errorf("failed to load source account: %w", err)
 	}
@@ -181,7 +181,7 @@ func (c *Client) CreateContractForAsset(ctx context.Context, kp *keypair.Full, a
 				},
 			},
 		},
-		SourceAccount: kp.Address(),
+		SourceAccount: s.Address(),
 	}
 
 	assembledTx, simResp, err := c.simulateAndAssemble(ctx, sourceAccount, op, 0, 0, "")
@@ -194,7 +194,7 @@ func (c *Client) CreateContractForAsset(ctx context.Context, kp *keypair.Full, a
 		return "", "", fmt.Errorf("failed to extract contract ID from simulation: %w", err)
 	}
 
-	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, kp)
+	txHash, _, _, err = c.submitAndWait(ctx, assembledTx, s)
 	if err != nil {
 		return "", txHash, err
 	}
@@ -203,13 +203,13 @@ func (c *Client) CreateContractForAsset(ctx context.Context, kp *keypair.Full, a
 }
 
 // Deploy is a convenience wrapper that uploads WASM and creates a contract instance.
-func (c *Client) Deploy(ctx context.Context, kp *keypair.Full, wasmBytes []byte) (*DeployResult, error) {
-	return c.DeployWithConstructorArgs(ctx, kp, wasmBytes, nil)
+func (c *Client) Deploy(ctx context.Context, s signer.TxSigner, wasmBytes []byte) (*DeployResult, error) {
+	return c.DeployWithConstructorArgs(ctx, s, wasmBytes, nil)
 }
 
 // DeployWithConstructorArgs uploads WASM and creates a contract instance with constructor args.
-func (c *Client) DeployWithConstructorArgs(ctx context.Context, kp *keypair.Full, wasmBytes []byte, constructorArgs []xdr.ScVal) (*DeployResult, error) {
-	wasmHash, uploadTxHash, err := c.UploadWasm(ctx, kp, wasmBytes)
+func (c *Client) DeployWithConstructorArgs(ctx context.Context, s signer.TxSigner, wasmBytes []byte, constructorArgs []xdr.ScVal) (*DeployResult, error) {
+	wasmHash, uploadTxHash, err := c.UploadWasm(ctx, s, wasmBytes)
 	if err != nil {
 		return nil, fmt.Errorf("upload wasm failed: %w", err)
 	}
@@ -219,7 +219,7 @@ func (c *Client) DeployWithConstructorArgs(ctx context.Context, kp *keypair.Full
 		return nil, fmt.Errorf("failed to generate salt: %w", err)
 	}
 
-	contractID, createTxHash, err := c.CreateContract(ctx, kp, wasmHash, salt, constructorArgs)
+	contractID, createTxHash, err := c.CreateContract(ctx, s, wasmHash, salt, constructorArgs)
 	if err != nil {
 		return nil, fmt.Errorf("create contract failed: %w", err)
 	}
@@ -237,14 +237,14 @@ func (c *Client) simulateAndAssembleAndSubmit(
 	ctx context.Context,
 	sourceAccount txnbuild.Account,
 	op *txnbuild.InvokeHostFunction,
-	kp *keypair.Full,
+	s signer.TxSigner,
 	baseFee int64,
 ) (txHash string, resultXDR string, resultMetaXDR string, err error) {
 	assembledTx, _, err := c.simulateAndAssemble(ctx, sourceAccount, op, baseFee, 0, "")
 	if err != nil {
 		return "", "", "", err
 	}
-	return c.submitAndWait(ctx, assembledTx, kp)
+	return c.submitAndWait(ctx, assembledTx, s)
 }
 
 // extractWasmHashFromSimResult extracts the wasm hash from the simulation response's return value.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar/go-stellar-sdk/keypair"
 	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
@@ -20,7 +21,7 @@ type InvokeResult struct {
 // Invoke submits a contract method call transaction to the network.
 func (c *Client) Invoke(
 	ctx context.Context,
-	kp *keypair.Full,
+	s signer.TxSigner,
 	contractID string,
 	method string,
 	args []xdr.ScVal,
@@ -30,7 +31,7 @@ func (c *Client) Invoke(
 		return nil, fmt.Errorf("invalid contract ID: %w", err)
 	}
 
-	sourceAccount, err := c.LoadAccount(ctx, kp.Address())
+	sourceAccount, err := c.LoadAccount(ctx, s.Address())
 	if err != nil {
 		return nil, fmt.Errorf("failed to load source account: %w", err)
 	}
@@ -44,10 +45,10 @@ func (c *Client) Invoke(
 				Args:            args,
 			},
 		},
-		SourceAccount: kp.Address(),
+		SourceAccount: s.Address(),
 	}
 
-	txHash, resultXDR, resultMetaXDR, err := c.simulateAndAssembleAndSubmit(ctx, sourceAccount, op, kp, 0)
+	txHash, resultXDR, resultMetaXDR, err := c.simulateAndAssembleAndSubmit(ctx, sourceAccount, op, s, 0)
 	if err != nil {
 		return nil, err
 	}

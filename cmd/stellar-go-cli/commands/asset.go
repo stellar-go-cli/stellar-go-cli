@@ -10,6 +10,7 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/assets"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
@@ -95,6 +96,7 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 
 			net := models.Network(*network)
 			svc := assets.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 
 			ui.PrintStep(3, "Deploying SAC contract to Stellar")
 			spin := ui.NewSpinner(fmt.Sprintf("Deploying %s (%s) contract...", *name, *symbol))
@@ -126,6 +128,8 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 					spin3.Stop(true, fmt.Sprintf("Carbon offset: %.2f tCO2e attached", *carbonAmt))
 				}
 			}
+
+			config.SaveState("asset_latest", asset) //nolint:errcheck // best-effort cache
 
 			if *output == "json" {
 				fmt.Println(prettyJSON(asset))
@@ -160,7 +164,6 @@ func newAssetCreateFTCmd(cfg *config.Config) *Command {
 			}
 			ui.Separator()
 
-			config.SaveState("asset_latest", asset) //nolint:errcheck // best-effort cache
 			ui.Info("Run 'stellar-go-cli report generate' to produce a compliance report.")
 
 			return nil
@@ -203,6 +206,7 @@ func newAssetCreateNFACmd(cfg *config.Config) *Command {
 
 			net := models.Network(*network)
 			svc := assets.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 
 			metadata := map[string]interface{}{
 				"description": *description,
@@ -235,6 +239,8 @@ func newAssetCreateNFACmd(cfg *config.Config) *Command {
 				spin2.Stop(true, "Carbon credit attached to NFA")
 			}
 
+			config.SaveState("asset_latest", asset) //nolint:errcheck // best-effort cache
+
 			if *output == "json" {
 				fmt.Println(prettyJSON(asset))
 				return nil
@@ -252,7 +258,6 @@ func newAssetCreateNFACmd(cfg *config.Config) *Command {
 				ui.KVColor("Carbon Offset", fmt.Sprintf("%.2f tCO2e (%s)", asset.CarbonOffset.Amount, asset.CarbonOffset.Standard), ui.BrightGreen)
 			}
 
-			config.SaveState("asset_latest", asset) //nolint:errcheck // best-effort cache
 			return nil
 		},
 	}
@@ -282,6 +287,7 @@ func newAssetTrustCmd(cfg *config.Config) *Command {
 			}
 
 			svc := assets.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 
 			// Load active wallet
 			walletSvc := wallet.NewService()
@@ -342,6 +348,7 @@ func newAssetUntrustCmd(cfg *config.Config) *Command {
 			ui.Header("Remove Trustline(s)")
 
 			svc := assets.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 
 			// Load active wallet
 			walletSvc := wallet.NewService()
@@ -475,6 +482,7 @@ func newAssetCarbonCmd(cfg *config.Config) *Command {
 			time.Sleep(600 * time.Millisecond)
 
 			svc := assets.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 			var asset models.Asset
 			if err := config.LoadState("asset_latest", &asset); err != nil {
 				spin.Stop(false, "No asset found. Run 'stellar-go-cli asset create-ft' first.")

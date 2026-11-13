@@ -7,9 +7,10 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 	"github.com/stellar/go-stellar-sdk/keypair"
-	"github.com/stellar/go-stellar-sdk/network"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
@@ -20,8 +21,13 @@ func NewService() *Service {
 	return &Service{}
 }
 
-// DeploySAC deploys a new SAC contract for a Stellar asset
-// This uses the Stellar SDK to create a wrapped asset contract
+// DeploySAC deploys a new SAC contract for a Stellar asset.
+// The SAC is deployed for real through the Soroban RPC (HostFunction
+// createContract with a FromAsset preimage) — the returned contract ID is the
+// deterministic strkey address of the deployed contract. The initial supply is
+// then issued on the classic side: the issuer pays itself, which puts supply
+// in circulation on both rails because SAC balances share the asset's
+// trustlines.
 func (s *Service) DeploySAC(
 	ctx context.Context,
 	client *horizonclient.Client,
@@ -29,6 +35,7 @@ func (s *Service) DeploySAC(
 	assetCode string,
 	assetName string,
 	totalSupply string,
+	net models.Network,
 ) (*models.Asset, error) {
 	// Parse the issuer keypair using ParseFull which expects a secret seed
 	trimmedKey := strings.TrimSpace(issuerKey)
@@ -43,6 +50,14 @@ func (s *Service) DeploySAC(
 		Issuer: fullKP.Address(),
 	}
 
+	// Deploy the Stellar Asset Contract via Soroban RPC
+	rpcClient := soroban.NewClientForNetwork(string(net))
+	defer rpcClient.Close() //nolint:errcheck // best-effort close
+	contractID, deployTxHash, err := rpcClient.CreateContractForAsset(ctx, signer.KeypairSigner{KP: fullKP}, asset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deploy SAC contract: %w", err)
+	}
+
 	// Get sequence number for the issuer account
 	accountReq := horizonclient.AccountRequest{AccountID: fullKP.Address()}
 	issuerAccount, err := client.AccountDetail(accountReq)
@@ -50,7 +65,7 @@ func (s *Service) DeploySAC(
 		return nil, fmt.Errorf("failed to get issuer account: %w", err)
 	}
 
-	// Build transaction to create the asset
+	// Build transaction to issue the supply
 	// For the issuer, we just need to make a payment to themselves with the new asset
 	paymentOp := &txnbuild.Payment{
 		Destination: fullKP.Address(),
@@ -73,8 +88,7 @@ func (s *Service) DeploySAC(
 		return nil, fmt.Errorf("failed to build transaction: %w", err)
 	}
 
-	// Sign the transaction with testnet network passphrase
-	tx, err = tx.Sign(network.TestNetworkPassphrase, fullKP)
+	tx, err = tx.Sign(soroban.NetworkPassphrase(string(net)), fullKP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -88,22 +102,23 @@ func (s *Service) DeploySAC(
 	// Create asset record
 	assetRecord := &models.Asset{
 		ID:          assetCode,
-		ContractID:  resp.Hash, // Use transaction hash as contract ID
+		ContractID:  contractID,
 		Type:        models.AssetFungible,
 		Name:        assetName,
 		Symbol:      assetCode,
 		Decimals:    7, // Stellar default
 		TotalSupply: totalSupply,
 		Issuer:      fullKP.Address(),
-		Network:     models.NetworkStellarTestnet,
+		Network:     net,
 		Standard:    "SEP-41",
 		Metadata: map[string]interface{}{
-			"wrapped_asset": assetCode,
-			"contract_type": "SAC",
-			"tx_hash":       resp.Hash,
+			"wrapped_asset":  assetCode,
+			"contract_type":  "SAC",
+			"deploy_tx_hash": deployTxHash,
+			"mint_tx_hash":   resp.Hash,
 		},
 		CreatedAt: time.Now().UTC(),
-		TxHash:    resp.Hash,
+		TxHash:    deployTxHash,
 	}
 
 	return assetRecord, nil

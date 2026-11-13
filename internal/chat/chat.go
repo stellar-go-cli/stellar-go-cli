@@ -13,6 +13,7 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/assets"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
@@ -431,7 +432,7 @@ func (c *Chat) handleSwapQuote(params map[string]interface{}) string {
 	}
 
 	// Use config network as the authoritative source
-	swapSvc, _ := wallet.NewSwapService(configNetwork)
+	swapSvc := wallet.NewSwapService(configNetwork, signresolve.ForSwapOrNil())
 
 	// Ensure wallet cache is populated
 	wallets, err := c.getWalletsFromRegistry()
@@ -491,7 +492,7 @@ func (c *Chat) handleExecuteSwap() string {
 
 	// Use config network as the authoritative source
 	configNetwork := models.Network(c.cfg.Network)
-	swapSvc, _ := wallet.NewSwapService(configNetwork)
+	swapSvc := wallet.NewSwapService(configNetwork, signresolve.ForSwapOrNil())
 
 	// Convert internal SwapQuote to models.SwapQuote for execution
 	swapQuote := &models.SwapQuote{
@@ -1251,7 +1252,7 @@ func (c *Chat) getNetworkWallet(network models.Network) (*models.WalletEntry, er
 // refreshServicesForNetwork recreates services with the new network
 func (c *Chat) refreshServicesForNetwork(network models.Network) {
 	// Update swap service
-	c.swapSvc, _ = wallet.NewSwapService(network)
+	c.swapSvc = wallet.NewSwapService(network, signresolve.ForSwapOrNil())
 
 	// Update triangular service
 	c.triangularSvc = triangular.NewService(network)

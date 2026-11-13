@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	rpcclient "github.com/stellar/go-stellar-sdk/clients/rpcclient"
-	"github.com/stellar/go-stellar-sdk/keypair"
 	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -206,10 +206,10 @@ func (c *Client) simulateAndAssemble(
 	return rebuiltTx, simResp, nil
 }
 
-// submitAndWait signs the transaction with the given keypair, submits it,
+// submitAndWait signs the transaction with the given signer, submits it,
 // and polls until it's confirmed on-chain.
-func (c *Client) submitAndWait(ctx context.Context, tx *txnbuild.Transaction, kp *keypair.Full) (txHash string, resultXDR string, resultMetaXDR string, err error) {
-	signedTx, err := tx.Sign(c.passphrase, kp)
+func (c *Client) submitAndWait(ctx context.Context, tx *txnbuild.Transaction, s signer.TxSigner) (txHash string, resultXDR string, resultMetaXDR string, err error) {
+	signedTx, err := s.Sign(tx, c.passphrase)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to sign transaction: %w", err)
 	}

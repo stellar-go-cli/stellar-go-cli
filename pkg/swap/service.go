@@ -50,7 +50,14 @@ type Service struct {
 	assets     map[string]AssetConfig
 	baseFee    int64
 	signer     Signer
+	submitter  Submitter
 }
+
+// Submitter submits a signed envelope and returns its transaction hash.
+// Used by the custodian integration to keep submission inside the custody
+// boundary — when set, Horizon submission goes through it instead of the
+// local client.
+type Submitter func(signedXDR string) (map[string]interface{}, error)
 
 // Option configures a Service.
 type Option func(*Service)
@@ -62,6 +69,45 @@ func WithClient(c *horizonclient.Client) Option {
 			s.client = c
 		}
 	}
+}
+
+// WithSubmitter routes signed-envelope submission through a custom path
+// (e.g. the custodian daemon) instead of the local Horizon client.
+func WithSubmitter(sub Submitter) Option {
+	return func(s *Service) {
+		s.submitter = sub
+	}
+}
+
+// XDRSubmitter is auto-detected on the signer — a custodian-backed signer
+// carries its own submission path, and the swap caller then never touches
+// the network for the signed payload.
+type XDRSubmitter interface {
+	Submit(signedXDR string) (map[string]interface{}, error)
+}
+
+// submitXDR submits a signed envelope via the custom submitter (or the
+// signer's own Submit method) when available, else the local Horizon client.
+func (s *Service) submitXDR(txB64 string) (resp horizon.Transaction, err error) {
+	if s.submitter == nil {
+		if sub, ok := s.signer.(XDRSubmitter); ok {
+			s.submitter = sub.Submit
+		}
+	}
+	if s.submitter != nil {
+		res, serr := s.submitter(txB64)
+		if serr != nil {
+			return resp, serr
+		}
+		if h, _ := res["hash"].(string); h != "" {
+			resp.Hash = h
+		}
+		if lf, ok := res["ledger"].(float64); ok {
+			resp.Ledger = int32(lf)
+		}
+		return resp, nil
+	}
+	return s.client.SubmitTransactionXDR(txB64)
 }
 
 // WithPassphrase overrides the network passphrase (required when WithClient
@@ -450,7 +496,7 @@ func (s *Service) SubmitTransaction(tx *txnbuild.Transaction) (*horizon.Transact
 		return nil, fmt.Errorf("serialize transaction: %w", err)
 	}
 
-	resp, err := s.client.SubmitTransactionXDR(txB64)
+	resp, err := s.submitXDR(txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
 			rc, rcErr := herr.ResultCodes()
@@ -1041,7 +1087,7 @@ func (s *Service) ExecuteRoundTripAtomic(amount float64, destination string, min
 	if err != nil {
 		return nil, res, fmt.Errorf("hash transaction: %w", err)
 	}
-	resp, err := s.client.SubmitTransactionXDR(txB64)
+	resp, err := s.submitXDR(txB64)
 	if err != nil {
 		if herr, ok := err.(*horizonclient.Error); ok {
 			if rc, rcErr := herr.ResultCodes(); rcErr == nil && rc != nil {

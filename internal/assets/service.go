@@ -10,16 +10,33 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	mpCrypto "github.com/stellar-go-cli/stellar-go-cli/pkg/crypto"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
-	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/network"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
 // Service manages SAC/SEP-41 asset lifecycle
-type Service struct{}
+type Service struct {
+	// ResolveSigner resolves signing authority for an address — nil uses
+	// the local plaintext loader (trusted-surface call sites only).
+	ResolveSigner func(address string) (signer.TxSigner, error)
+}
 
 func NewService() *Service { return &Service{} }
+
+// signerFor resolves the signer for an address via ResolveSigner, falling
+// back to the local plaintext loader.
+func (s *Service) signerFor(address string) (signer.TxSigner, error) {
+	if s.ResolveSigner != nil {
+		return s.ResolveSigner(address)
+	}
+	sg, err := wallet.LoadStellarSigner()
+	if err != nil {
+		return nil, err
+	}
+	return sg, nil
+}
 
 // CreateFungibleAsset creates a SEP-41 fungible token using SAC contract
 func (s *Service) CreateFungibleAsset(
@@ -41,8 +58,11 @@ func (s *Service) CreateFungibleAsset(
 	// Use symbol as asset code (already validated to be ≤12 chars)
 	assetCode := symbol
 
-	// Connect to Horizon - DefaultTestNetClient is a variable, not a function
+	// Connect to Horizon for the target network
 	client := horizonclient.DefaultTestNetClient
+	if network == models.NetworkStellarMainnet {
+		client = horizonclient.DefaultPublicNetClient
+	}
 
 	// Create SAC service for contract deployment
 	sacService := contracts.NewService()
@@ -53,16 +73,16 @@ func (s *Service) CreateFungibleAsset(
 	spin := ui.NewSpinner(fmt.Sprintf("Deploying %s (%s) contract...", name, symbol))
 	spin.Start()
 
-	asset, err := sacService.DeploySAC(ctx, client, issuerKey, assetCode, name, totalSupply)
+	asset, err := sacService.DeploySAC(ctx, client, issuerKey, assetCode, name, totalSupply, network)
 	if err != nil {
 		spin.Stop(false, err.Error())
 		return nil, err
 	}
 	spin.Stop(true, "Contract deployed")
 
-	// Update asset with additional metadata
+	// Update asset with additional metadata, keeping the deploy/mint tx hashes
+	// DeploySAC recorded
 	asset.ID = mpCrypto.RandomHex(16)
-	asset.ContractID = mpCrypto.ContractID()
 	asset.Type = models.AssetFungible
 	asset.Name = name
 	asset.Symbol = symbol
@@ -70,9 +90,13 @@ func (s *Service) CreateFungibleAsset(
 	asset.Issuer = issuer
 	asset.Network = network
 	asset.Standard = "SEP-41"
+	for k, v := range asset.Metadata {
+		if _, ok := metadata[k]; !ok {
+			metadata[k] = v
+		}
+	}
 	asset.Metadata = metadata
 	asset.CreatedAt = time.Now().UTC()
-	asset.TxHash = mpCrypto.StellarTxHash()
 
 	return asset, nil
 }
@@ -134,14 +158,14 @@ func (s *Service) TransferAsset(asset *models.Asset, from, to, amount string) (s
 // CreateTrustline creates a trustline for an asset using ChangeTrust operation
 func (s *Service) CreateTrustline(accountAddress, code, issuer, limit string) (string, error) {
 	// Load keypair from wallet
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor(accountAddress)
 	if err != nil {
-		return "", fmt.Errorf("no keypair found: %w", err)
+		return "", fmt.Errorf("no signer found: %w", err)
 	}
 
 	// Verify the account address matches the keypair
-	if kp.Address() != accountAddress {
-		return "", fmt.Errorf("keypair address %s does not match provided address %s", kp.Address(), accountAddress)
+	if sg.Address() != accountAddress {
+		return "", fmt.Errorf("keypair address %s does not match provided address %s", sg.Address(), accountAddress)
 	}
 
 	// Get active wallet to determine network
@@ -167,7 +191,7 @@ func (s *Service) CreateTrustline(accountAddress, code, issuer, limit string) (s
 
 	// Fetch source account
 	sourceAcct, err := client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch account: %w", err)
@@ -196,7 +220,7 @@ func (s *Service) CreateTrustline(accountAddress, code, issuer, limit string) (s
 	}
 
 	// Sign
-	tx, err = tx.Sign(networkPassphrase, kp)
+	tx, err = sg.Sign(tx, networkPassphrase)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -219,14 +243,14 @@ type AssetIdentifier struct {
 // RemoveTrustline removes a single trustline by setting limit to 0
 func (s *Service) RemoveTrustline(accountAddress, code, issuer string) (string, error) {
 	// Load keypair from wallet
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor(accountAddress)
 	if err != nil {
-		return "", fmt.Errorf("no keypair found: %w", err)
+		return "", fmt.Errorf("no signer found: %w", err)
 	}
 
 	// Verify the account address matches the keypair
-	if kp.Address() != accountAddress {
-		return "", fmt.Errorf("keypair address %s does not match provided address %s", kp.Address(), accountAddress)
+	if sg.Address() != accountAddress {
+		return "", fmt.Errorf("keypair address %s does not match provided address %s", sg.Address(), accountAddress)
 	}
 
 	// Get active wallet to determine network
@@ -252,7 +276,7 @@ func (s *Service) RemoveTrustline(accountAddress, code, issuer string) (string, 
 
 	// Fetch source account
 	sourceAcct, err := client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch account: %w", err)
@@ -281,7 +305,7 @@ func (s *Service) RemoveTrustline(accountAddress, code, issuer string) (string, 
 	}
 
 	// Sign
-	tx, err = tx.Sign(networkPassphrase, kp)
+	tx, err = sg.Sign(tx, networkPassphrase)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -302,14 +326,14 @@ func (s *Service) RemoveTrustlinesBatch(accountAddress string, assets []AssetIde
 	}
 
 	// Load keypair from wallet
-	kp, err := s.loadStellarKeypair()
+	sg, err := s.signerFor(accountAddress)
 	if err != nil {
-		return "", fmt.Errorf("no keypair found: %w", err)
+		return "", fmt.Errorf("no signer found: %w", err)
 	}
 
 	// Verify the account address matches the keypair
-	if kp.Address() != accountAddress {
-		return "", fmt.Errorf("keypair address %s does not match provided address %s", kp.Address(), accountAddress)
+	if sg.Address() != accountAddress {
+		return "", fmt.Errorf("keypair address %s does not match provided address %s", sg.Address(), accountAddress)
 	}
 
 	// Get active wallet to determine network
@@ -335,7 +359,7 @@ func (s *Service) RemoveTrustlinesBatch(accountAddress string, assets []AssetIde
 
 	// Fetch source account
 	sourceAcct, err := client.AccountDetail(horizonclient.AccountRequest{
-		AccountID: kp.Address(),
+		AccountID: sg.Address(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch account: %w", err)
@@ -375,7 +399,7 @@ func (s *Service) RemoveTrustlinesBatch(accountAddress string, assets []AssetIde
 	}
 
 	// Sign
-	tx, err = tx.Sign(networkPassphrase, kp)
+	tx, err = sg.Sign(tx, networkPassphrase)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -387,10 +411,6 @@ func (s *Service) RemoveTrustlinesBatch(accountAddress string, assets []AssetIde
 	}
 
 	return resp.Hash, nil
-}
-
-func (s *Service) loadStellarKeypair() (*keypair.Full, error) {
-	return wallet.LoadStellarKeypair()
 }
 
 // Helpers

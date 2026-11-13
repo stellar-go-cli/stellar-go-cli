@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 	"github.com/stellar/go-stellar-sdk/keypair"
@@ -137,7 +138,7 @@ func TestX402EndToEndMainnet(t *testing.T) {
 		t.Fatalf("derive SAC contract ID: %v", err)
 	}
 	if _, err := sorobanClient.SimulateOnly(ctx, contractID, "name", nil); err != nil {
-		_, deployTx, err := sorobanClient.CreateContractForAsset(ctx, funder, asset)
+		_, deployTx, err := sorobanClient.CreateContractForAsset(ctx, signer.KeypairSigner{KP: funder}, asset)
 		if err != nil {
 			t.Fatalf("deploy SAC: %v", err)
 		}
@@ -178,7 +179,7 @@ func TestX402EndToEndMainnet(t *testing.T) {
 	defer server.Close()
 	facilitator.resourceURL = server.URL
 
-	client, builderRPC, err := NewStellarClient("stellar:pubnet", payer, &http.Client{Timeout: 60 * time.Second})
+	client, builderRPC, err := NewStellarClient("stellar:pubnet", signer.KeypairSigner{KP: payer}, &http.Client{Timeout: 60 * time.Second})
 	if err != nil {
 		t.Fatalf("create x402 client: %v", err)
 	}

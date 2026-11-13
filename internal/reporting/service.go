@@ -73,6 +73,20 @@ func (s *Service) FormatISO20022XML(report *models.TransactionReport) (string, e
 }
 
 // FormatPacs002 generates a pacs.002 payment status report
+// FormatPacs008WithEvidence renders pacs.008 with PME evidence — InitgPty
+// names the agent, SplmtryData carries mandate/decision/record references
+// (spec §12.3 evidence portability).
+func (s *Service) FormatPacs008WithEvidence(report *models.TransactionReport, evidence *iso20022.AgentEvidence) (string, error) {
+	if report == nil || report.Payment == nil {
+		return "", fmt.Errorf("report is empty")
+	}
+	opts := &iso20022.Pacs008Options{Evidence: evidence}
+	if evidence != nil && evidence.AgentID != "" {
+		opts.InitgPtyName = evidence.AgentID
+	}
+	return iso20022.BuildPacs008(report.Payment, opts)
+}
+
 func (s *Service) FormatPacs002(report *models.TransactionReport, status iso20022.TransactionStatus, reasonCode string) (string, error) {
 	if report.Payment == nil {
 		return "", fmt.Errorf("no payment data")

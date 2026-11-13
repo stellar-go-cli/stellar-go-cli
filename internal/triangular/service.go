@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
@@ -56,7 +57,7 @@ func NewService(network models.Network) *Service {
 		history = nil
 	}
 
-	swapSvc, _ := wallet.NewSwapService(network)
+	swapSvc := wallet.NewSwapService(network, signresolve.ForSwapOrNil())
 	return &Service{
 		swapSvc: swapSvc,
 		network: network,

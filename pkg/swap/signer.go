@@ -1,29 +1,15 @@
 package swap
 
 import (
-	"github.com/stellar/go-stellar-sdk/keypair"
-	"github.com/stellar/go-stellar-sdk/txnbuild"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 )
 
 // Signer abstracts transaction signing so services can plug in their own key
 // management (KMS, hardware signer, remote signer). Implementations return
 // the source account address and sign transactions for a network passphrase.
-type Signer interface {
-	// Address returns the signer's account address (G...).
-	Address() string
-	// Sign signs the transaction for the given network passphrase.
-	Sign(tx *txnbuild.Transaction, passphrase string) (*txnbuild.Transaction, error)
-}
+// It is an alias of signer.TxSigner — the shared signing-oracle interface
+// (pkg/signer), so swap services can be backed by any key custody model.
+type Signer = signer.TxSigner
 
 // KeypairSigner adapts a Stellar keypair to the Signer interface.
-type KeypairSigner struct {
-	KP *keypair.Full
-}
-
-// Address returns the keypair's public address.
-func (k KeypairSigner) Address() string { return k.KP.Address() }
-
-// Sign signs the transaction with the keypair for the given passphrase.
-func (k KeypairSigner) Sign(tx *txnbuild.Transaction, passphrase string) (*txnbuild.Transaction, error) {
-	return tx.Sign(passphrase, k.KP)
-}
+type KeypairSigner = signer.KeypairSigner

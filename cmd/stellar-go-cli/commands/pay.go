@@ -10,11 +10,12 @@ import (
 
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/payments"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/x402"
-	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
 func newPayCmd(cfg *config.Config) *Command {
@@ -98,7 +99,7 @@ func newPaySendCmd(cfg *config.Config) *Command {
 			}
 
 			// Load sender from saved account
-			from := cfg.ActiveAddress
+			from := activePayerAddress(cfg)
 			if from == "" {
 				from = "G" + "0000000000000000000000000000000000000000000000000000000"
 				ui.Warn("No active account. Using placeholder. Run 'stellar-go-cli wallet connect'.")
@@ -107,6 +108,7 @@ func newPaySendCmd(cfg *config.Config) *Command {
 			r := models.PaymentRail(*rail)
 			net := models.Network(netName)
 			svc := payments.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 
 			ui.PrintStep(1, fmt.Sprintf("Rail: %s", payments.RailDescription(r)))
 
@@ -225,6 +227,7 @@ func newPayQuoteCmd(cfg *config.Config) *Command {
 			spin.Start()
 			time.Sleep(600 * time.Millisecond)
 			svc := payments.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 			quote := svc.GetTempoQuote(*from, *to)
 			spin.Stop(true, "Quote received")
 
@@ -371,21 +374,23 @@ func executeX402Flow(ctx context.Context, cfg *config.Config, opts x402CommandOp
 		return nil, err
 	}
 
-	var signer *keypair.Full
 	payer := strings.TrimSpace(opts.Payer)
-	if payer == "" && cfg != nil {
-		payer = strings.TrimSpace(cfg.ActiveAddress)
+	if payer == "" {
+		payer = strings.TrimSpace(activePayerAddress(cfg))
 	}
+	// Protected wallets sign inside the custodian daemon; plaintext
+	// wallets resolve to a local KeypairSigner.
+	var payerSigner signer.Signer
 	if payer != "" {
-		signer, err = wallet.LoadStellarKeypairForAddress(payer)
+		payerSigner, err = signresolve.ForAddress(payer)
 	} else {
-		signer, err = wallet.LoadStellarKeypair()
+		payerSigner, err = signresolve.ForActive()
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load Stellar payer keypair: %w", err)
+		return nil, fmt.Errorf("load Stellar payer signer: %w", err)
 	}
 
-	client, rpcClient, err := x402.NewStellarClientWithRPCURL(canonicalNetwork, signer, config.NewHTTPClient(), opts.RPCURL)
+	client, rpcClient, err := x402.NewStellarClientWithRPCURL(canonicalNetwork, payerSigner, config.NewHTTPClient(), opts.RPCURL)
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +536,7 @@ func newPayZKCmd(cfg *config.Config) *Command {
 			}
 
 			// Load sender from saved account
-			from := cfg.ActiveAddress
+			from := activePayerAddress(cfg)
 			if from == "" {
 				from = "G" + "0000000000000000000000000000000000000000000000000000000"
 				ui.Warn("No active account. Using placeholder. Run 'stellar-go-cli wallet connect'.")
@@ -539,6 +544,7 @@ func newPayZKCmd(cfg *config.Config) *Command {
 
 			net := models.Network(*network)
 			svc := payments.NewService()
+			svc.ResolveSigner = signresolve.Resolver()
 
 			ui.PrintStep(1, "Building ZK Proof Request")
 
@@ -641,4 +647,18 @@ func newPayRailsCmd(cfg *config.Config) *Command {
 			return nil
 		},
 	}
+}
+
+// activePayerAddress resolves the account payment paths should sign from.
+// The wallet registry's active wallet is authoritative — cfg.ActiveAddress
+// can drift out of sync (e.g. after registry ops that don't write config)
+// and only serves as a legacy fallback.
+func activePayerAddress(cfg *config.Config) string {
+	if acc, err := wallet.NewService().GetActiveWallet(); err == nil && acc != nil && acc.Address != "" {
+		return acc.Address
+	}
+	if cfg != nil {
+		return cfg.ActiveAddress
+	}
+	return ""
 }

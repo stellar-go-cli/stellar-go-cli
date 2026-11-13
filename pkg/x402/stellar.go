@@ -2,7 +2,6 @@ package x402
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"math"
 	"math/big"
@@ -10,12 +9,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
-	"github.com/stellar/go-stellar-sdk/hash"
-	"github.com/stellar/go-stellar-sdk/keypair"
-	"github.com/stellar/go-stellar-sdk/network"
 	rpc "github.com/stellar/go-stellar-sdk/protocols/rpc"
-	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
@@ -33,23 +29,43 @@ const (
 // authorization entries; the facilitator signs/submits the transaction
 // envelope after verification.
 type StellarExactBuilder struct {
-	signer *keypair.Full
+	payer  string
+	signer signer.AuthEntrySigner
 	rpc    *soroban.Client
 }
 
-func NewStellarExactBuilder(signer *keypair.Full, rpcClient *soroban.Client) (*StellarExactBuilder, error) {
-	if signer == nil {
-		return nil, fmt.Errorf("stellar signer keypair is required")
+// NewStellarExactBuilder builds a payment builder backed by the given signer.
+func NewStellarExactBuilder(s signer.AuthEntrySigner, rpcClient *soroban.Client) (*StellarExactBuilder, error) {
+	if s == nil {
+		return nil, fmt.Errorf("stellar auth entry signer is required")
 	}
 	if rpcClient == nil {
 		return nil, fmt.Errorf("soroban RPC client is required")
 	}
-	return &StellarExactBuilder{signer: signer, rpc: rpcClient}, nil
+	payer := s.Address()
+	if _, err := ParseDestinationAddress(payer); err != nil {
+		return nil, fmt.Errorf("invalid payer address: %w", err)
+	}
+	return &StellarExactBuilder{payer: payer, signer: s, rpc: rpcClient}, nil
 }
 
-// Payer returns the signing account address.
+// NewStellarPreviewBuilder builds an address-only payment builder for dry-run
+// previews: it produces unsigned payloads and never holds key material.
+// CreatePaymentPayload fails on this builder — only
+// CreateUnsignedPaymentPayload is supported.
+func NewStellarPreviewBuilder(payerAddress string, rpcClient *soroban.Client) (*StellarExactBuilder, error) {
+	if rpcClient == nil {
+		return nil, fmt.Errorf("soroban RPC client is required")
+	}
+	if _, err := ParseDestinationAddress(payerAddress); err != nil {
+		return nil, fmt.Errorf("invalid payer address: %w", err)
+	}
+	return &StellarExactBuilder{payer: payerAddress, rpc: rpcClient}, nil
+}
+
+// Payer returns the payer account address.
 func (b *StellarExactBuilder) Payer() string {
-	return b.signer.Address()
+	return b.payer
 }
 
 // CreatePaymentPayload builds the x402 v2 payload with a base64 transaction
@@ -61,6 +77,9 @@ func (b *StellarExactBuilder) CreatePaymentPayload(
 ) (*PaymentPayload, error) {
 	if required == nil {
 		return nil, fmt.Errorf("payment required challenge is empty")
+	}
+	if b.signer == nil {
+		return nil, fmt.Errorf("payment builder has no signer — preview-only builders only produce unsigned payloads")
 	}
 	if err := ValidateStellarRequirement(accepted); err != nil {
 		return nil, err
@@ -135,7 +154,7 @@ func (b *StellarExactBuilder) buildTransferTransaction(ctx context.Context, req 
 	if err != nil {
 		return "", fmt.Errorf("invalid token contract: %w", err)
 	}
-	fromAddress, err := ParseDestinationAddress(b.signer.Address())
+	fromAddress, err := ParseDestinationAddress(b.payer)
 	if err != nil {
 		return "", fmt.Errorf("invalid payer address: %w", err)
 	}
@@ -181,7 +200,7 @@ func (b *StellarExactBuilder) buildTransferTransaction(ctx context.Context, req 
 	if len(op.Auth) != 1 {
 		return "", fmt.Errorf("expected one payer authorization entry, got %d", len(op.Auth))
 	}
-	if err := validateTransferAuthEntry(op.Auth[0], contractAddress, fromAddress, toAddress, amount, b.signer.Address()); err != nil {
+	if err := validateTransferAuthEntry(op.Auth[0], contractAddress, fromAddress, toAddress, amount, b.payer); err != nil {
 		return "", err
 	}
 
@@ -197,6 +216,10 @@ func (b *StellarExactBuilder) buildTransferTransaction(ctx context.Context, req 
 			return "", fmt.Errorf("serialize payment transaction: %w", err)
 		}
 		return encoded, nil
+	}
+
+	if b.signer == nil {
+		return "", fmt.Errorf("payment builder has no signer — cannot sign authorization entry")
 	}
 
 	latestLedger := simResp.LatestLedger
@@ -248,145 +271,19 @@ func (b *StellarExactBuilder) buildTransferTransaction(ctx context.Context, req 
 	return encoded, nil
 }
 
-// SignAuthorizationEntry signs the payer's Soroban authorization payload and
-// embeds the standard Ed25519 account signature ScVal shape:
-// vec[{public_key, signature}]. Both credential arms are supported:
-// SOROBAN_CREDENTIALS_ADDRESS signs the envelope type 9 preimage
-// (SorobanAuthorization); SOROBAN_CREDENTIALS_ADDRESS_V2 (CAP-71, protocol 27+)
-// signs the envelope type 10 preimage (SorobanAuthorizationWithAddress), which
-// additionally binds the credential's address.
+// SignAuthorizationEntry signs the payer's Soroban authorization entry via
+// the given signer — an AuthEntrySigner abstraction over key custody, so an
+// in-process keypair and a remote custodian satisfy the same call.
 func SignAuthorizationEntry(
 	entry xdr.SorobanAuthorizationEntry,
-	signer *keypair.Full,
+	s signer.AuthEntrySigner,
 	passphrase string,
 	validUntilLedger uint32,
 ) (xdr.SorobanAuthorizationEntry, error) {
-	if signer == nil {
-		return entry, fmt.Errorf("signer keypair is required")
+	if s == nil {
+		return entry, fmt.Errorf("signer is required")
 	}
-	credentials := addressCredentials(&entry)
-	if credentials == nil {
-		return entry, fmt.Errorf("unsupported Soroban credentials type %s", entry.Credentials.Type.String())
-	}
-	address, err := credentials.Address.String()
-	if err != nil {
-		return entry, fmt.Errorf("invalid authorization address: %w", err)
-	}
-	if !strings.EqualFold(address, signer.Address()) {
-		return entry, fmt.Errorf("authorization entry address %s does not match signer %s", address, signer.Address())
-	}
-	if validUntilLedger == 0 {
-		return entry, fmt.Errorf("signature expiration ledger is required")
-	}
-
-	encoded, err := entry.MarshalBinary()
-	if err != nil {
-		return entry, fmt.Errorf("marshal authorization entry: %w", err)
-	}
-	var clone xdr.SorobanAuthorizationEntry
-	if err := clone.UnmarshalBinary(encoded); err != nil {
-		return entry, fmt.Errorf("clone authorization entry: %w", err)
-	}
-
-	credentials = addressCredentials(&clone)
-	credentials.SignatureExpirationLedger = xdr.Uint32(validUntilLedger)
-	if credentials.Nonce == 0 {
-		nonce, err := randomNonce()
-		if err != nil {
-			return entry, err
-		}
-		credentials.Nonce = xdr.Int64(nonce)
-	}
-
-	var preimage xdr.HashIdPreimage
-	if entry.Credentials.Type == xdr.SorobanCredentialsTypeSorobanCredentialsAddressV2 {
-		preimage = xdr.HashIdPreimage{
-			Type: xdr.EnvelopeTypeEnvelopeTypeSorobanAuthorizationWithAddress,
-			SorobanAuthorizationWithAddress: &xdr.HashIdPreimageSorobanAuthorizationWithAddress{
-				NetworkId:                 network.ID(passphrase),
-				Nonce:                     credentials.Nonce,
-				SignatureExpirationLedger: credentials.SignatureExpirationLedger,
-				Address:                   credentials.Address,
-				Invocation:                clone.RootInvocation,
-			},
-		}
-	} else {
-		preimage = xdr.HashIdPreimage{
-			Type: xdr.EnvelopeTypeEnvelopeTypeSorobanAuthorization,
-			SorobanAuthorization: &xdr.HashIdPreimageSorobanAuthorization{
-				NetworkId:                 network.ID(passphrase),
-				Nonce:                     credentials.Nonce,
-				SignatureExpirationLedger: credentials.SignatureExpirationLedger,
-				Invocation:                clone.RootInvocation,
-			},
-		}
-	}
-	preimageBytes, err := preimage.MarshalBinary()
-	if err != nil {
-		return entry, fmt.Errorf("marshal authorization preimage: %w", err)
-	}
-	payload := hash.Hash(preimageBytes)
-
-	signature, err := signer.Sign(payload[:])
-	if err != nil {
-		return entry, fmt.Errorf("sign authorization payload: %w", err)
-	}
-	if err := signer.Verify(payload[:], signature); err != nil {
-		return entry, fmt.Errorf("verify authorization signature: %w", err)
-	}
-
-	publicKeyBytes, err := strkey.Decode(strkey.VersionByteAccountID, signer.Address())
-	if err != nil {
-		return entry, fmt.Errorf("decode signer public key: %w", err)
-	}
-	publicKey := xdr.ScBytes(publicKeyBytes)
-	signatureBytes := xdr.ScBytes(signature)
-	publicKeySymbol := xdr.ScSymbol("public_key")
-	signatureSymbol := xdr.ScSymbol("signature")
-
-	signatureMap := xdr.ScMap{
-		{
-			Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &publicKeySymbol},
-			Val: xdr.ScVal{Type: xdr.ScValTypeScvBytes, Bytes: &publicKey},
-		},
-		{
-			Key: xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &signatureSymbol},
-			Val: xdr.ScVal{Type: xdr.ScValTypeScvBytes, Bytes: &signatureBytes},
-		},
-	}
-	mapValue, err := xdr.NewScVal(xdr.ScValTypeScvMap, &signatureMap)
-	if err != nil {
-		return entry, fmt.Errorf("build signature map: %w", err)
-	}
-	signatureVec := xdr.ScVec{mapValue}
-	credentials.Signature, err = xdr.NewScVal(xdr.ScValTypeScvVec, &signatureVec)
-	if err != nil {
-		return entry, fmt.Errorf("build signature value: %w", err)
-	}
-	return clone, nil
-}
-
-// addressCredentials returns the SorobanAddressCredentials for the supported
-// address-credentialled arms (legacy Address and CAP-71 AddressV2), or nil for
-// any other credentials type.
-func addressCredentials(entry *xdr.SorobanAuthorizationEntry) *xdr.SorobanAddressCredentials {
-	switch entry.Credentials.Type {
-	case xdr.SorobanCredentialsTypeSorobanCredentialsAddress:
-		return entry.Credentials.Address
-	case xdr.SorobanCredentialsTypeSorobanCredentialsAddressV2:
-		return entry.Credentials.AddressV2
-	default:
-		return nil
-	}
-}
-
-func randomNonce() (int64, error) {
-	max := new(big.Int).SetInt64(int64(^uint64(0) >> 1))
-	n, err := rand.Int(rand.Reader, max)
-	if err != nil {
-		return 0, fmt.Errorf("generate authorization nonce: %w", err)
-	}
-	return n.Int64(), nil
+	return s.SignAuthEntry(entry, passphrase, validUntilLedger)
 }
 
 func validateTransferAuthEntry(
@@ -397,7 +294,7 @@ func validateTransferAuthEntry(
 	amount *big.Int,
 	payer string,
 ) error {
-	credentials := addressCredentials(&entry)
+	credentials := signer.AddressCredentials(&entry)
 	if credentials == nil {
 		return fmt.Errorf("simulation returned unsupported authorization credentials %s", entry.Credentials.Type.String())
 	}
@@ -478,11 +375,11 @@ func rebuildInvokeTransaction(tx *txnbuild.Transaction, op *txnbuild.InvokeHostF
 // NewStellarClient constructs an HTTP x402 client and the Stellar exact
 // payment builder for a CLI or CAIP-2 Stellar network name. The caller
 // must close the returned Soroban RPC client.
-func NewStellarClient(networkName string, signer *keypair.Full, httpClient HTTPClient) (*Client, *soroban.Client, error) {
-	return NewStellarClientWithRPCURL(networkName, signer, httpClient, "")
+func NewStellarClient(networkName string, s signer.AuthEntrySigner, httpClient HTTPClient) (*Client, *soroban.Client, error) {
+	return NewStellarClientWithRPCURL(networkName, s, httpClient, "")
 }
 
-func NewStellarClientWithRPCURL(networkName string, signer *keypair.Full, httpClient HTTPClient, rpcURL string) (*Client, *soroban.Client, error) {
+func NewStellarClientWithRPCURL(networkName string, s signer.AuthEntrySigner, httpClient HTTPClient, rpcURL string) (*Client, *soroban.Client, error) {
 	canonical, err := CanonicalNetwork(networkName)
 	if err != nil {
 		return nil, nil, err
@@ -499,7 +396,51 @@ func NewStellarClientWithRPCURL(networkName string, signer *keypair.Full, httpCl
 		rpcURL = soroban.NetworkRPCURL(internalNetwork)
 	}
 	rpcClient := soroban.NewClient(rpcURL, soroban.NetworkPassphrase(internalNetwork))
-	builder, err := NewStellarExactBuilder(signer, rpcClient)
+	builder, err := NewStellarExactBuilder(s, rpcClient)
+	if err != nil {
+		rpcClient.Close() //nolint:errcheck // cleanup on failure
+		return nil, nil, err
+	}
+	client, err := NewClient(Config{
+		HTTPClient:     httpClient,
+		PaymentBuilder: builder,
+		Network:        canonical,
+	})
+	if err != nil {
+		rpcClient.Close() //nolint:errcheck // cleanup on failure
+		return nil, nil, err
+	}
+	return client, rpcClient, nil
+}
+
+// NewStellarPreviewClient constructs an HTTP x402 client backed by an
+// address-only builder: dry-run fetches produce unsigned payment previews
+// without loading any key material. The caller must close the returned
+// Soroban RPC client.
+func NewStellarPreviewClient(networkName string, payerAddress string, httpClient HTTPClient) (*Client, *soroban.Client, error) {
+	return NewStellarPreviewClientWithRPCURL(networkName, payerAddress, httpClient, "")
+}
+
+// NewStellarPreviewClientWithRPCURL is NewStellarPreviewClient with an
+// explicit Soroban RPC endpoint.
+func NewStellarPreviewClientWithRPCURL(networkName string, payerAddress string, httpClient HTTPClient, rpcURL string) (*Client, *soroban.Client, error) {
+	canonical, err := CanonicalNetwork(networkName)
+	if err != nil {
+		return nil, nil, err
+	}
+	internalNetwork, err := InternalNetwork(canonical)
+	if err != nil {
+		return nil, nil, err
+	}
+	rpcURL, err = normalizeRPCURL(rpcURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	if rpcURL == "" {
+		rpcURL = soroban.NetworkRPCURL(internalNetwork)
+	}
+	rpcClient := soroban.NewClient(rpcURL, soroban.NetworkPassphrase(internalNetwork))
+	builder, err := NewStellarPreviewBuilder(payerAddress, rpcClient)
 	if err != nil {
 		rpcClient.Close() //nolint:errcheck // cleanup on failure
 		return nil, nil, err

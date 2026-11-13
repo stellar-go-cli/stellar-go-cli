@@ -57,8 +57,10 @@ type Request struct {
 
 // FetchOptions controls payment handling for a request.
 type FetchOptions struct {
-	// DryRun performs the 402 challenge and builds a signed payment payload, but
-	// does not send the paid retry request.
+	// DryRun performs the 402 challenge and builds a preview payment payload,
+	// but does not send the paid retry request. Builders implementing
+	// unsignedPayloadBuilder produce an unsigned payload; others fall back to
+	// CreatePaymentPayload (signed).
 	DryRun bool
 	// MaxAtomicAmount is an optional client-side spend cap. It compares against
 	// the requirement's atomic integer amount.

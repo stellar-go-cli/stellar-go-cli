@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/soroban"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
 	rpcclient "github.com/stellar/go-stellar-sdk/clients/rpcclient"
@@ -101,7 +102,7 @@ func TestX402EndToEndTestnet(t *testing.T) {
 	sorobanClient := soroban.NewClient(soroban.TestnetRPCURL, network.TestNetworkPassphrase)
 	defer func() { _ = sorobanClient.Close() }()
 
-	contractID, deployTx, err := sorobanClient.CreateContractForAsset(ctx, issuer, asset)
+	contractID, deployTx, err := sorobanClient.CreateContractForAsset(ctx, signer.KeypairSigner{KP: issuer}, asset)
 	if err != nil {
 		t.Fatalf("deploy SAC: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestX402EndToEndTestnet(t *testing.T) {
 	facilitator.resourceURL = server.URL
 
 	// Real x402 client flow against the live testnet RPC.
-	client, builderRPC, err := NewStellarClient("stellar:testnet", payer, &http.Client{Timeout: 60 * time.Second})
+	client, builderRPC, err := NewStellarClient("stellar:testnet", signer.KeypairSigner{KP: payer}, &http.Client{Timeout: 60 * time.Second})
 	if err != nil {
 		t.Fatalf("create x402 client: %v", err)
 	}

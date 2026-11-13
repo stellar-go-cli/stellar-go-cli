@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
 )
@@ -134,12 +134,12 @@ func (m *MonitorService) promptAndExecute(result *ScanResult) {
 	}
 
 	// Initialize swap service
-	kp, keyErr := wallet.LoadStellarKeypairForSwap()
+	sg, keyErr := signresolve.ForSwap()
 	if keyErr != nil {
-		fmt.Printf("❌ Cannot execute: no Stellar keypair configured\n")
+		fmt.Printf("❌ Cannot execute: no signing authority configured (start 'stellar-go-cli signer' for protected wallets)\n")
 		return
 	}
-	swapSvc := swap.NewService(models.Network(m.config.Network), swap.WithKeypair(kp))
+	swapSvc := swap.NewService(models.Network(m.config.Network), swap.WithSigner(sg))
 
 	// Execute Leg A
 	fmt.Printf("\n📤 Executing Leg A: %s → %s\n", result.BaseAsset, result.QuoteAsset)

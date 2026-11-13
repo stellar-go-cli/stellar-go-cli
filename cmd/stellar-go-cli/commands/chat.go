@@ -10,6 +10,7 @@ import (
 	"github.com/stellar-go-cli/stellar-go-cli/internal/chat"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/config"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/scanner"
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/triangular"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/ui"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
@@ -55,10 +56,11 @@ The chat will guide you through complex operations step-by-step.`,
 			if cfg.Network == "" {
 				cfg.Network = string(models.NetworkStellarTestnet)
 			}
-			swapSvc, _ = wallet.NewSwapService(models.Network(cfg.Network))
+			swapSvc = wallet.NewSwapService(models.Network(cfg.Network), signresolve.ForSwapOrNil())
 
 			// Initialize asset service
 			assetSvc := assets.NewService()
+			assetSvc.ResolveSigner = signresolve.Resolver()
 
 			// Initialize triangular arbitrage service
 			triangularSvc := triangular.NewService(models.Network(cfg.Network))

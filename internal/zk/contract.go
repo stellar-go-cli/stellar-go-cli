@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
+	"github.com/stellar-go-cli/stellar-go-cli/pkg/signer"
 	"github.com/stellar/go-stellar-sdk/clients/horizonclient"
-	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/txnbuild"
 )
 
@@ -64,7 +64,7 @@ type ContractResult struct {
 
 // VerifyProofOnChain submits a ZK proof to the verifier contract
 func (cs *ContractService) VerifyProofOnChain(
-	kp *keypair.Full,
+	sg signer.TxSigner,
 	proofData *ProofData,
 	publicInputs []string,
 ) (*ContractResult, error) {
@@ -74,12 +74,12 @@ func (cs *ContractService) VerifyProofOnChain(
 		Arguments: []interface{}{
 			proofData.ProofHash,
 			publicInputs,
-			kp.Address(),
+			sg.Address(),
 		},
 	}
 
 	// Execute contract call
-	result, err := cs.executeContractCall(kp, call)
+	result, err := cs.executeContractCall(sg, call)
 	if err != nil {
 		return nil, fmt.Errorf("proof verification failed: %w", err)
 	}
@@ -89,7 +89,7 @@ func (cs *ContractService) VerifyProofOnChain(
 
 // ExecutePaymentOnChain executes a payment after proof verification
 func (cs *ContractService) ExecutePaymentOnChain(
-	kp *keypair.Full,
+	sg signer.TxSigner,
 	proofHash string,
 	recipient string,
 	amount string,
@@ -105,7 +105,7 @@ func (cs *ContractService) ExecutePaymentOnChain(
 	}
 
 	// Execute contract call
-	result, err := cs.executeContractCall(kp, call)
+	result, err := cs.executeContractCall(sg, call)
 	if err != nil {
 		return nil, fmt.Errorf("payment execution failed: %w", err)
 	}
@@ -114,7 +114,7 @@ func (cs *ContractService) ExecutePaymentOnChain(
 }
 
 // executeContractCall executes a smart contract method call
-func (cs *ContractService) executeContractCall(kp *keypair.Full, call *ContractCall) (*ContractResult, error) {
+func (cs *ContractService) executeContractCall(sg signer.TxSigner, call *ContractCall) (*ContractResult, error) {
 	// For demonstration, we'll simulate contract execution
 	// In real implementation, this would use Soroban RPC
 
@@ -179,7 +179,7 @@ func (cs *ContractService) GetContractState() (string, error) {
 }
 
 // DeployVerifierContract deploys the ZK verifier contract (for testing)
-func (cs *ContractService) DeployVerifierContract(kp *keypair.Full) (string, error) {
+func (cs *ContractService) DeployVerifierContract(sg signer.TxSigner) (string, error) {
 	// For demonstration, simulate contract deployment
 	// In real implementation, this would:
 	// 1. Compile Soroban contract
@@ -209,7 +209,7 @@ func estimateContractGas(method string) uint64 {
 
 // BuildZKTransaction builds a transaction that includes both ZK verification and payment
 func (cs *ContractService) BuildZKTransaction(
-	kp *keypair.Full,
+	sg signer.TxSigner,
 	sourceAcct interface{},
 	proofData *ProofData,
 	publicInputs []string,

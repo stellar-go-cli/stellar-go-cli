@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/stellar-go-cli/stellar-go-cli/internal/signresolve"
 	"github.com/stellar-go-cli/stellar-go-cli/internal/wallet"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/models"
 	"github.com/stellar-go-cli/stellar-go-cli/pkg/swap"
@@ -26,7 +27,7 @@ func atof(s string) float64 {
 }
 
 func NewStellarExchange(network models.Network) *StellarExchange {
-	swapSvc, _ := wallet.NewSwapService(network)
+	swapSvc := wallet.NewSwapService(network, signresolve.ForSwapOrNil())
 	return &StellarExchange{
 		name:      "stellar",
 		network:   network,
