@@ -112,6 +112,7 @@ func (r *RootCmd) printHelp() {
 		{"Contracts", []string{"contract"}},
 		{"Integrations", []string{"integrations"}},
 		{"Reporting", []string{"report"}},
+		{"Custody & Audit", []string{"signer", "audit"}},
 		{"AI", []string{"mcp"}},
 		{"Extras", []string{"chat", "terminal", "exchange"}},
 		{"System", []string{"init", "status", "flow", "network", "version", "vc-api"}},

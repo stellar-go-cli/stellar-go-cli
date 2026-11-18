@@ -17,7 +17,7 @@ brew install stellar-go-cli/tap/stellar-go-cli
 go install github.com/stellar-go-cli/stellar-go-cli/cmd/stellar-go-cli@latest
 ```
 
-(`go install` needs a release after v0.6.0 — v0.6.0's go.mod contained a `replace` directive, which Go rejects for `@version` installs. On v0.6.0 use Homebrew above, or `git clone` + `make install`.)
+(`go install ...@v0.6.0` specifically fails — that tag's go.mod contained a `replace` directive, which Go rejects for `@version` installs. v0.8.0+ installs cleanly; on v0.6.0 use Homebrew above, or `git clone` + `make install`.)
 
 Prebuilt binaries for linux/darwin/windows (amd64/arm64) are attached to every
 [GitHub Release](https://github.com/stellar-go-cli/stellar-go-cli/releases)
@@ -47,6 +47,51 @@ The codebase was originally developed as part of a downstream commercial product
 - **ISO 20022 reporting** — Export transactions as `pacs.008`/`pacs.002`/`pacs.004`/`pacs.009` XML; `pkg/iso20022` also builds batch `pain.001` disbursement initiations, `pain.002` status reports, `camt.053` statements, and `camt.054` settlement notifications
 - **MCP server** — Expose CLI functionality as tools for AI assistants over stdio or SSE
 
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph I["01 · Identity & Attestation"]
+        DID["<b>did</b> — did:web · did:key · did:ethr · did:ebsi<br/>W3C VC · Ed25519Signature2020 / ES256 JWS"]
+    end
+
+    subgraph W["02 · Wallet & Custody"]
+        WAL["<b>wallet</b> — Stellar keypairs · Friendbot funding<br/>passkey (WebAuthn) seed protection"]
+        SIG["<b>signer</b> — custodian daemon<br/>policy-gated signing, seeds never leave it"]
+    end
+
+    subgraph T["03 · Payments & Assets"]
+        PAY["<b>pay</b> — direct · x402 · Tempo FX"]
+        SWP["<b>swap · pool · trade · claimable</b><br/>DEX path payments"]
+        AST["<b>asset</b> — SEP-41 fungible/NFA (SAC)"]
+        CTR["<b>contract</b> — Soroban deploy/invoke<br/>pure Go, no stellar CLI"]
+    end
+
+    subgraph X["04 · Integrations"]
+        INT["StellarCarbon · x402 · Tempo<br/>Alpha Vantage · Finnhub · Tansu"]
+    end
+
+    subgraph R["05 · Reporting & Audit"]
+        REP["<b>report</b> — compliance reports<br/>ISO 20022 XML (pacs · pain · camt)"]
+        AUD["<b>audit</b> — hash-chained<br/>enforcement log · evidence"]
+    end
+
+    MCP["<b>mcp</b> — stdio/SSE tools for AI assistants"]
+    NET["Stellar network — Horizon + Soroban RPC"]
+
+    DID -- "DID linked to account" --> WAL
+    W --> T
+    T --> X
+    T --> R
+    SIG -. "grants signing" .-> T
+    AUD -. "logs every decision" .-> SIG
+    MCP -. "wallet · swap · pay · status" .-> W
+    T -- "tx submit / simulate" --> NET
+    X -- "prices · carbon · quotes" --> T
+```
+
+The same layering is available on the CLI as `stellar-go-cli flow`.
+
 ## Requirements
 
 - Go 1.26+
@@ -57,8 +102,18 @@ The codebase was originally developed as part of a downstream commercial product
 ```bash
 make build              # → dist/stellar-go-cli
 make install            # → $(GOPATH)/bin/stellar-go-cli
-make test               # run all tests
+make test               # run all tests (both modules)
 make lint               # go vet + golangci-lint
+make fuzz               # local fuzz sweep; see docs/audit/differentialfuzzing/
+```
+
+Live end-to-end suites (real testnet transactions, sandboxed `HOME` — your real
+`~/.stellar-go-cli` is never touched):
+
+```bash
+make test-e2e-cli       # CLI e2e: wallet, DID/VC, payment, report, swap quote
+make test-e2e-cli-ext   # extended: SEP-41 deploys, DEX exec, MCP, registry ops
+make test-e2e           # x402 protocol e2e (build tag e2e, several minutes)
 ```
 
 Optional command groups (chat, chat_finetune, terminal, triangular, exchange) are compiled with the `extras` build tag:
@@ -89,6 +144,19 @@ stellar-go-cli pay send --to <address> --amount 10 --asset USDC
 stellar-go-cli report iso20022 --type pacs.008 > report.xml
 ```
 
+## Demo
+
+`scripts/demo.sh` runs a guided 7-section tour — DID/VC roundtrip, testnet wallet +
+Friendbot funding, a real 1 XLM payment, a DEX quote, ISO 20022 export, and a Soroban
+deploy — inside a throwaway sandbox `HOME` that is wiped on exit:
+
+```bash
+./scripts/demo.sh                # interactive, pauses between sections
+./scripts/demo.sh --no-pause     # non-interactive
+./scripts/demo.sh --skip-network # offline only (DID/VC + init/status)
+./scripts/demo.sh --real         # use your actual config + wallet
+```
+
 ## Commands
 
 | Group | Commands |
@@ -104,6 +172,8 @@ stellar-go-cli report iso20022 --type pacs.008 > report.xml
 | `contract` | `deploy`, `invoke` (`--simulate` for read-only), `set` |
 | `integrations` | `list`, `ping`, `carbon`, `news`, `finnhub`, `tansu` |
 | `report` | `generate`, `show`, `iso20022` |
+| `audit` | `verify`, `events`, `latency`, `inventory`, `evidence` — hash-chained enforcement log + scope reports |
+| `signer` | custodian daemon (`agent`, `enroll`, `list`, `policy`) — grants signing without exposing seeds |
 | `mcp` | MCP server (stdio/SSE) |
 | `vc-api` | W3C VC API test server (`/credentials/issue`, `/credentials/verify`) |
 | `chat`, `terminal`, `exchange` | extras build tag only |
