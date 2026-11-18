@@ -121,6 +121,72 @@ func genScVal(d *genDec, depth int) (xdr.ScVal, interface{}) {
 	}
 }
 
+// escapeOracleStr renders string/symbol bytes the way stellar-cli's serde
+// JSON does: \0 \t \n \r \\ get letter escapes, printable ASCII passes raw,
+// everything else becomes \xNN per byte (non-ASCII is NOT UTF-8-decoded).
+func escapeOracleStr(b []byte) string {
+	var sb strings.Builder
+	for _, c := range b {
+		switch {
+		case c == 0:
+			sb.WriteString(`\0`)
+		case c == '\t':
+			sb.WriteString(`\t`)
+		case c == '\n':
+			sb.WriteString(`\n`)
+		case c == '\r':
+			sb.WriteString(`\r`)
+		case c == '\\':
+			sb.WriteString(`\\`)
+		case c >= 0x20 && c <= 0x7e:
+			sb.WriteByte(c)
+		default:
+			fmt.Fprintf(&sb, `\x%02x`, c)
+		}
+	}
+	return sb.String()
+}
+
+// unescapeOracleStr is the inverse of escapeOracleStr for corpus replay.
+func unescapeOracleStr(s string) ([]byte, error) {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			out = append(out, s[i])
+			continue
+		}
+		if i+1 >= len(s) {
+			return nil, fmt.Errorf("trailing backslash")
+		}
+		i++
+		switch s[i] {
+		case '0':
+			out = append(out, 0)
+		case 't':
+			out = append(out, '\t')
+		case 'n':
+			out = append(out, '\n')
+		case 'r':
+			out = append(out, '\r')
+		case '\\':
+			out = append(out, '\\')
+		case 'x':
+			if i+2 >= len(s) {
+				return nil, fmt.Errorf("truncated \\xNN escape")
+			}
+			v, err := strconv.ParseUint(s[i+1:i+3], 16, 8)
+			if err != nil {
+				return nil, fmt.Errorf("bad \\xNN escape: %w", err)
+			}
+			out = append(out, byte(v))
+			i += 2
+		default:
+			return nil, fmt.Errorf("unknown escape \\%c", s[i])
+		}
+	}
+	return out, nil
+}
+
 // tryScvMap is ScvMap without the panic on duplicate keys.
 func tryScvMap(entries []xdr.ScMapEntry) (xdr.ScVal, error) {
 	if err := sortScMapEntries(entries); err != nil {
@@ -181,9 +247,17 @@ func scvalFromOracleJSON(v interface{}) (xdr.ScVal, error) {
 			raw, err := hex.DecodeString(fmt.Sprint(val))
 			return ScvBytes(raw), err
 		case "string":
-			return ScvString(fmt.Sprint(val)), nil
+			b, err := unescapeOracleStr(fmt.Sprint(val))
+			if err != nil {
+				return xdr.ScVal{}, err
+			}
+			return ScvString(string(b)), nil
 		case "symbol":
-			return ScvSymbol(fmt.Sprint(val)), nil
+			b, err := unescapeOracleStr(fmt.Sprint(val))
+			if err != nil {
+				return xdr.ScVal{}, err
+			}
+			return ScvSymbol(string(b)), nil
 		case "vec":
 			arr, ok := val.([]interface{})
 			if !ok {
@@ -268,10 +342,13 @@ func scvalToOracleJSON(v xdr.ScVal) (interface{}, error) {
 	case xdr.ScValTypeScvBytes:
 		return map[string]interface{}{"bytes": hex.EncodeToString(*v.Bytes)}, nil
 	case xdr.ScValTypeScvString:
-		return map[string]interface{}{"string": string(*v.Str)}, nil
+		return map[string]interface{}{"string": escapeOracleStr([]byte(*v.Str))}, nil
 	case xdr.ScValTypeScvSymbol:
-		return map[string]interface{}{"symbol": string(*v.Sym)}, nil
+		return map[string]interface{}{"symbol": escapeOracleStr([]byte(*v.Sym))}, nil
 	case xdr.ScValTypeScvVec:
+		if v.Vec == nil || *v.Vec == nil { // XDR optional arm absent — oracle emits {"vec":null}
+			return map[string]interface{}{"vec": nil}, nil
+		}
 		arr := make([]interface{}, len(**v.Vec))
 		for i, e := range **v.Vec {
 			jv, err := scvalToOracleJSON(e)
@@ -282,6 +359,9 @@ func scvalToOracleJSON(v xdr.ScVal) (interface{}, error) {
 		}
 		return map[string]interface{}{"vec": arr}, nil
 	case xdr.ScValTypeScvMap:
+		if v.Map == nil || *v.Map == nil {
+			return map[string]interface{}{"map": nil}, nil
+		}
 		arr := make([]interface{}, len(**v.Map))
 		for i, e := range **v.Map {
 			k, err := scvalToOracleJSON(e.Key)
