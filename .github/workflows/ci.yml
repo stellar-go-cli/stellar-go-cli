@@ -79,18 +79,16 @@ jobs:
 
       - name: Fuzz pkg/soroban local targets
         run: |
-          cd pkg
-          go test -fuzz=FuzzCompareScVal -fuzztime=60s ./soroban/
-          go test -fuzz=FuzzScMapSortDeterminism -fuzztime=30s ./soroban/
-          go test -fuzz=FuzzToScVal -fuzztime=30s ./soroban/
+          scripts/fuzz_target.sh pkg ./soroban/ FuzzCompareScVal 60s
+          scripts/fuzz_target.sh pkg ./soroban/ FuzzScMapSortDeterminism 30s
+          scripts/fuzz_target.sh pkg ./soroban/ FuzzToScVal 30s
 
       - name: Fuzz pkg/iso20022 + pkg/x402
         run: |
-          cd pkg
-          go test -fuzz=FuzzParseDocuments -fuzztime=30s ./iso20022/
-          go test -fuzz=FuzzDecodeHeaders -fuzztime=30s ./x402/
+          scripts/fuzz_target.sh pkg ./iso20022/ FuzzParseDocuments 30s
+          scripts/fuzz_target.sh pkg ./x402/ FuzzDecodeHeaders 30s
 
       - name: Fuzz internal/mcp + internal/config
         run: |
-          go test -fuzz=FuzzCallTool -fuzztime=30s ./internal/mcp/
-          go test -fuzz=FuzzConfigLoad -fuzztime=20s ./internal/config/
+          scripts/fuzz_target.sh . ./internal/mcp/ FuzzCallTool 30s
+          scripts/fuzz_target.sh . ./internal/config/ FuzzConfigLoad 20s

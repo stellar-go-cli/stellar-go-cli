@@ -21,6 +21,17 @@ var (
 	oracleVersion string
 )
 
+// skipWithoutOracle fast-skips a differential fuzz target when the `stellar`
+// binary is absent. Checking at f.Fuzz setup is required: a per-input t.Skip
+// inside the fuzz closure would silently burn the whole -fuzztime window
+// invoking the missing binary.
+func skipWithoutOracle(f *testing.F) {
+	f.Helper()
+	if _, err := exec.LookPath("stellar"); err != nil {
+		f.Skip("stellar CLI not installed — differential oracle unavailable")
+	}
+}
+
 // stellarOracle returns the path to the `stellar` binary or skips the test.
 // The version is pinned in output — oracle behaviour is versioned behaviour.
 func stellarOracle(t *testing.T) string {

@@ -24,6 +24,7 @@ import (
 // byte-identical to `stellar xdr encode` of the same value in serde JSON.
 // This catches XDR union-arm, discriminant, and padding divergences.
 func FuzzScValEncodeDifferential(f *testing.F) {
+	skipWithoutOracle(f)
 	f.Add([]byte{0, 1, 2, 3})
 	f.Add(bytes.Repeat([]byte{10}, 64))
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -54,6 +55,7 @@ func FuzzScValEncodeDifferential(f *testing.F) {
 // must also decode under the oracle, and the decoded JSON structures must
 // agree on the subset our codec covers.
 func FuzzScValDecodeDifferential(f *testing.F) {
+	skipWithoutOracle(f)
 	sv, _ := genScVal(&genDec{data: []byte{1, 2, 3}}, 3)
 	seed, _ := sv.MarshalBinary()
 	f.Add(seed)
@@ -110,6 +112,7 @@ func deepJSONEqual(a, b interface{}) bool {
 // hash must equal `stellar tx hash`, and Go's envelope decode must accept
 // what the oracle accepts.
 func FuzzTxEnvelopeDifferential(f *testing.F) {
+	skipWithoutOracle(f)
 	f.Add([]byte{1, 100, 7, 42, 9, 0, 255, 64})
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) < 8 {
@@ -170,6 +173,7 @@ func FuzzTxEnvelopeDifferential(f *testing.F) {
 // FuzzStrkeyDifferential: strkey accept/reject and decoded payload must agree
 // between the Go SDK and `stellar strkey decode`.
 func FuzzStrkeyDifferential(f *testing.F) {
+	skipWithoutOracle(f)
 	payload := make([]byte, 32)
 	f.Add(payload)
 	f.Add(bytes.Repeat([]byte{0xFF}, 32))
