@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ func newVersionCmd(cfg *config.Config) *Command {
 		Run: func(c *Command, args []string) error {
 			ui.PrintBanner(config.Version)
 			ui.KV("Version", config.Version)
-			ui.KV("Build", "go1.22.2 · linux/amd64")
+			ui.KV("Build", fmt.Sprintf("%s · %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH))
 			ui.KV("Standards", "SEP-41 · W3C DID Core · ISO 20022 · eIDAS 2.0")
 			ui.KV("Networks", "Stellar Testnet · EVM Sepolia")
 			ui.KV("Author", "OG Technologies EU · Vienna, Austria")

@@ -18,10 +18,13 @@ const (
 	DefaultConfigDir   = ".stellar-go-cli"
 	LegacyConfigDir    = ".mozartpay" // pre-rename directory; migrated on first run
 	DefaultConfigFile  = "config.json"
-	Version            = "0.6.0"
 	AppName            = "Stellar Go CLI"
 	DefaultHTTPTimeout = 30 * time.Second
 )
+
+// Version is overridden at release time via -ldflags -X (Makefile VERSION,
+// GoReleaser {{.Version}}). A plain `go build` reports "dev".
+var Version = "dev"
 
 type Config struct {
 	Network       string            `json:"network"`
