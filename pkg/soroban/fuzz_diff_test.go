@@ -29,6 +29,15 @@ func FuzzScValEncodeDifferential(f *testing.F) {
 	f.Add(bytes.Repeat([]byte{10}, 64))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		sv, jv := genScVal(&genDec{data: data}, 3)
+		// Guard: sv and jv must describe the same value — a generator
+		// inconsistency (e.g., the dup-key map fallback reordering entries
+		// after the in-place sort) is reported distinctly from a real
+		// encode divergence so false positives can't masquerade.
+		if canon, err := scvalToOracleJSON(sv); err != nil || !reflect.DeepEqual(canon, jv) {
+			cj, _ := json.Marshal(canon)
+			jj, _ := json.Marshal(jv)
+			t.Fatalf("genScVal inconsistency: sv=%s jv=%s", cj, jj)
+		}
 		doc, err := json.Marshal(jv)
 		if err != nil {
 			t.Fatalf("marshal json: %v", err)

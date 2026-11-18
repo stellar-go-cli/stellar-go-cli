@@ -98,7 +98,10 @@ func genScVal(d *genDec, depth int) (xdr.ScVal, interface{}) {
 			entries[i] = xdr.ScMapEntry{Key: k, Val: v}
 			jm[i] = map[string]interface{}{"key": jk, "val": jvv}
 		}
-		sv, err := tryScvMap(entries)
+		// tryScvMap sorts its argument in place even when it errors on
+		// duplicate keys — pass a copy so `entries` keeps generation order
+		// and the fallback vec below stays index-consistent with jm.
+		sv, err := tryScvMap(append([]xdr.ScMapEntry{}, entries...))
 		if err != nil { // duplicate keys — fall back to a vec of the values
 			vec := make([]xdr.ScVal, cnt)
 			jv := make([]interface{}, cnt)
